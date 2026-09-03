@@ -31,10 +31,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,37 +47,11 @@ private val Green = Color(0xFF78A982)
 private val SoftGreen = Color(0xFFE4EFE5)
 private val Border = Color(0xFFE1E5E1)
 
-private data class NexoraTask(
-    val title: String,
-    val detail: String,
-    val completed: Boolean
-)
-
 @Composable
-fun HomeScreen(onAddTask: () -> Unit) {
-
-    var tasks by remember {
-        mutableStateOf(
-            listOf(
-                NexoraTask(
-                    "Complete Java assignment",
-                    "Academic • 30 min",
-                    true
-                ),
-                NexoraTask(
-                    "Study Operating Systems",
-                    "Academic • 45 min",
-                    false
-                ),
-                NexoraTask(
-                    "Build Nexora",
-                    "Personal • 60 min",
-                    false
-                )
-            )
-        )
-    }
-
+fun HomeScreen(
+    tasks: SnapshotStateList<PremiumTask>,
+    onAddTask: () -> Unit
+) {
     val completed = tasks.count { it.completed }
     val total = tasks.size
     val progress = if (total == 0) 0f else completed.toFloat() / total
@@ -139,9 +110,7 @@ fun HomeScreen(onAddTask: () -> Unit) {
                     }
 
                     IconButton(
-                        onClick = {
-                            onAddTask()
-                        }
+                        onClick = onAddTask
                     ) {
                         Icon(
                             imageVector = Icons.Default.NotificationsNone,
@@ -229,7 +198,7 @@ fun HomeScreen(onAddTask: () -> Unit) {
                     )
 
                     IconButton(
-                        onClick = {}
+                        onClick = onAddTask
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -240,21 +209,21 @@ fun HomeScreen(onAddTask: () -> Unit) {
                 }
             }
 
-            items(tasks) { task ->
+            items(
+                items = tasks,
+                key = { it.title }
+            ) { task ->
 
                 TaskRow(
                     task = task,
                     onToggle = {
 
-                        tasks = tasks.map {
+                        val index = tasks.indexOf(task)
 
-                            if (it.title == task.title) {
-                                it.copy(
-                                    completed = !it.completed
-                                )
-                            } else {
-                                it
-                            }
+                        if (index >= 0) {
+                            tasks[index] = task.copy(
+                                completed = !task.completed
+                            )
                         }
                     }
                 )
@@ -375,7 +344,7 @@ fun HomeScreen(onAddTask: () -> Unit) {
 
 @Composable
 private fun TaskRow(
-    task: NexoraTask,
+    task: PremiumTask,
     onToggle: () -> Unit
 ) {
 
@@ -430,7 +399,7 @@ private fun TaskRow(
             Spacer(modifier = Modifier.height(3.dp))
 
             Text(
-                text = task.detail,
+                text = "${task.category} • ${task.duration}",
                 fontSize = 12.sp,
                 color = Muted
             )

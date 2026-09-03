@@ -20,11 +20,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -48,7 +50,6 @@ fun TasksScreen(
     tasks: SnapshotStateList<PremiumTask>,
     onAddTask: () -> Unit
 ) {
-
     val completedCount = tasks.count { it.completed }
 
     val progress =
@@ -72,10 +73,7 @@ fun TasksScreen(
         ) {
 
             item {
-
-                Spacer(
-                    modifier = Modifier.height(24.dp)
-                )
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
                     text = "Tasks",
@@ -84,9 +82,7 @@ fun TasksScreen(
                     color = Color(0xFF18201B)
                 )
 
-                Spacer(
-                    modifier = Modifier.height(6.dp)
-                )
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
                     text = "Stay focused. Get things done.",
@@ -94,9 +90,7 @@ fun TasksScreen(
                     color = Color(0xFF737873)
                 )
 
-                Spacer(
-                    modifier = Modifier.height(22.dp)
-                )
+                Spacer(modifier = Modifier.height(22.dp))
 
                 ProgressCard(
                     completed = completedCount,
@@ -104,9 +98,7 @@ fun TasksScreen(
                     progress = progress
                 )
 
-                Spacer(
-                    modifier = Modifier.height(24.dp)
-                )
+                Spacer(modifier = Modifier.height(24.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -129,9 +121,7 @@ fun TasksScreen(
                     )
                 }
 
-                Spacer(
-                    modifier = Modifier.height(4.dp)
-                )
+                Spacer(modifier = Modifier.height(4.dp))
             }
 
             items(
@@ -141,25 +131,25 @@ fun TasksScreen(
 
                 TaskCard(
                     task = task,
-                    onClick = {
 
+                    onComplete = {
                         val index = tasks.indexOf(task)
 
                         if (index >= 0) {
-
                             tasks[index] = task.copy(
                                 completed = !task.completed
                             )
                         }
+                    },
+
+                    onDelete = {
+                        tasks.remove(task)
                     }
                 )
             }
 
             item {
-
-                Spacer(
-                    modifier = Modifier.height(100.dp)
-                )
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
 
@@ -171,7 +161,6 @@ fun TasksScreen(
             containerColor = Color(0xFF1E2722),
             contentColor = Color.White
         ) {
-
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = "Add task"
@@ -180,13 +169,13 @@ fun TasksScreen(
     }
 }
 
+
 @Composable
 private fun ProgressCard(
     completed: Int,
     total: Int,
     progress: Float
 ) {
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -206,9 +195,7 @@ private fun ProgressCard(
                 color = Color(0xFFB9C0BA)
             )
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 verticalAlignment = Alignment.Bottom
@@ -221,9 +208,7 @@ private fun ProgressCard(
                     color = Color.White
                 )
 
-                Spacer(
-                    modifier = Modifier.width(10.dp)
-                )
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Text(
                     text = "$completed of $total tasks completed",
@@ -233,9 +218,7 @@ private fun ProgressCard(
                 )
             }
 
-            Spacer(
-                modifier = Modifier.height(16.dp)
-            )
+            Spacer(modifier = Modifier.height(16.dp))
 
             Box(
                 modifier = Modifier
@@ -257,18 +240,15 @@ private fun ProgressCard(
     }
 }
 
+
 @Composable
 private fun TaskCard(
     task: PremiumTask,
-    onClick: () -> Unit
+    onComplete: () -> Unit,
+    onDelete: () -> Unit
 ) {
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                onClick()
-            },
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
@@ -283,7 +263,7 @@ private fun TaskCard(
                 .fillMaxWidth()
                 .padding(
                     horizontal = 18.dp,
-                    vertical = 17.dp
+                    vertical = 15.dp
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -293,16 +273,19 @@ private fun TaskCard(
                     .size(42.dp)
                     .clip(CircleShape)
                     .background(
-                        if (task.completed)
+                        if (task.completed) {
                             Color(0xFF82B889)
-                        else
+                        } else {
                             Color(0xFFE7EAE7)
-                    ),
+                        }
+                    )
+                    .clickable {
+                        onComplete()
+                    },
                 contentAlignment = Alignment.Center
             ) {
 
                 if (task.completed) {
-
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Completed",
@@ -312,9 +295,7 @@ private fun TaskCard(
                 }
             }
 
-            Spacer(
-                modifier = Modifier.width(15.dp)
-            )
+            Spacer(modifier = Modifier.width(15.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
@@ -325,15 +306,14 @@ private fun TaskCard(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color =
-                        if (task.completed)
+                        if (task.completed) {
                             Color(0xFF747A75)
-                        else
+                        } else {
                             Color(0xFF18201B)
+                        }
                 )
 
-                Spacer(
-                    modifier = Modifier.height(5.dp)
-                )
+                Spacer(modifier = Modifier.height(5.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically
@@ -359,9 +339,19 @@ private fun TaskCard(
                 }
             }
 
+            IconButton(
+                onClick = onDelete
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete task",
+                    tint = Color(0xFF9BA19D),
+                    modifier = Modifier.size(21.dp)
+                )
+            }
+
             Icon(
-                imageVector =
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Open task",
                 tint = Color(0xFF9BA19D),
                 modifier = Modifier.size(25.dp)
