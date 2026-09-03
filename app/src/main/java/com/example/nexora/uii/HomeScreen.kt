@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -44,9 +45,11 @@ private val Border = Color(0xFFE1E5E1)
 @Composable
 fun HomeScreen(
     tasks: SnapshotStateList<PremiumTask>,
+    progressHistory: List<DailyProgress>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit
 ) {
+
     val completed = tasks.count { it.completed }
     val total = tasks.size
 
@@ -56,22 +59,24 @@ fun HomeScreen(
         completed.toFloat() / total
     }
 
-    Box(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(Background)
+            .padding(horizontal = 22.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    horizontal = 22.dp,
-                    vertical = 26.dp
-                )
-        ) {
+        // --------------------------------
+        // HEADER
+        // --------------------------------
 
-            // Header
+        item {
+
+            Spacer(
+                modifier = Modifier.height(26.dp)
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -80,6 +85,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
+
                     Text(
                         text = "Good day.",
                         fontSize = 14.sp,
@@ -101,6 +107,7 @@ fun HomeScreen(
                 IconButton(
                     onClick = onAddTask
                 ) {
+
                     Icon(
                         imageVector = Icons.Default.NotificationsNone,
                         contentDescription = "Notifications",
@@ -108,12 +115,14 @@ fun HomeScreen(
                     )
                 }
             }
+        }
 
-            Spacer(
-                modifier = Modifier.height(28.dp)
-            )
+        // --------------------------------
+        // TODAY'S PROGRESS
+        // --------------------------------
 
-            // Daily progress
+        item {
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(26.dp),
@@ -179,22 +188,23 @@ fun HomeScreen(
                     )
                 }
             }
+        }
 
-            Spacer(
-                modifier = Modifier.height(28.dp)
-            )
+        // --------------------------------
+        // TODAY'S FOCUS
+        // --------------------------------
 
-            // Section
+        item {
+
             Text(
                 text = "Today's focus",
                 fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
                 color = Ink
             )
+        }
 
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
+        item {
 
             if (tasks.isEmpty()) {
 
@@ -214,21 +224,52 @@ fun HomeScreen(
                             task = task,
                             onToggle = {
                                 onToggleTask(task)
-
                             }
                         )
                     }
                 }
             }
+        }
 
-            Spacer(
-                modifier = Modifier.weight(1f)
+        // --------------------------------
+        // DAILY PROGRESS
+        // --------------------------------
+
+        item {
+
+            Text(
+                text = "Your consistency",
+                fontSize = 21.sp,
+                fontWeight = FontWeight.Bold,
+                color = Ink
             )
 
-            // Add task button
+            Spacer(
+                modifier = Modifier.height(4.dp)
+            )
+
+            Text(
+                text = "Your progress over time",
+                fontSize = 13.sp,
+                color = Muted
+            )
+        }
+
+        item {
+
+            DailyProgressCalendar(
+                progressHistory = progressHistory
+            )
+        }
+
+        // --------------------------------
+        // ADD TASK
+        // --------------------------------
+
+        item {
+
             Card(
-                modifier = Modifier
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = SoftGreen
@@ -249,6 +290,7 @@ fun HomeScreen(
                             .background(Green),
                         contentAlignment = Alignment.Center
                     ) {
+
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = null,
@@ -285,6 +327,7 @@ fun HomeScreen(
                     IconButton(
                         onClick = onAddTask
                     ) {
+
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Add task",
@@ -295,7 +338,7 @@ fun HomeScreen(
             }
 
             Spacer(
-                modifier = Modifier.height(8.dp)
+                modifier = Modifier.height(20.dp)
             )
         }
     }
@@ -306,6 +349,7 @@ private fun HomeTaskCard(
     task: PremiumTask,
     onToggle: () -> Unit
 ) {
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -344,6 +388,7 @@ private fun HomeTaskCard(
                 ) {
 
                     if (task.completed) {
+
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Completed",
@@ -412,6 +457,7 @@ private fun HomeTaskCard(
 private fun EmptyHomeCard(
     onAddTask: () -> Unit
 ) {
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -471,6 +517,7 @@ private fun EmptyHomeCard(
             IconButton(
                 onClick = onAddTask
             ) {
+
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Add task",

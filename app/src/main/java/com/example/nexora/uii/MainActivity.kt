@@ -16,6 +16,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -184,10 +185,6 @@ class MainActivity : ComponentActivity() {
                         .distinct()
                         .size
 
-                    val existingIndex = progressHistory.indexOfFirst {
-                        it.date == today
-                    }
-
                     val todayProgress = DailyProgress(
                         date = today,
                         tasksPlanned = totalTasks,
@@ -197,13 +194,21 @@ class MainActivity : ComponentActivity() {
                         carriedTasks = 0
                     )
 
+                    val existingIndex =
+                        progressHistory.indexOfFirst {
+                            it.date == today
+                        }
+
                     if (existingIndex >= 0) {
 
-                        progressHistory[existingIndex] = todayProgress
+                        progressHistory[existingIndex] =
+                            todayProgress
 
                     } else {
 
-                        progressHistory.add(todayProgress)
+                        progressHistory.add(
+                            todayProgress
+                        )
                     }
                 }
 
@@ -217,26 +222,44 @@ class MainActivity : ComponentActivity() {
 
                         val goal = goals[index]
 
-                        val newProgress = calculateGoalProgress(
-                            goal = goal,
-                            tasks = tasks
-                        )
+                        val newProgress =
+                            calculateGoalProgress(
+                                goal = goal,
+                                tasks = tasks
+                            )
 
-                        val updatedGoal = goal.copy(
-                            progress = newProgress
-                        )
+                        val updatedGoal =
+                            goal.copy(
+                                progress = newProgress
+                            )
 
                         goals[index] = updatedGoal
 
-                        if (selectedGoal?.title == goal.title) {
-                            selectedGoal = updatedGoal
+                        if (
+                            selectedGoal?.title ==
+                            goal.title
+                        ) {
+
+                            selectedGoal =
+                                updatedGoal
                         }
                     }
                 }
 
-                // Initial calculations
-                refreshGoalProgress()
-                updateTodayProgress()
+                // --------------------------------
+                // INITIAL DATA CALCULATION
+                // --------------------------------
+                //
+                // IMPORTANT:
+                // Do not modify Compose state directly
+                // during composition.
+                //
+
+                LaunchedEffect(Unit) {
+
+                    refreshGoalProgress()
+                    updateTodayProgress()
+                }
 
                 // --------------------------------
                 // APP
@@ -255,68 +278,100 @@ class MainActivity : ComponentActivity() {
                             NavigationBar {
 
                                 // HOME
+
                                 NavigationBarItem(
-                                    selected = selectedScreen == "home",
+                                    selected =
+                                        selectedScreen == "home",
+
                                     onClick = {
                                         selectedScreen = "home"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Home,
-                                            contentDescription = "Home"
+                                            imageVector =
+                                                Icons.Default.Home,
+                                            contentDescription =
+                                                "Home"
                                         )
                                     },
+
                                     label = {
                                         Text("Home")
                                     }
                                 )
 
                                 // TASKS
+
                                 NavigationBarItem(
-                                    selected = selectedScreen == "tasks",
+                                    selected =
+                                        selectedScreen == "tasks",
+
                                     onClick = {
                                         selectedScreen = "tasks"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Tasks"
+                                            imageVector =
+                                                Icons.Default.CheckCircle,
+                                            contentDescription =
+                                                "Tasks"
                                         )
                                     },
+
                                     label = {
                                         Text("Tasks")
                                     }
                                 )
 
                                 // GOALS
+
                                 NavigationBarItem(
-                                    selected = selectedScreen == "goals",
+                                    selected =
+                                        selectedScreen == "goals",
+
                                     onClick = {
                                         selectedScreen = "goals"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Flag,
-                                            contentDescription = "Goals"
+                                            imageVector =
+                                                Icons.Default.Flag,
+                                            contentDescription =
+                                                "Goals"
                                         )
                                     },
+
                                     label = {
                                         Text("Goals")
                                     }
                                 )
 
                                 // INSIGHTS
+
                                 NavigationBarItem(
-                                    selected = selectedScreen == "insights",
+                                    selected =
+                                        selectedScreen == "insights",
+
                                     onClick = {
                                         selectedScreen = "insights"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Insights,
-                                            contentDescription = "Insights"
+                                            imageVector =
+                                                Icons.Default.Insights,
+                                            contentDescription =
+                                                "Insights"
                                         )
                                     },
+
                                     label = {
                                         Text("Insights")
                                     }
@@ -342,24 +397,35 @@ class MainActivity : ComponentActivity() {
                             "home" -> {
 
                                 HomeScreen(
+
                                     tasks = tasks,
 
+                                    progressHistory =
+                                        progressHistory,
+
                                     onAddTask = {
+
                                         taskGoal = null
-                                        selectedScreen = "addTask"
+
+                                        selectedScreen =
+                                            "addTask"
                                     },
 
                                     onToggleTask = { task ->
 
-                                        val index = tasks.indexOf(task)
+                                        val index =
+                                            tasks.indexOf(task)
 
                                         if (index >= 0) {
 
-                                            tasks[index] = task.copy(
-                                                completed = !task.completed
-                                            )
+                                            tasks[index] =
+                                                task.copy(
+                                                    completed =
+                                                        !task.completed
+                                                )
 
                                             refreshGoalProgress()
+
                                             updateTodayProgress()
                                         }
                                     }
@@ -373,24 +439,32 @@ class MainActivity : ComponentActivity() {
                             "tasks" -> {
 
                                 TasksScreen(
+
                                     tasks = tasks,
 
                                     onAddTask = {
+
                                         taskGoal = null
-                                        selectedScreen = "addTask"
+
+                                        selectedScreen =
+                                            "addTask"
                                     },
 
                                     onToggleTask = { task ->
 
-                                        val index = tasks.indexOf(task)
+                                        val index =
+                                            tasks.indexOf(task)
 
                                         if (index >= 0) {
 
-                                            tasks[index] = task.copy(
-                                                completed = !task.completed
-                                            )
+                                            tasks[index] =
+                                                task.copy(
+                                                    completed =
+                                                        !task.completed
+                                                )
 
                                             refreshGoalProgress()
+
                                             updateTodayProgress()
                                         }
                                     }
@@ -404,25 +478,35 @@ class MainActivity : ComponentActivity() {
                             "goals" -> {
 
                                 GoalScreen(
+
                                     goals = goals,
 
                                     onAddGoal = {
+
                                         editingGoal = null
+
                                         selectedGoal = null
-                                        selectedScreen = "addGoal"
+
+                                        selectedScreen =
+                                            "addGoal"
                                     },
 
                                     onEditGoal = { goal ->
 
                                         editingGoal = goal
+
                                         selectedGoal = goal
-                                        selectedScreen = "addGoal"
+
+                                        selectedScreen =
+                                            "addGoal"
                                     },
 
                                     onOpenGoal = { goal ->
 
                                         selectedGoal = goal
-                                        selectedScreen = "goalDetails"
+
+                                        selectedScreen =
+                                            "goalDetails"
                                     }
                                 )
                             }
@@ -439,60 +523,85 @@ class MainActivity : ComponentActivity() {
 
                                         goal = goal,
 
-                                        relatedTasks = tasks.filter {
-                                            it.goalTitle == goal.title
-                                        },
+                                        relatedTasks =
+                                            tasks.filter {
+
+                                                it.goalTitle ==
+                                                        goal.title
+                                            },
 
                                         onBack = {
+
                                             selectedGoal = null
-                                            selectedScreen = "goals"
+
+                                            selectedScreen =
+                                                "goals"
                                         },
 
                                         onEdit = {
+
                                             editingGoal = goal
-                                            selectedScreen = "addGoal"
+
+                                            selectedScreen =
+                                                "addGoal"
                                         },
 
                                         onDelete = {
 
                                             goals.remove(goal)
 
-                                            val updatedTasks = tasks.map { task ->
+                                            val updatedTasks =
+                                                tasks.map { task ->
 
-                                                if (task.goalTitle == goal.title) {
+                                                    if (
+                                                        task.goalTitle ==
+                                                        goal.title
+                                                    ) {
 
-                                                    task.copy(
-                                                        goalTitle = null
-                                                    )
+                                                        task.copy(
+                                                            goalTitle =
+                                                                null
+                                                        )
 
-                                                } else {
-                                                    task
+                                                    } else {
+
+                                                        task
+                                                    }
                                                 }
-                                            }
 
                                             tasks.clear()
-                                            tasks.addAll(updatedTasks)
+
+                                            tasks.addAll(
+                                                updatedTasks
+                                            )
 
                                             selectedGoal = null
+
                                             taskGoal = null
 
                                             refreshGoalProgress()
+
                                             updateTodayProgress()
 
-                                            selectedScreen = "goals"
+                                            selectedScreen =
+                                                "goals"
                                         },
 
                                         onToggleTask = { task ->
 
-                                            val index = tasks.indexOf(task)
+                                            val index =
+                                                tasks.indexOf(task)
 
                                             if (index >= 0) {
 
-                                                tasks[index] = task.copy(
-                                                    completed = !task.completed
-                                                )
+                                                tasks[index] =
+                                                    task.copy(
+                                                        completed =
+                                                            !task.completed
+                                                    )
 
                                                 refreshGoalProgress()
+
                                                 updateTodayProgress()
                                             }
                                         },
@@ -500,7 +609,9 @@ class MainActivity : ComponentActivity() {
                                         onAddTask = {
 
                                             taskGoal = goal
-                                            selectedScreen = "addTask"
+
+                                            selectedScreen =
+                                                "addTask"
                                         }
                                     )
                                 }
@@ -526,12 +637,15 @@ class MainActivity : ComponentActivity() {
                                     onBack = {
 
                                         taskGoal = null
-                                        selectedScreen = "tasks"
+
+                                        selectedScreen =
+                                            "tasks"
                                     },
 
                                     goals = goals,
 
-                                    selectedGoal = taskGoal,
+                                    selectedGoal =
+                                        taskGoal,
 
                                     onSave = {
                                             title,
@@ -545,17 +659,20 @@ class MainActivity : ComponentActivity() {
                                                 title = title,
                                                 category = category,
                                                 duration = duration,
-                                                goalTitle = goalTitle,
+                                                goalTitle =
+                                                    goalTitle,
                                                 completed = false
                                             )
                                         )
 
                                         refreshGoalProgress()
+
                                         updateTodayProgress()
 
                                         taskGoal = null
 
-                                        selectedScreen = "tasks"
+                                        selectedScreen =
+                                            "tasks"
                                     }
                                 )
                             }
@@ -568,14 +685,17 @@ class MainActivity : ComponentActivity() {
 
                                 AddGoalScreen(
 
-                                    existingGoal = editingGoal,
+                                    existingGoal =
+                                        editingGoal,
 
                                     onBack = {
 
                                         editingGoal = null
+
                                         selectedGoal = null
 
-                                        selectedScreen = "goals"
+                                        selectedScreen =
+                                            "goals"
                                     },
 
                                     onSave = {
@@ -584,14 +704,18 @@ class MainActivity : ComponentActivity() {
                                             targetDate,
                                             _ ->
 
-                                        if (editingGoal == null) {
+                                        if (
+                                            editingGoal == null
+                                        ) {
 
                                             goals.add(
 
                                                 NexoraGoal(
                                                     title = title,
-                                                    category = category,
-                                                    targetDate = targetDate,
+                                                    category =
+                                                        category,
+                                                    targetDate =
+                                                        targetDate,
                                                     progress = 0f
                                                 )
                                             )
@@ -599,29 +723,39 @@ class MainActivity : ComponentActivity() {
                                         } else {
 
                                             val index =
-                                                goals.indexOf(editingGoal)
+                                                goals.indexOf(
+                                                    editingGoal
+                                                )
 
                                             if (index >= 0) {
 
-                                                val oldGoal = goals[index]
+                                                val oldGoal =
+                                                    goals[index]
 
                                                 goals[index] =
                                                     NexoraGoal(
-                                                        title = title,
-                                                        category = category,
-                                                        targetDate = targetDate,
-                                                        progress = oldGoal.progress
+                                                        title =
+                                                            title,
+                                                        category =
+                                                            category,
+                                                        targetDate =
+                                                            targetDate,
+                                                        progress =
+                                                            oldGoal.progress
                                                     )
                                             }
                                         }
 
                                         refreshGoalProgress()
+
                                         updateTodayProgress()
 
                                         editingGoal = null
+
                                         selectedGoal = null
 
-                                        selectedScreen = "goals"
+                                        selectedScreen =
+                                            "goals"
                                     }
                                 )
                             }

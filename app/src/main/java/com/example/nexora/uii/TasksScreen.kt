@@ -43,11 +43,19 @@ private val Green = Color(0xFF78A982)
 private val SoftGreen = Color(0xFFE4EFE5)
 private val Border = Color(0xFFE1E5E1)
 
+enum class TaskPriority {
+    LOW,
+    MEDIUM,
+    HIGH,
+    URGENT
+}
+
 data class PremiumTask(
     val title: String,
     val category: String,
     val duration: String,
     val goalTitle: String? = null,
+    val priority: TaskPriority = TaskPriority.MEDIUM,
     var completed: Boolean = false
 )
 
@@ -56,7 +64,7 @@ fun TasksScreen(
     tasks: SnapshotStateList<PremiumTask>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit
-){
+) {
     val completed = tasks.count { it.completed }
     val total = tasks.size
 
@@ -83,7 +91,6 @@ fun TasksScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
 
-            // Header
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -120,7 +127,6 @@ fun TasksScreen(
                 }
             }
 
-            // Progress card
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -178,7 +184,6 @@ fun TasksScreen(
                 }
             }
 
-            // Section title
             item {
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -190,7 +195,6 @@ fun TasksScreen(
                 )
             }
 
-            // Empty state
             if (tasks.isEmpty()) {
 
                 item {
@@ -199,7 +203,6 @@ fun TasksScreen(
 
             } else {
 
-                // Tasks
                 items(
                     items = tasks,
                     key = { task ->
@@ -209,11 +212,9 @@ fun TasksScreen(
 
                     TaskCard(
                         task = task,
-
                         onToggle = {
                             onToggleTask(task)
                         },
-
                         onDelete = {
                             tasks.remove(task)
                         }
@@ -222,7 +223,6 @@ fun TasksScreen(
             }
         }
 
-        // Floating button
         FloatingActionButton(
             onClick = onAddTask,
             modifier = Modifier
@@ -313,6 +313,26 @@ private fun TaskCard(
                     },
                     fontSize = 12.sp,
                     color = Muted
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    when (task.priority) {
+                        TaskPriority.URGENT -> "URGENT"
+                        TaskPriority.HIGH -> "HIGH"
+                        TaskPriority.MEDIUM -> "MEDIUM"
+                        TaskPriority.LOW -> "LOW"
+                    },
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = when (task.priority) {
+                        TaskPriority.URGENT -> Color(0xFF9B3D3D)
+                        TaskPriority.HIGH -> Color(0xFFB06A32)
+                        TaskPriority.MEDIUM -> Muted
+                        TaskPriority.LOW -> Green
+                    }
                 )
             }
 
