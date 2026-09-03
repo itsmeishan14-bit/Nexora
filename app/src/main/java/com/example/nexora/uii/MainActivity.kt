@@ -33,6 +33,10 @@ class MainActivity : ComponentActivity() {
 
             NexoraTheme {
 
+                // --------------------------------
+                // TASKS
+                // --------------------------------
+
                 val tasks = remember {
 
                     mutableStateListOf(
@@ -95,6 +99,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // --------------------------------
+                // GOALS
+                // --------------------------------
+
                 val goals = remember {
 
                     mutableStateListOf(
@@ -122,6 +130,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // --------------------------------
+                // NAVIGATION STATE
+                // --------------------------------
+
                 var selectedScreen by remember {
                     mutableStateOf("home")
                 }
@@ -134,9 +146,16 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<NexoraGoal?>(null)
                 }
 
-                /*
-                 * Recalculate every goal from its linked tasks.
-                 */
+                // Goal that should be automatically
+                // selected when creating a task.
+                var taskGoal by remember {
+                    mutableStateOf<NexoraGoal?>(null)
+                }
+
+                // --------------------------------
+                // GOAL PROGRESS
+                // --------------------------------
+
                 fun refreshGoalProgress() {
 
                     goals.indices.forEach { index ->
@@ -148,15 +167,24 @@ class MainActivity : ComponentActivity() {
                             tasks = tasks
                         )
 
-                        goals[index] = goal.copy(
+                        val updatedGoal = goal.copy(
                             progress = newProgress
                         )
 
+                        goals[index] = updatedGoal
+
                         if (selectedGoal?.title == goal.title) {
-                            selectedGoal = goals[index]
+                            selectedGoal = updatedGoal
                         }
                     }
                 }
+
+                // Calculate initial progress.
+                refreshGoalProgress()
+
+                // --------------------------------
+                // APP
+                // --------------------------------
 
                 Scaffold(
 
@@ -170,6 +198,7 @@ class MainActivity : ComponentActivity() {
 
                             NavigationBar {
 
+                                // HOME
                                 NavigationBarItem(
                                     selected = selectedScreen == "home",
                                     onClick = {
@@ -177,7 +206,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            Icons.Default.Home,
+                                            imageVector = Icons.Default.Home,
                                             contentDescription = "Home"
                                         )
                                     },
@@ -186,6 +215,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // TASKS
                                 NavigationBarItem(
                                     selected = selectedScreen == "tasks",
                                     onClick = {
@@ -193,7 +223,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            Icons.Default.CheckCircle,
+                                            imageVector = Icons.Default.CheckCircle,
                                             contentDescription = "Tasks"
                                         )
                                     },
@@ -202,6 +232,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // GOALS
                                 NavigationBarItem(
                                     selected = selectedScreen == "goals",
                                     onClick = {
@@ -209,7 +240,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            Icons.Default.Flag,
+                                            imageVector = Icons.Default.Flag,
                                             contentDescription = "Goals"
                                         )
                                     },
@@ -218,6 +249,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // INSIGHTS
                                 NavigationBarItem(
                                     selected = selectedScreen == "insights",
                                     onClick = {
@@ -225,7 +257,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            Icons.Default.Insights,
+                                            imageVector = Icons.Default.Insights,
                                             contentDescription = "Insights"
                                         )
                                     },
@@ -247,14 +279,20 @@ class MainActivity : ComponentActivity() {
 
                         when (selectedScreen) {
 
+                            // ====================================
                             // HOME
+                            // ====================================
+
                             "home" -> {
 
                                 HomeScreen(
                                     tasks = tasks,
+
                                     onAddTask = {
+                                        taskGoal = null
                                         selectedScreen = "addTask"
                                     },
+
                                     onToggleTask = { task ->
 
                                         val index = tasks.indexOf(task)
@@ -271,14 +309,20 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // ====================================
                             // TASKS
+                            // ====================================
+
                             "tasks" -> {
 
                                 TasksScreen(
                                     tasks = tasks,
+
                                     onAddTask = {
+                                        taskGoal = null
                                         selectedScreen = "addTask"
                                     },
+
                                     onToggleTask = { task ->
 
                                         val index = tasks.indexOf(task)
@@ -295,7 +339,10 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // ====================================
                             // GOALS
+                            // ====================================
+
                             "goals" -> {
 
                                 GoalScreen(
@@ -303,29 +350,37 @@ class MainActivity : ComponentActivity() {
 
                                     onAddGoal = {
                                         editingGoal = null
+                                        selectedGoal = null
                                         selectedScreen = "addGoal"
                                     },
 
                                     onEditGoal = { goal ->
+
                                         editingGoal = goal
                                         selectedGoal = goal
                                         selectedScreen = "addGoal"
                                     },
 
                                     onOpenGoal = { goal ->
+
                                         selectedGoal = goal
                                         selectedScreen = "goalDetails"
                                     }
                                 )
                             }
 
+                            // ====================================
                             // GOAL DETAILS
+                            // ====================================
+
                             "goalDetails" -> {
 
                                 selectedGoal?.let { goal ->
 
                                     GoalDetailsScreen(
+
                                         goal = goal,
+
                                         relatedTasks = tasks.filter {
                                             it.goalTitle == goal.title
                                         },
@@ -347,7 +402,9 @@ class MainActivity : ComponentActivity() {
                                             val updatedTasks = tasks.map { task ->
 
                                                 if (task.goalTitle == goal.title) {
-                                                    task.copy(goalTitle = null)
+                                                    task.copy(
+                                                        goalTitle = null
+                                                    )
                                                 } else {
                                                     task
                                                 }
@@ -357,6 +414,8 @@ class MainActivity : ComponentActivity() {
                                             tasks.addAll(updatedTasks)
 
                                             selectedGoal = null
+                                            taskGoal = null
+
                                             selectedScreen = "goals"
                                         },
 
@@ -372,26 +431,44 @@ class MainActivity : ComponentActivity() {
 
                                                 refreshGoalProgress()
                                             }
+                                        },
+
+                                        // THIS is where Add Task belongs.
+                                        onAddTask = {
+
+                                            taskGoal = goal
+                                            selectedScreen = "addTask"
                                         }
                                     )
                                 }
                             }
 
+                            // ====================================
                             // INSIGHTS
+                            // ====================================
+
                             "insights" -> {
+
                                 InsightScreen()
                             }
 
+                            // ====================================
                             // ADD TASK
+                            // ====================================
+
                             "addTask" -> {
 
                                 AddTaskScreen(
 
                                     onBack = {
+
+                                        taskGoal = null
                                         selectedScreen = "tasks"
                                     },
 
                                     goals = goals,
+
+                                    selectedGoal = taskGoal,
 
                                     onSave = {
                                             title,
@@ -400,6 +477,7 @@ class MainActivity : ComponentActivity() {
                                             goalTitle ->
 
                                         tasks.add(
+
                                             PremiumTask(
                                                 title = title,
                                                 category = category,
@@ -411,12 +489,17 @@ class MainActivity : ComponentActivity() {
 
                                         refreshGoalProgress()
 
+                                        taskGoal = null
+
                                         selectedScreen = "tasks"
                                     }
                                 )
                             }
 
+                            // ====================================
                             // ADD / EDIT GOAL
+                            // ====================================
+
                             "addGoal" -> {
 
                                 AddGoalScreen(
@@ -424,7 +507,10 @@ class MainActivity : ComponentActivity() {
                                     existingGoal = editingGoal,
 
                                     onBack = {
+
                                         editingGoal = null
+                                        selectedGoal = null
+
                                         selectedScreen = "goals"
                                     },
 
@@ -437,6 +523,7 @@ class MainActivity : ComponentActivity() {
                                         if (editingGoal == null) {
 
                                             goals.add(
+
                                                 NexoraGoal(
                                                     title = title,
                                                     category = category,
@@ -452,8 +539,7 @@ class MainActivity : ComponentActivity() {
 
                                             if (index >= 0) {
 
-                                                val oldGoal =
-                                                    goals[index]
+                                                val oldGoal = goals[index]
 
                                                 goals[index] =
                                                     NexoraGoal(
@@ -468,6 +554,8 @@ class MainActivity : ComponentActivity() {
                                         refreshGoalProgress()
 
                                         editingGoal = null
+                                        selectedGoal = null
+
                                         selectedScreen = "goals"
                                     }
                                 )

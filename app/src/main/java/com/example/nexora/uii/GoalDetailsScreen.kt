@@ -2,6 +2,7 @@ package com.example.nexora.uii
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,14 +10,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -27,8 +29,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,7 +54,8 @@ fun GoalDetailsScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onToggleTask: (PremiumTask) -> Unit
+    onToggleTask: (PremiumTask) -> Unit,
+    onAddTask: () -> Unit
 ) {
 
     val completedTasks = relatedTasks.count {
@@ -154,7 +158,7 @@ fun GoalDetailsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
 
-                            androidx.compose.foundation.layout.Box(
+                            Box(
                                 modifier = Modifier
                                     .size(50.dp)
                                     .clip(CircleShape)
@@ -262,16 +266,45 @@ fun GoalDetailsScreen(
             // TASK SECTION
             item {
 
-                Spacer(
-                    modifier = Modifier.height(6.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
 
-                Text(
-                    text = "Tasks contributing to this goal",
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Ink
-                )
+                    Text(
+                        text = "Tasks",
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Ink,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Button(
+                        onClick = onAddTask,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Ink,
+                            contentColor = Color.White
+                        )
+                    ) {
+
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp)
+                        )
+
+                        Spacer(
+                            modifier = Modifier.width(5.dp)
+                        )
+
+                        Text(
+                            text = "Add task",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
             if (relatedTasks.isEmpty()) {
@@ -305,10 +338,37 @@ fun GoalDetailsScreen(
                             )
 
                             Text(
-                                text = "Create a task and connect it to this goal.",
+                                text = "Add a task to start making progress.",
                                 fontSize = 13.sp,
                                 color = Muted
                             )
+
+                            Spacer(
+                                modifier = Modifier.height(14.dp)
+                            )
+
+                            Button(
+                                onClick = onAddTask,
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Ink,
+                                    contentColor = Color.White
+                                )
+                            ) {
+
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null
+                                )
+
+                                Spacer(
+                                    modifier = Modifier.width(7.dp)
+                                )
+
+                                Text(
+                                    text = "Add first task"
+                                )
+                            }
                         }
                     }
                 }
@@ -398,16 +458,12 @@ private fun GoalTaskCard(
             ) {
 
                 Icon(
-                    imageVector = if (task.completed) {
-                        Icons.Default.CheckCircle
-                    } else {
-                        Icons.Default.Check
-                    },
+                    imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Toggle task",
                     tint = if (task.completed) {
                         Green
                     } else {
-                        Muted
+                        Border
                     }
                 )
             }

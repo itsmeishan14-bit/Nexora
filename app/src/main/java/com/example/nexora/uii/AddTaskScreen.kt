@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,14 +39,15 @@ import androidx.compose.ui.unit.sp
 fun AddTaskScreen(
     onBack: () -> Unit,
     goals: List<NexoraGoal>,
+    selectedGoal: NexoraGoal? = null,
     onSave: (String, String, String, String?) -> Unit
 ) {
     var taskName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf("") }
 
-    var selectedGoal by remember {
-        mutableStateOf<NexoraGoal?>(null)
+    var chosenGoal by remember {
+        mutableStateOf(selectedGoal)
     }
 
     var goalMenuExpanded by remember {
@@ -58,6 +58,7 @@ fun AddTaskScreen(
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFFF7F8F4)
     ) {
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -73,6 +74,7 @@ fun AddTaskScreen(
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
+
                     Text(
                         text = "New task",
                         fontSize = 30.sp,
@@ -85,7 +87,11 @@ fun AddTaskScreen(
                     )
 
                     Text(
-                        text = "What needs to get done?",
+                        text = if (selectedGoal != null) {
+                            "Add a task to ${selectedGoal.title}"
+                        } else {
+                            "What needs to get done?"
+                        },
                         fontSize = 14.sp,
                         color = Color(0xFF747B75)
                     )
@@ -212,14 +218,14 @@ fun AddTaskScreen(
                 ) {
 
                     Text(
-                        text = selectedGoal?.title
+                        text = chosenGoal?.title
                             ?: if (goals.isEmpty()) {
                                 "No goals available"
                             } else {
                                 "Select a goal"
                             },
                         modifier = Modifier.weight(1f),
-                        color = if (selectedGoal == null) {
+                        color = if (chosenGoal == null) {
                             Color(0xFF747B75)
                         } else {
                             Color(0xFF17231C)
@@ -244,6 +250,7 @@ fun AddTaskScreen(
 
                         DropdownMenuItem(
                             text = {
+
                                 Column {
 
                                     Text(
@@ -259,7 +266,8 @@ fun AddTaskScreen(
                                 }
                             },
                             onClick = {
-                                selectedGoal = goal
+
+                                chosenGoal = goal
                                 goalMenuExpanded = false
                             }
                         )
@@ -273,7 +281,8 @@ fun AddTaskScreen(
                             )
                         },
                         onClick = {
-                            selectedGoal = null
+
+                            chosenGoal = null
                             goalMenuExpanded = false
                         }
                     )
@@ -284,7 +293,7 @@ fun AddTaskScreen(
                 modifier = Modifier.height(30.dp)
             )
 
-            // AI-READY INFORMATION CARD
+            // LINKED GOAL INFO
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -296,7 +305,11 @@ fun AddTaskScreen(
                 ) {
 
                     Text(
-                        text = "Make it actionable",
+                        text = if (chosenGoal != null) {
+                            "Linked to ${chosenGoal!!.title}"
+                        } else {
+                            "Make it actionable"
+                        },
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF17231C)
@@ -307,7 +320,11 @@ fun AddTaskScreen(
                     )
 
                     Text(
-                        text = "Linking a task to a goal helps Nexora understand what your work is contributing toward.",
+                        text = if (chosenGoal != null) {
+                            "This task will contribute to the progress of this goal."
+                        } else {
+                            "Linking a task to a goal helps Nexora understand what your work is contributing toward."
+                        },
                         fontSize = 13.sp,
                         color = Color(0xFF747B75),
                         lineHeight = 19.sp
@@ -337,7 +354,7 @@ fun AddTaskScreen(
                             } else {
                                 duration.trim()
                             },
-                            selectedGoal?.title
+                            chosenGoal?.title
                         )
                     }
                 },
