@@ -40,7 +40,13 @@ fun AddTaskScreen(
     onBack: () -> Unit,
     goals: List<NexoraGoal>,
     selectedGoal: NexoraGoal? = null,
-    onSave: (String, String, String, String?) -> Unit
+    onSave: (
+        String,
+        String,
+        String,
+        String?,
+        TaskPriority
+    ) -> Unit
 ) {
     var taskName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
@@ -51,6 +57,14 @@ fun AddTaskScreen(
     }
 
     var goalMenuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    var chosenPriority by remember {
+        mutableStateOf(TaskPriority.MEDIUM)
+    }
+
+    var priorityMenuExpanded by remember {
         mutableStateOf(false)
     }
 
@@ -188,6 +202,105 @@ fun AddTaskScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp)
             )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            // PRIORITY
+            Text(
+                text = "Priority",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF303630)
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            Column {
+
+                OutlinedButton(
+                    onClick = {
+                        priorityMenuExpanded = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+
+                    Text(
+                        text = when (chosenPriority) {
+                            TaskPriority.URGENT -> "Urgent"
+                            TaskPriority.HIGH -> "High"
+                            TaskPriority.MEDIUM -> "Medium"
+                            TaskPriority.LOW -> "Low"
+                        },
+                        modifier = Modifier.weight(1f),
+                        color = Color(0xFF17231C)
+                    )
+
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Select priority",
+                        tint = Color(0xFF17231C)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = priorityMenuExpanded,
+                    onDismissRequest = {
+                        priorityMenuExpanded = false
+                    }
+                ) {
+
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Urgent",
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        onClick = {
+                            chosenPriority = TaskPriority.URGENT
+                            priorityMenuExpanded = false
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "High",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        onClick = {
+                            chosenPriority = TaskPriority.HIGH
+                            priorityMenuExpanded = false
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = {
+                            Text("Medium")
+                        },
+                        onClick = {
+                            chosenPriority = TaskPriority.MEDIUM
+                            priorityMenuExpanded = false
+                        }
+                    )
+
+                    DropdownMenuItem(
+                        text = {
+                            Text("Low")
+                        },
+                        onClick = {
+                            chosenPriority = TaskPriority.LOW
+                            priorityMenuExpanded = false
+                        }
+                    )
+                }
+            }
 
             Spacer(
                 modifier = Modifier.height(20.dp)
@@ -354,7 +467,8 @@ fun AddTaskScreen(
                             } else {
                                 duration.trim()
                             },
-                            chosenGoal?.title
+                            chosenGoal?.title,
+                            chosenPriority
                         )
                     }
                 },

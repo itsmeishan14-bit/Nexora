@@ -11,9 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -58,6 +58,24 @@ fun HomeScreen(
     } else {
         completed.toFloat() / total
     }
+
+    // Priority-based Today's Focus
+    val priorityOrder = mapOf(
+        TaskPriority.URGENT to 0,
+        TaskPriority.HIGH to 1,
+        TaskPriority.MEDIUM to 2,
+        TaskPriority.LOW to 3
+    )
+
+    val focusTasks = tasks
+        .sortedWith(
+            compareBy<PremiumTask> {
+                if (it.completed) 1 else 0
+            }.thenBy {
+                priorityOrder[it.priority] ?: 2
+            }
+        )
+        .take(5)
 
     LazyColumn(
         modifier = Modifier
@@ -218,7 +236,7 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(11.dp)
                 ) {
 
-                    tasks.take(3).forEach { task ->
+                    focusTasks.forEach { task ->
 
                         HomeTaskCard(
                             task = task,
