@@ -1,10 +1,9 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,33 +32,34 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun AddTaskScreen(
+fun AddGoalScreen(
     onBack: () -> Unit,
-    onSave: (String, String, String) -> Unit
+    onSave: (String, String, String, Float) -> Unit,
+    existingGoal: NexoraGoal? = null
 ) {
 
-    var taskName by remember {
-        mutableStateOf("")
+    var goalName by remember {
+        mutableStateOf(existingGoal?.title ?: "")
     }
 
     var category by remember {
-        mutableStateOf("")
+        mutableStateOf(existingGoal?.category ?: "")
     }
 
-    var duration by remember {
-        mutableStateOf("")
+    var targetDate by remember {
+        mutableStateOf(existingGoal?.targetDate ?: "")
     }
+
+    val isEditing = existingGoal != null
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFF7F8F5)),
-        color = Color(0xFFF7F8F5)
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFFF7F8F4)
     ) {
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(22.dp)
         ) {
 
@@ -73,37 +73,39 @@ fun AddTaskScreen(
                 ) {
 
                     Text(
-                        text = "New task",
-                        fontSize = 28.sp,
+                        text = if (isEditing) "Edit goal" else "New goal",
+                        fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF18201B)
+                        color = Color(0xFF17231C)
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
 
                     Text(
-                        text = "What would you like to accomplish?",
+                        text = if (isEditing)
+                            "Refine your goal details."
+                        else
+                            "What do you want to achieve?",
                         fontSize = 14.sp,
-                        color = Color(0xFF737873)
+                        color = Color(0xFF747B75)
                     )
                 }
 
                 IconButton(
                     onClick = onBack
                 ) {
-
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color(0xFF18201B)
+                        tint = Color(0xFF17231C)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(30.dp))
 
             Text(
-                text = "Task name",
+                text = "Goal name",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF303630)
@@ -112,13 +114,13 @@ fun AddTaskScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             OutlinedTextField(
-                value = taskName,
+                value = goalName,
                 onValueChange = {
-                    taskName = it
+                    goalName = it
                 },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
-                    Text("e.g. Study Operating Systems")
+                    Text("e.g. Master Java")
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp)
@@ -151,7 +153,7 @@ fun AddTaskScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Duration",
+                text = "Target date",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF303630)
@@ -160,13 +162,13 @@ fun AddTaskScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             OutlinedTextField(
-                value = duration,
+                value = targetDate,
                 onValueChange = {
-                    duration = it
+                    targetDate = it
                 },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
-                    Text("e.g. 45 minutes")
+                    Text("e.g. September 30")
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp)
@@ -174,23 +176,61 @@ fun AddTaskScreen(
 
             Spacer(modifier = Modifier.height(30.dp))
 
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFE4EFE5)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(18.dp)
+                ) {
+
+                    Text(
+                        text = if (isEditing)
+                            "Keep moving forward"
+                        else
+                            "Start with clarity",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF17231C)
+                    )
+
+                    Spacer(modifier = Modifier.height(5.dp))
+
+                    Text(
+                        text = if (isEditing)
+                            "Small improvements keep your goals moving in the right direction."
+                        else
+                            "A clear goal gives Nexora something meaningful to help you work toward.",
+                        fontSize = 13.sp,
+                        color = Color(0xFF747B75),
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
             Button(
                 onClick = {
 
-                    if (taskName.isNotBlank()) {
+                    if (goalName.isNotBlank()) {
 
                         onSave(
-                            taskName.trim(),
+                            goalName.trim(),
 
                             if (category.isBlank())
                                 "Personal"
                             else
                                 category.trim(),
 
-                            if (duration.isBlank())
-                                "30 minutes"
+                            if (targetDate.isBlank())
+                                "No date"
                             else
-                                duration.trim()
+                                targetDate.trim(),
+
+                            existingGoal?.progress ?: 0f
                         )
                     }
                 },
@@ -202,7 +242,7 @@ fun AddTaskScreen(
                 shape = RoundedCornerShape(18.dp),
 
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1E2722),
+                    containerColor = Color(0xFF17231C),
                     contentColor = Color.White
                 )
             ) {
@@ -215,11 +255,16 @@ fun AddTaskScreen(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
-                    text = "Save task",
+                    text = if (isEditing)
+                        "Save changes"
+                    else
+                        "Create goal",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }

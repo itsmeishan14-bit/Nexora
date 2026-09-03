@@ -16,7 +16,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,35 +34,53 @@ class MainActivity : ComponentActivity() {
             NexoraTheme {
 
                 val tasks = remember {
-
                     mutableStateListOf(
-
                         PremiumTask(
-                            title = "Complete Java assignment",
-                            category = "Academic",
-                            duration = "30 minutes",
-                            completed = true
+                            "Complete Java assignment",
+                            "Academic",
+                            "30 minutes",
+                            true
                         ),
-
                         PremiumTask(
-                            title = "Study Operating Systems",
-                            category = "Academic",
-                            duration = "45 minutes",
-                            completed = false
+                            "Study Operating Systems",
+                            "Academic",
+                            "45 minutes",
+                            false
                         ),
-
                         PremiumTask(
-                            title = "Build Nexora",
-                            category = "Personal project",
-                            duration = "60 minutes",
-                            completed = false
+                            "Build Nexora",
+                            "Personal project",
+                            "60 minutes",
+                            false
                         ),
-
                         PremiumTask(
-                            title = "Read 20 pages",
-                            category = "Personal",
-                            duration = "25 minutes",
-                            completed = false
+                            "Read 20 pages",
+                            "Personal",
+                            "25 minutes",
+                            false
+                        )
+                    )
+                }
+
+                val goals = remember {
+                    mutableStateListOf(
+                        NexoraGoal(
+                            "Master Java",
+                            "Academic",
+                            "September 30",
+                            0.65f
+                        ),
+                        NexoraGoal(
+                            "Build Nexora",
+                            "Personal Project",
+                            "October 15",
+                            0.40f
+                        ),
+                        NexoraGoal(
+                            "Read 5 Books",
+                            "Personal",
+                            "December 31",
+                            0.20f
                         )
                     )
                 }
@@ -72,11 +89,18 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf("home")
                 }
 
+                var editingGoal by remember {
+                    mutableStateOf<NexoraGoal?>(null)
+                }
+
                 Scaffold(
 
                     bottomBar = {
 
-                        if (selectedScreen != "addTask") {
+                        if (
+                            selectedScreen != "addTask" &&
+                            selectedScreen != "addGoal"
+                        ) {
 
                             NavigationBar {
 
@@ -87,7 +111,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Default.Home,
+                                            Icons.Default.Home,
                                             contentDescription = "Home"
                                         )
                                     },
@@ -103,7 +127,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Default.CheckCircle,
+                                            Icons.Default.CheckCircle,
                                             contentDescription = "Tasks"
                                         )
                                     },
@@ -119,7 +143,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Default.Flag,
+                                            Icons.Default.Flag,
                                             contentDescription = "Goals"
                                         )
                                     },
@@ -135,7 +159,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     icon = {
                                         Icon(
-                                            imageVector = Icons.Default.Insights,
+                                            Icons.Default.Insights,
                                             contentDescription = "Insights"
                                         )
                                     },
@@ -158,6 +182,7 @@ class MainActivity : ComponentActivity() {
                         when (selectedScreen) {
 
                             "home" -> {
+
                                 HomeScreen(
                                     tasks = tasks,
                                     onAddTask = {
@@ -178,7 +203,19 @@ class MainActivity : ComponentActivity() {
 
                             "goals" -> {
 
-                                GoalScreen()
+                                GoalScreen(
+                                    goals = goals,
+
+                                    onAddGoal = {
+                                        editingGoal = null
+                                        selectedScreen = "addGoal"
+                                    },
+
+                                    onEditGoal = { goal ->
+                                        editingGoal = goal
+                                        selectedScreen = "addGoal"
+                                    }
+                                )
                             }
 
                             "insights" -> {
@@ -206,6 +243,57 @@ class MainActivity : ComponentActivity() {
                                         )
 
                                         selectedScreen = "tasks"
+                                    }
+                                )
+                            }
+
+                            "addGoal" -> {
+
+                                AddGoalScreen(
+
+                                    existingGoal = editingGoal,
+
+                                    onBack = {
+                                        editingGoal = null
+                                        selectedScreen = "goals"
+                                    },
+
+                                    onSave = {
+                                            title,
+                                            category,
+                                            targetDate,
+                                            progress ->
+
+                                        if (editingGoal == null) {
+
+                                            goals.add(
+                                                NexoraGoal(
+                                                    title = title,
+                                                    category = category,
+                                                    targetDate = targetDate,
+                                                    progress = progress
+                                                )
+                                            )
+
+                                        } else {
+
+                                            val index =
+                                                goals.indexOf(editingGoal)
+
+                                            if (index >= 0) {
+
+                                                goals[index] =
+                                                    NexoraGoal(
+                                                        title = title,
+                                                        category = category,
+                                                        targetDate = targetDate,
+                                                        progress = progress
+                                                    )
+                                            }
+                                        }
+
+                                        editingGoal = null
+                                        selectedScreen = "goals"
                                     }
                                 )
                             }
