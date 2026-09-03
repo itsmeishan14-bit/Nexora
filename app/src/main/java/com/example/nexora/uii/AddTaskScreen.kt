@@ -1,8 +1,5 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,73 +8,63 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Background = Color(0xFFF7F8F4)
-private val Ink = Color(0xFF17231C)
-private val Muted = Color(0xFF747B75)
-private val Green = Color(0xFF78A982)
-private val SoftGreen = Color(0xFFE4EFE5)
-private val Border = Color(0xFFE1E5E1)
-
-data class PremiumTask(
-    val title: String,
-    val category: String,
-    val duration: String,
-    var completed: Boolean = false
-)
-
 @Composable
-fun TasksScreen(
-    tasks: SnapshotStateList<PremiumTask>,
-    onAddTask: () -> Unit
+fun AddTaskScreen(
+    onBack: () -> Unit,
+    goals: List<NexoraGoal>,
+    onSave: (String, String, String, String?) -> Unit
 ) {
+    var taskName by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
+    var duration by remember { mutableStateOf("") }
 
-    val completed = tasks.count { it.completed }
-    val total = tasks.size
-
-    val progress = if (total == 0) {
-        0f
-    } else {
-        completed.toFloat() / total
+    var selectedGoal by remember {
+        mutableStateOf<NexoraGoal?>(null)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
+    var goalMenuExpanded by remember {
+        mutableStateOf(false)
+    }
 
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFFF7F8F4)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(
-                    horizontal = 22.dp,
-                    vertical = 26.dp
-                )
+                .padding(22.dp)
         ) {
 
+            // HEADER
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -86,327 +73,302 @@ fun TasksScreen(
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
-
                     Text(
-                        text = "Tasks",
-                        fontSize = 32.sp,
+                        text = "New task",
+                        fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Ink
+                        color = Color(0xFF17231C)
                     )
 
                     Spacer(
-                        modifier = Modifier.height(6.dp)
+                        modifier = Modifier.height(5.dp)
                     )
 
                     Text(
-                        text = "Focus on what matters today.",
-                        fontSize = 15.sp,
-                        color = Muted
+                        text = "What needs to get done?",
+                        fontSize = 14.sp,
+                        color = Color(0xFF747B75)
                     )
                 }
 
                 IconButton(
-                    onClick = onAddTask
+                    onClick = onBack
                 ) {
-
                     Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add task",
-                        tint = Ink
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color(0xFF17231C)
                     )
                 }
             }
 
             Spacer(
-                modifier = Modifier.height(24.dp)
+                modifier = Modifier.height(30.dp)
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Ink
-                )
-            ) {
+            // TASK NAME
+            Text(
+                text = "Task name",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF303630)
+            )
 
-                Column(
-                    modifier = Modifier.padding(20.dp)
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            OutlinedTextField(
+                value = taskName,
+                onValueChange = { taskName = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text("e.g. Complete Java assignment")
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            // CATEGORY
+            Text(
+                text = "Category",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF303630)
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            OutlinedTextField(
+                value = category,
+                onValueChange = { category = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text("e.g. Academic")
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            // DURATION
+            Text(
+                text = "Duration",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF303630)
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            OutlinedTextField(
+                value = duration,
+                onValueChange = { duration = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text("e.g. 30 minutes")
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+
+            // GOAL
+            Text(
+                text = "Goal",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF303630)
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            Column {
+
+                OutlinedButton(
+                    onClick = {
+                        if (goals.isNotEmpty()) {
+                            goalMenuExpanded = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
 
                     Text(
-                        text = "TODAY'S PROGRESS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.3.sp,
-                        color = Color(0xFFB8C1BA)
+                        text = selectedGoal?.title
+                            ?: if (goals.isEmpty()) {
+                                "No goals available"
+                            } else {
+                                "Select a goal"
+                            },
+                        modifier = Modifier.weight(1f),
+                        color = if (selectedGoal == null) {
+                            Color(0xFF747B75)
+                        } else {
+                            Color(0xFF17231C)
+                        }
                     )
 
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-
-                        Text(
-                            text = "${(progress * 100).toInt()}%",
-                            fontSize = 38.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-
-                        Spacer(
-                            modifier = Modifier.size(12.dp)
-                        )
-
-                        Text(
-                            text = "$completed of $total completed",
-                            fontSize = 13.sp,
-                            color = Color(0xFFB8C1BA),
-                            modifier = Modifier.padding(
-                                bottom = 6.dp
-                            )
-                        )
-                    }
-
-                    Spacer(
-                        modifier = Modifier.height(16.dp)
-                    )
-
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(CircleShape),
-                        color = Green,
-                        trackColor = Color(0xFF3B453F)
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Select goal",
+                        tint = Color(0xFF17231C)
                     )
                 }
-            }
 
-            Spacer(
-                modifier = Modifier.height(26.dp)
-            )
-
-            Text(
-                text = "Your tasks",
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
-
-            if (tasks.isEmpty()) {
-
-                EmptyTasksCard()
-
-            } else {
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                DropdownMenu(
+                    expanded = goalMenuExpanded,
+                    onDismissRequest = {
+                        goalMenuExpanded = false
+                    }
                 ) {
 
-                    tasks.forEach { task ->
+                    goals.forEach { goal ->
 
-                        TaskCard(
-                            task = task,
+                        DropdownMenuItem(
+                            text = {
+                                Column {
 
-                            onToggle = {
+                                    Text(
+                                        text = goal.title,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
 
-                                val index = tasks.indexOf(task)
-
-                                if (index >= 0) {
-
-                                    tasks[index] = task.copy(
-                                        completed = !task.completed
+                                    Text(
+                                        text = goal.category,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF747B75)
                                     )
                                 }
                             },
-
-                            onDelete = {
-
-                                tasks.remove(task)
+                            onClick = {
+                                selectedGoal = goal
+                                goalMenuExpanded = false
                             }
                         )
                     }
-                }
-            }
-        }
 
-        FloatingActionButton(
-            onClick = onAddTask,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(22.dp),
-            containerColor = Ink,
-            contentColor = Color.White
-        ) {
-
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add task"
-            )
-        }
-    }
-}
-
-@Composable
-private fun TaskCard(
-    task: PremiumTask,
-    onToggle: () -> Unit,
-    onDelete: () -> Unit
-) {
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
-        )
-    ) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (task.completed)
-                            Green
-                        else
-                            Border
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-
-                IconButton(
-                    onClick = onToggle,
-                    modifier = Modifier.size(28.dp)
-                ) {
-
-                    if (task.completed) {
-
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = "Completed",
-                            tint = Color.White,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "No goal",
+                                color = Color(0xFF747B75)
+                            )
+                        },
+                        onClick = {
+                            selectedGoal = null
+                            goalMenuExpanded = false
+                        }
+                    )
                 }
             }
 
             Spacer(
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.height(30.dp)
             )
 
-            Column(
+            // AI-READY INFORMATION CARD
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFE4EFE5)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(18.dp)
+                ) {
+
+                    Text(
+                        text = "Make it actionable",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF17231C)
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(5.dp)
+                    )
+
+                    Text(
+                        text = "Linking a task to a goal helps Nexora understand what your work is contributing toward.",
+                        fontSize = 13.sp,
+                        color = Color(0xFF747B75),
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+
+            Spacer(
                 modifier = Modifier.weight(1f)
-            ) {
+            )
 
-                Text(
-                    text = task.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (task.completed)
-                        Muted
-                    else
-                        Ink
-                )
+            // SAVE
+            Button(
+                onClick = {
 
-                Spacer(
-                    modifier = Modifier.height(4.dp)
-                )
+                    if (taskName.isNotBlank()) {
 
-                Text(
-                    text = "${task.category} • ${task.duration}",
-                    fontSize = 12.sp,
-                    color = Muted
-                )
-            }
-
-            IconButton(
-                onClick = onDelete
-            ) {
-
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete task",
-                    tint = Color(0xFF9A9F9B)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EmptyTasksCard() {
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
-    ) {
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            Box(
+                        onSave(
+                            taskName.trim(),
+                            if (category.isBlank()) {
+                                "Personal"
+                            } else {
+                                category.trim()
+                            },
+                            if (duration.isBlank()) {
+                                "No duration"
+                            } else {
+                                duration.trim()
+                            },
+                            selectedGoal?.title
+                        )
+                    }
+                },
                 modifier = Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .background(SoftGreen),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF17231C),
+                    contentColor = Color.White
+                )
             ) {
 
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Green,
-                    modifier = Modifier.size(25.dp)
+                    contentDescription = null
+                )
+
+                Spacer(
+                    modifier = Modifier.width(8.dp)
+                )
+
+                Text(
+                    text = "Save task",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
             Spacer(
-                modifier = Modifier.height(14.dp)
-            )
-
-            Text(
-                text = "No tasks yet",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-
-            Spacer(
-                modifier = Modifier.height(5.dp)
-            )
-
-            Text(
-                text = "Add a task and start making progress.",
-                fontSize = 13.sp,
-                color = Muted
+                modifier = Modifier.height(8.dp)
             )
         }
     }

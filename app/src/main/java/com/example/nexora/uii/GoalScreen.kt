@@ -1,10 +1,10 @@
 package com.example.nexora.uii
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -20,11 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -60,21 +55,21 @@ data class NexoraGoal(
 fun GoalScreen(
     goals: SnapshotStateList<NexoraGoal>,
     onAddGoal: () -> Unit,
-    onEditGoal: (NexoraGoal) -> Unit
+    onEditGoal: (NexoraGoal) -> Unit,
+    onOpenGoal: (NexoraGoal) -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Background)
     ) {
-
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 22.dp,
-                end = 22.dp,
                 top = 26.dp,
-                bottom = 105.dp
+                end = 22.dp,
+                bottom = 100.dp
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -88,7 +83,7 @@ fun GoalScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Goals",
+                            "Goals",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = Ink
@@ -97,7 +92,7 @@ fun GoalScreen(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
-                            text = "Turn intentions into progress.",
+                            "Turn intentions into progress.",
                             fontSize = 15.sp,
                             color = Muted
                         )
@@ -107,7 +102,7 @@ fun GoalScreen(
                         onClick = onAddGoal
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
+                            Icons.Default.Add,
                             contentDescription = "Add goal",
                             tint = Ink
                         )
@@ -116,8 +111,6 @@ fun GoalScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
@@ -131,7 +124,6 @@ fun GoalScreen(
                             .padding(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
@@ -140,20 +132,20 @@ fun GoalScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Flag,
+                                Icons.Default.Flag,
                                 contentDescription = null,
                                 tint = Green,
                                 modifier = Modifier.size(23.dp)
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(15.dp))
+                        Spacer(modifier = Modifier.size(15.dp))
 
                         Column(
                             modifier = Modifier.weight(1f)
                         ) {
                             Text(
-                                text = "ACTIVE GOALS",
+                                "ACTIVE GOALS",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.3.sp,
@@ -163,7 +155,7 @@ fun GoalScreen(
                             Spacer(modifier = Modifier.height(5.dp))
 
                             Text(
-                                text = "${goals.size} goals in progress",
+                                "${goals.size} goals in progress",
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -174,10 +166,10 @@ fun GoalScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
-                    text = "Your goals",
+                    "Your goals",
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink
@@ -190,40 +182,15 @@ fun GoalScreen(
                 }
             } else {
                 items(
-                    items = goals
+                    items = goals,
+                    key = { goal ->
+                        goal.title + goal.category + goal.targetDate
+                    }
                 ) { goal ->
-
                     GoalCard(
                         goal = goal,
-
-                        onIncrease = {
-                            val index = goals.indexOf(goal)
-
-                            if (index >= 0) {
-                                goals[index] = goal.copy(
-                                    progress = (goal.progress + 0.05f)
-                                        .coerceAtMost(1f)
-                                )
-                            }
-                        },
-
-                        onDecrease = {
-                            val index = goals.indexOf(goal)
-
-                            if (index >= 0) {
-                                goals[index] = goal.copy(
-                                    progress = (goal.progress - 0.05f)
-                                        .coerceAtLeast(0f)
-                                )
-                            }
-                        },
-
-                        onDelete = {
-                            goals.remove(goal)
-                        },
-
-                        onEdit = {
-                            onEditGoal(goal)
+                        onOpen = {
+                            onOpenGoal(goal)
                         }
                     )
                 }
@@ -239,7 +206,7 @@ fun GoalScreen(
             contentColor = Color.White
         ) {
             Icon(
-                imageVector = Icons.Default.Add,
+                Icons.Default.Add,
                 contentDescription = "Add goal"
             )
         }
@@ -249,15 +216,16 @@ fun GoalScreen(
 @Composable
 private fun GoalCard(
     goal: NexoraGoal,
-    onIncrease: () -> Unit,
-    onDecrease: () -> Unit,
-    onDelete: () -> Unit,
-    onEdit: () -> Unit
+    onOpen: () -> Unit
 ) {
     val percentage = (goal.progress * 100).toInt()
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onOpen()
+            },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
@@ -266,15 +234,12 @@ private fun GoalCard(
             defaultElevation = 1.dp
         )
     ) {
-
         Column(
             modifier = Modifier.padding(18.dp)
         ) {
-
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-
                 Box(
                     modifier = Modifier
                         .size(42.dp)
@@ -283,20 +248,20 @@ private fun GoalCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Flag,
+                        Icons.Default.Flag,
                         contentDescription = null,
                         tint = Green,
                         modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.size(14.dp))
 
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = goal.title,
+                        goal.title,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = Ink
@@ -305,14 +270,14 @@ private fun GoalCard(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "${goal.category} • ${goal.targetDate}",
+                        "${goal.category} • ${goal.targetDate}",
                         fontSize = 12.sp,
                         color = Muted
                     )
                 }
 
                 Text(
-                    text = "$percentage%",
+                    "$percentage%",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Green
@@ -337,73 +302,23 @@ private fun GoalCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-
                 Text(
-                    text = if (percentage == 100)
+                    text = if (percentage == 100) {
                         "Goal completed"
-                    else
-                        "Update progress",
+                    } else {
+                        "Tap to view goal"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = Muted,
                     modifier = Modifier.weight(1f)
                 )
 
-                IconButton(
-                    onClick = onDecrease,
-                    enabled = percentage > 0
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Remove,
-                        contentDescription = "Decrease progress",
-                        tint = if (percentage > 0) Ink else Border
-                    )
-                }
-
-                IconButton(
-                    onClick = onIncrease,
-                    enabled = percentage < 100
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AddCircle,
-                        contentDescription = "Increase progress",
-                        tint = if (percentage < 100) Green else Border
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-
-                IconButton(
-                    onClick = onEdit
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit goal",
-                        tint = Muted
-                    )
-                }
-
-                IconButton(
-                    onClick = onDelete
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete goal",
-                        tint = Muted
-                    )
-                }
-
                 Icon(
-                    imageVector = Icons.Default.ArrowForward,
+                    Icons.Default.ArrowForward,
                     contentDescription = null,
                     tint = Color(0xFFB0B6B1),
-                    modifier = Modifier
-                        .size(17.dp)
-                        .align(Alignment.CenterVertically)
+                    modifier = Modifier.size(17.dp)
                 )
             }
         }
@@ -419,14 +334,12 @@ private fun EmptyGoalsCard() {
             containerColor = Color.White
         )
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             Box(
                 modifier = Modifier
                     .size(54.dp)
@@ -435,7 +348,7 @@ private fun EmptyGoalsCard() {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Flag,
+                    Icons.Default.Flag,
                     contentDescription = null,
                     tint = Green,
                     modifier = Modifier.size(25.dp)
@@ -445,7 +358,7 @@ private fun EmptyGoalsCard() {
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "No goals yet",
+                "No goals yet",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Ink
@@ -454,7 +367,7 @@ private fun EmptyGoalsCard() {
             Spacer(modifier = Modifier.height(5.dp))
 
             Text(
-                text = "Create a goal and start making progress.",
+                "Create a goal and start making progress.",
                 fontSize = 13.sp,
                 color = Muted
             )
