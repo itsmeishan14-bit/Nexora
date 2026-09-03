@@ -27,8 +27,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,37 +44,19 @@ data class PremiumTask(
 )
 
 @Composable
-fun TasksScreen() {
-
-    val tasks = remember {
-        mutableStateListOf(
-            PremiumTask(
-                title = "Complete Java assignment",
-                category = "Academic",
-                duration = "30 minutes",
-                completed = true
-            ),
-            PremiumTask(
-                title = "Study Operating Systems",
-                category = "Academic",
-                duration = "45 minutes"
-            ),
-            PremiumTask(
-                title = "Build Nexora",
-                category = "Personal project",
-                duration = "60 minutes"
-            ),
-            PremiumTask(
-                title = "Read 20 pages",
-                category = "Personal",
-                duration = "25 minutes"
-            )
-        )
-    }
+fun TasksScreen(
+    tasks: SnapshotStateList<PremiumTask>,
+    onAddTask: () -> Unit
+) {
 
     val completedCount = tasks.count { it.completed }
-    val progress = if (tasks.isEmpty()) 0f
-    else completedCount.toFloat() / tasks.size.toFloat()
+
+    val progress =
+        if (tasks.isEmpty()) {
+            0f
+        } else {
+            completedCount.toFloat() / tasks.size.toFloat()
+        }
 
     Box(
         modifier = Modifier
@@ -91,7 +72,10 @@ fun TasksScreen() {
         ) {
 
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
 
                 Text(
                     text = "Tasks",
@@ -100,7 +84,9 @@ fun TasksScreen() {
                     color = Color(0xFF18201B)
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(
+                    modifier = Modifier.height(6.dp)
+                )
 
                 Text(
                     text = "Stay focused. Get things done.",
@@ -108,7 +94,9 @@ fun TasksScreen() {
                     color = Color(0xFF737873)
                 )
 
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(
+                    modifier = Modifier.height(22.dp)
+                )
 
                 ProgressCard(
                     completed = completedCount,
@@ -116,7 +104,9 @@ fun TasksScreen() {
                     progress = progress
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -139,7 +129,9 @@ fun TasksScreen() {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(
+                    modifier = Modifier.height(4.dp)
+                )
             }
 
             items(
@@ -150,9 +142,11 @@ fun TasksScreen() {
                 TaskCard(
                     task = task,
                     onClick = {
+
                         val index = tasks.indexOf(task)
 
                         if (index >= 0) {
+
                             tasks[index] = task.copy(
                                 completed = !task.completed
                             )
@@ -162,26 +156,22 @@ fun TasksScreen() {
             }
 
             item {
-                Spacer(modifier = Modifier.height(100.dp))
+
+                Spacer(
+                    modifier = Modifier.height(100.dp)
+                )
             }
         }
 
         FloatingActionButton(
-            onClick = {
-                tasks.add(
-                    PremiumTask(
-                        title = "New task",
-                        category = "Personal",
-                        duration = "30 minutes"
-                    )
-                )
-            },
+            onClick = onAddTask,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(22.dp),
             containerColor = Color(0xFF1E2722),
             contentColor = Color.White
         ) {
+
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = "Add task"
@@ -216,7 +206,9 @@ private fun ProgressCard(
                 color = Color(0xFFB9C0BA)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
 
             Row(
                 verticalAlignment = Alignment.Bottom
@@ -229,7 +221,9 @@ private fun ProgressCard(
                     color = Color.White
                 )
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(
+                    modifier = Modifier.width(10.dp)
+                )
 
                 Text(
                     text = "$completed of $total tasks completed",
@@ -239,7 +233,9 @@ private fun ProgressCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(
+                modifier = Modifier.height(16.dp)
+            )
 
             Box(
                 modifier = Modifier
@@ -270,7 +266,9 @@ private fun TaskCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .clickable {
+                onClick()
+            },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
@@ -314,7 +312,9 @@ private fun TaskCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(15.dp))
+            Spacer(
+                modifier = Modifier.width(15.dp)
+            )
 
             Column(
                 modifier = Modifier.weight(1f)
@@ -324,13 +324,16 @@ private fun TaskCard(
                     text = task.title,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (task.completed)
-                        Color(0xFF747A75)
-                    else
-                        Color(0xFF18201B)
+                    color =
+                        if (task.completed)
+                            Color(0xFF747A75)
+                        else
+                            Color(0xFF18201B)
                 )
 
-                Spacer(modifier = Modifier.height(5.dp))
+                Spacer(
+                    modifier = Modifier.height(5.dp)
+                )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically
@@ -357,7 +360,8 @@ private fun TaskCard(
             }
 
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                imageVector =
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Open task",
                 tint = Color(0xFF9BA19D),
                 modifier = Modifier.size(25.dp)
