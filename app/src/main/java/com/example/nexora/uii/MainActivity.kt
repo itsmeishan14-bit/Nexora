@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.nexora.ui.theme.NexoraTheme
+import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
 
@@ -131,6 +132,15 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // --------------------------------
+                // DAILY PROGRESS HISTORY
+                // --------------------------------
+
+                val progressHistory = remember {
+
+                    mutableStateListOf<DailyProgress>()
+                }
+
+                // --------------------------------
                 // NAVIGATION STATE
                 // --------------------------------
 
@@ -146,10 +156,55 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<NexoraGoal?>(null)
                 }
 
-                // Goal that should be automatically
-                // selected when creating a task.
                 var taskGoal by remember {
                     mutableStateOf<NexoraGoal?>(null)
+                }
+
+                // --------------------------------
+                // UPDATE TODAY'S PROGRESS
+                // --------------------------------
+
+                fun updateTodayProgress() {
+
+                    val today = LocalDate.now()
+
+                    val completedTasks = tasks.count {
+                        it.completed
+                    }
+
+                    val totalTasks = tasks.size
+
+                    val goalsWorkedOn = tasks
+                        .filter {
+                            it.goalTitle != null
+                        }
+                        .mapNotNull {
+                            it.goalTitle
+                        }
+                        .distinct()
+                        .size
+
+                    val existingIndex = progressHistory.indexOfFirst {
+                        it.date == today
+                    }
+
+                    val todayProgress = DailyProgress(
+                        date = today,
+                        tasksPlanned = totalTasks,
+                        tasksCompleted = completedTasks,
+                        focusMinutes = 0,
+                        goalsWorkedOn = goalsWorkedOn,
+                        carriedTasks = 0
+                    )
+
+                    if (existingIndex >= 0) {
+
+                        progressHistory[existingIndex] = todayProgress
+
+                    } else {
+
+                        progressHistory.add(todayProgress)
+                    }
                 }
 
                 // --------------------------------
@@ -179,8 +234,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Calculate initial progress.
+                // Initial calculations
                 refreshGoalProgress()
+                updateTodayProgress()
 
                 // --------------------------------
                 // APP
@@ -304,6 +360,7 @@ class MainActivity : ComponentActivity() {
                                             )
 
                                             refreshGoalProgress()
+                                            updateTodayProgress()
                                         }
                                     }
                                 )
@@ -334,6 +391,7 @@ class MainActivity : ComponentActivity() {
                                             )
 
                                             refreshGoalProgress()
+                                            updateTodayProgress()
                                         }
                                     }
                                 )
@@ -402,9 +460,11 @@ class MainActivity : ComponentActivity() {
                                             val updatedTasks = tasks.map { task ->
 
                                                 if (task.goalTitle == goal.title) {
+
                                                     task.copy(
                                                         goalTitle = null
                                                     )
+
                                                 } else {
                                                     task
                                                 }
@@ -415,6 +475,9 @@ class MainActivity : ComponentActivity() {
 
                                             selectedGoal = null
                                             taskGoal = null
+
+                                            refreshGoalProgress()
+                                            updateTodayProgress()
 
                                             selectedScreen = "goals"
                                         },
@@ -430,10 +493,10 @@ class MainActivity : ComponentActivity() {
                                                 )
 
                                                 refreshGoalProgress()
+                                                updateTodayProgress()
                                             }
                                         },
 
-                                        // THIS is where Add Task belongs.
                                         onAddTask = {
 
                                             taskGoal = goal
@@ -488,6 +551,7 @@ class MainActivity : ComponentActivity() {
                                         )
 
                                         refreshGoalProgress()
+                                        updateTodayProgress()
 
                                         taskGoal = null
 
@@ -552,6 +616,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         refreshGoalProgress()
+                                        updateTodayProgress()
 
                                         editingGoal = null
                                         selectedGoal = null
