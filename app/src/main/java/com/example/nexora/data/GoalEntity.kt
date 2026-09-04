@@ -7,7 +7,6 @@ import androidx.room3.PrimaryKey
 data class GoalEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-
     val title: String,
     val category: String,
     val targetDate: String,

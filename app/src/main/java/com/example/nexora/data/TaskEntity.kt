@@ -8,7 +8,6 @@ import com.example.nexora.uii.TaskPriority
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-
     val title: String,
     val category: String,
     val duration: String,

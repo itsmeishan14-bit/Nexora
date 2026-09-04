@@ -45,6 +45,7 @@ private val SoftGreen = Color(0xFFE4EFE5)
 private val Border = Color(0xFFE1E5E1)
 
 data class NexoraGoal(
+    val id: Long = 0,
     val title: String,
     val category: String,
     val targetDate: String,

@@ -51,6 +51,7 @@ enum class TaskPriority {
 }
 
 data class PremiumTask(
+    val id: Long = 0,
     val title: String,
     val category: String,
     val duration: String,
@@ -58,7 +59,6 @@ data class PremiumTask(
     val priority: TaskPriority = TaskPriority.MEDIUM,
     var completed: Boolean = false
 )
-
 @Composable
 fun TasksScreen(
     tasks: SnapshotStateList<PremiumTask>,

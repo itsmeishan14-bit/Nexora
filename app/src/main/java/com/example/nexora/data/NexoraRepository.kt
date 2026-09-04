@@ -1,8 +1,8 @@
 package com.example.nexora.data
 
+import com.example.nexora.uii.DailyProgress
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
-import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -22,6 +22,7 @@ class NexoraRepository(
         return taskDao.observeAll().map { entities ->
             entities.map { entity ->
                 PremiumTask(
+                    id = entity.id,
                     title = entity.title,
                     category = entity.category,
                     duration = entity.duration,
@@ -47,40 +48,31 @@ class NexoraRepository(
     }
 
     suspend fun updateTask(task: PremiumTask) {
-        val existingTasks = taskDao.observeAllOnce()
-
-        val entity = existingTasks.firstOrNull {
-            it.title == task.title &&
-                    it.category == task.category &&
-                    it.duration == task.duration
-        }
-
-        if (entity != null) {
-            taskDao.update(
-                entity.copy(
-                    title = task.title,
-                    category = task.category,
-                    duration = task.duration,
-                    goalTitle = task.goalTitle,
-                    priority = task.priority,
-                    completed = task.completed
-                )
+        taskDao.update(
+            TaskEntity(
+                id = task.id,
+                title = task.title,
+                category = task.category,
+                duration = task.duration,
+                goalTitle = task.goalTitle,
+                priority = task.priority,
+                completed = task.completed
             )
-        }
+        )
     }
 
     suspend fun deleteTask(task: PremiumTask) {
-        val existingTasks = taskDao.observeAllOnce()
-
-        val entity = existingTasks.firstOrNull {
-            it.title == task.title &&
-                    it.category == task.category &&
-                    it.duration == task.duration
-        }
-
-        if (entity != null) {
-            taskDao.delete(entity)
-        }
+        taskDao.delete(
+            TaskEntity(
+                id = task.id,
+                title = task.title,
+                category = task.category,
+                duration = task.duration,
+                goalTitle = task.goalTitle,
+                priority = task.priority,
+                completed = task.completed
+            )
+        )
     }
 
     // ---------------------------------------------------------
@@ -91,6 +83,7 @@ class NexoraRepository(
         return goalDao.observeAll().map { entities ->
             entities.map { entity ->
                 NexoraGoal(
+                    id = entity.id,
                     title = entity.title,
                     category = entity.category,
                     targetDate = entity.targetDate,
@@ -112,36 +105,27 @@ class NexoraRepository(
     }
 
     suspend fun updateGoal(goal: NexoraGoal) {
-        val existingGoals = goalDao.observeAllOnce()
-
-        val entity = existingGoals.firstOrNull {
-            it.title == goal.title &&
-                    it.category == goal.category
-        }
-
-        if (entity != null) {
-            goalDao.update(
-                entity.copy(
-                    title = goal.title,
-                    category = goal.category,
-                    targetDate = goal.targetDate,
-                    progress = goal.progress
-                )
+        goalDao.update(
+            GoalEntity(
+                id = goal.id,
+                title = goal.title,
+                category = goal.category,
+                targetDate = goal.targetDate,
+                progress = goal.progress
             )
-        }
+        )
     }
 
     suspend fun deleteGoal(goal: NexoraGoal) {
-        val existingGoals = goalDao.observeAllOnce()
-
-        val entity = existingGoals.firstOrNull {
-            it.title == goal.title &&
-                    it.category == goal.category
-        }
-
-        if (entity != null) {
-            goalDao.delete(entity)
-        }
+        goalDao.delete(
+            GoalEntity(
+                id = goal.id,
+                title = goal.title,
+                category = goal.category,
+                targetDate = goal.targetDate,
+                progress = goal.progress
+            )
+        )
     }
 
     // ---------------------------------------------------------
