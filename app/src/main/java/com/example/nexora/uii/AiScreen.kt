@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -35,12 +36,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nexora.ai.AiRecommendation
 import com.example.nexora.ai.AiRecommendationType
 import com.example.nexora.ai.NexoraAiEngine
 import com.example.nexora.ai.NexoraAiViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.ViewModelProvider
 
 private val NexoraBackground = Color(0xFFF7F8F4)
 private val NexoraInk = Color(0xFF17231C)
@@ -51,15 +53,17 @@ private val NexoraBorder = Color(0xFFE1E5E1)
 
 @Composable
 fun AiScreen(
-    engine: NexoraAiEngine
+    engine: NexoraAiEngine,
+    onOpenGoalDecomposer: () -> Unit
 ) {
 
     val viewModel: NexoraAiViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
 
             @Suppress("UNCHECKED_CAST")
-            override fun <T : androidx.lifecycle.ViewModel>
-                    create(modelClass: Class<T>): T {
+            override fun <T : ViewModel> create(
+                modelClass: Class<T>
+            ): T {
 
                 return NexoraAiViewModel(
                     engine = engine
@@ -219,6 +223,107 @@ fun AiScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+            }
+        }
+
+        // ====================================================
+        // GOAL DECOMPOSER
+        // ====================================================
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            border = BorderStroke(
+                1.dp,
+                NexoraBorder
+            )
+        ) {
+
+            Column(
+                modifier = Modifier.padding(20.dp)
+            ) {
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(NexoraSoftGreen),
+                        contentAlignment = Alignment.Center
+                    ) {
+
+                        Icon(
+                            imageVector = Icons.Default.AccountTree,
+                            contentDescription = null,
+                            tint = NexoraGreen,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(
+                        modifier = Modifier.width(12.dp)
+                    )
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+
+                        Text(
+                            text = "Break down a goal",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NexoraInk
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(3.dp)
+                        )
+
+                        Text(
+                            text = "Turn a big goal into practical steps.",
+                            fontSize = 13.sp,
+                            color = NexoraMuted
+                        )
+                    }
+                }
+
+                Spacer(
+                    modifier = Modifier.height(16.dp)
+                )
+
+                Button(
+                    onClick = {
+                        onOpenGoalDecomposer()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NexoraSoftGreen,
+                        contentColor = NexoraInk
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+
+                    Icon(
+                        imageVector = Icons.Default.AccountTree,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+
+                    Spacer(
+                        modifier = Modifier.width(8.dp)
+                    )
+
+                    Text(
+                        text = "Open Goal Decomposer",
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

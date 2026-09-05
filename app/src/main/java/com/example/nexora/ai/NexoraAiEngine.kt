@@ -7,31 +7,42 @@ class NexoraAiEngine(
 
     suspend fun analyze(): List<AiRecommendation> {
         val context = contextBuilder.build()
-
         return aiService.generateRecommendations(context)
     }
 
     suspend fun createDailyPlan(): List<AiRecommendation> {
         val context = contextBuilder.build()
-
         return aiService.generateDailyPlan(context)
     }
 
     suspend fun analyzeGoals(): List<AiRecommendation> {
         val context = contextBuilder.build()
-
         return aiService.analyzeGoals(context)
     }
 
     suspend fun analyzeProductivity(): List<AiRecommendation> {
         val context = contextBuilder.build()
-
         return aiService.analyzeProductivity(context)
+    }
+
+    suspend fun decomposeGoal(
+        goalTitle: String,
+        goalDescription: String = ""
+    ): AiGoalDecomposition {
+
+        val context = contextBuilder.build()
+
+        return aiService.decomposeGoal(
+            context = context,
+            goalTitle = goalTitle,
+            goalDescription = goalDescription
+        )
     }
 
     suspend fun ask(
         userMessage: String
     ): String {
+
         val context = contextBuilder.build()
 
         return aiService.askNexora(

@@ -35,7 +35,6 @@ import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -141,19 +140,15 @@ class MainActivity : ComponentActivity() {
                         }
 
                     if (existingIndex >= 0) {
-
                         progressHistory[existingIndex] =
                             todayProgress
-
                     } else {
-
                         progressHistory.add(
                             todayProgress
                         )
                     }
 
                     scope.launch {
-
                         repository.saveDailyProgress(
                             DailyProgressEntity(
                                 date = today.toString(),
@@ -175,8 +170,7 @@ class MainActivity : ComponentActivity() {
 
                     goals.indices.forEach { index ->
 
-                        val goal =
-                            goals[index]
+                        val goal = goals[index]
 
                         val newProgress =
                             calculateGoalProgress(
@@ -189,20 +183,13 @@ class MainActivity : ComponentActivity() {
                                 progress = newProgress
                             )
 
-                        goals[index] =
-                            updatedGoal
+                        goals[index] = updatedGoal
 
-                        if (
-                            selectedGoal?.id ==
-                            updatedGoal.id
-                        ) {
-
-                            selectedGoal =
-                                updatedGoal
+                        if (selectedGoal?.id == updatedGoal.id) {
+                            selectedGoal = updatedGoal
                         }
 
                         scope.launch {
-
                             repository.updateGoal(
                                 updatedGoal
                             )
@@ -230,9 +217,6 @@ class MainActivity : ComponentActivity() {
                         repository
                             .observeDailyProgress()
                             .first()
-
-                    // Room is the single source of truth.
-                    // No demo data is created.
 
                     tasks.clear()
                     tasks.addAll(savedTasks)
@@ -264,14 +248,9 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
-                    // ========================================================
-                    // RECALCULATE GOAL PROGRESS
-                    // ========================================================
-
                     goals.indices.forEach { index ->
 
-                        val goal =
-                            goals[index]
+                        val goal = goals[index]
 
                         val calculatedProgress =
                             calculateGoalProgress(
@@ -289,7 +268,6 @@ class MainActivity : ComponentActivity() {
                             updatedGoal
 
                         scope.launch {
-
                             repository.updateGoal(
                                 updatedGoal
                             )
@@ -310,27 +288,19 @@ class MainActivity : ComponentActivity() {
                         if (
                             selectedScreen != "addTask" &&
                             selectedScreen != "addGoal" &&
-                            selectedScreen != "goalDetails"
+                            selectedScreen != "goalDetails" &&
+                            selectedScreen != "goalDecomposer"
                         ) {
 
                             NavigationBar {
 
-                                // ==================================================
-                                // HOME
-                                // ==================================================
-
                                 NavigationBarItem(
-
                                     selected =
                                         selectedScreen == "home",
-
                                     onClick = {
-                                        selectedScreen =
-                                            "home"
+                                        selectedScreen = "home"
                                     },
-
                                     icon = {
-
                                         Icon(
                                             imageVector =
                                                 Icons.Default.Home,
@@ -338,28 +308,18 @@ class MainActivity : ComponentActivity() {
                                                 "Home"
                                         )
                                     },
-
                                     label = {
                                         Text("Home")
                                     }
                                 )
 
-                                // ==================================================
-                                // TASKS
-                                // ==================================================
-
                                 NavigationBarItem(
-
                                     selected =
                                         selectedScreen == "tasks",
-
                                     onClick = {
-                                        selectedScreen =
-                                            "tasks"
+                                        selectedScreen = "tasks"
                                     },
-
                                     icon = {
-
                                         Icon(
                                             imageVector =
                                                 Icons.Default.CheckCircle,
@@ -367,28 +327,18 @@ class MainActivity : ComponentActivity() {
                                                 "Tasks"
                                         )
                                     },
-
                                     label = {
                                         Text("Tasks")
                                     }
                                 )
 
-                                // ==================================================
-                                // GOALS
-                                // ==================================================
-
                                 NavigationBarItem(
-
                                     selected =
                                         selectedScreen == "goals",
-
                                     onClick = {
-                                        selectedScreen =
-                                            "goals"
+                                        selectedScreen = "goals"
                                     },
-
                                     icon = {
-
                                         Icon(
                                             imageVector =
                                                 Icons.Default.Flag,
@@ -396,28 +346,18 @@ class MainActivity : ComponentActivity() {
                                                 "Goals"
                                         )
                                     },
-
                                     label = {
                                         Text("Goals")
                                     }
                                 )
 
-                                // ==================================================
-                                // INSIGHTS
-                                // ==================================================
-
                                 NavigationBarItem(
-
                                     selected =
                                         selectedScreen == "insights",
-
                                     onClick = {
-                                        selectedScreen =
-                                            "insights"
+                                        selectedScreen = "insights"
                                     },
-
                                     icon = {
-
                                         Icon(
                                             imageVector =
                                                 Icons.Default.Insights,
@@ -425,28 +365,18 @@ class MainActivity : ComponentActivity() {
                                                 "Insights"
                                         )
                                     },
-
                                     label = {
                                         Text("Insights")
                                     }
                                 )
 
-                                // ==================================================
-                                // AI
-                                // ==================================================
-
                                 NavigationBarItem(
-
                                     selected =
                                         selectedScreen == "ai",
-
                                     onClick = {
-                                        selectedScreen =
-                                            "ai"
+                                        selectedScreen = "ai"
                                     },
-
                                     icon = {
-
                                         Icon(
                                             imageVector =
                                                 Icons.Default.AutoAwesome,
@@ -454,7 +384,6 @@ class MainActivity : ComponentActivity() {
                                                 "Nexora AI"
                                         )
                                     },
-
                                     label = {
                                         Text("AI")
                                     }
@@ -483,16 +412,12 @@ class MainActivity : ComponentActivity() {
                             "home" -> {
 
                                 HomeScreen(
-
                                     tasks = tasks,
-
                                     progressHistory =
                                         progressHistory,
 
                                     onAddTask = {
-
                                         taskGoal = null
-
                                         selectedScreen =
                                             "addTask"
                                     },
@@ -516,7 +441,6 @@ class MainActivity : ComponentActivity() {
                                                 updatedTask
 
                                             scope.launch {
-
                                                 repository.updateTask(
                                                     updatedTask
                                                 )
@@ -536,13 +460,10 @@ class MainActivity : ComponentActivity() {
                             "tasks" -> {
 
                                 TasksScreen(
-
                                     tasks = tasks,
 
                                     onAddTask = {
-
                                         taskGoal = null
-
                                         selectedScreen =
                                             "addTask"
                                     },
@@ -566,7 +487,6 @@ class MainActivity : ComponentActivity() {
                                                 updatedTask
 
                                             scope.launch {
-
                                                 repository.updateTask(
                                                     updatedTask
                                                 )
@@ -603,7 +523,6 @@ class MainActivity : ComponentActivity() {
                             "goals" -> {
 
                                 GoalScreen(
-
                                     goals = goals,
 
                                     onAddGoal = {
@@ -617,11 +536,8 @@ class MainActivity : ComponentActivity() {
 
                                     onEditGoal = { goal ->
 
-                                        editingGoal =
-                                            goal
-
-                                        selectedGoal =
-                                            goal
+                                        editingGoal = goal
+                                        selectedGoal = goal
 
                                         selectedScreen =
                                             "addGoal"
@@ -629,8 +545,7 @@ class MainActivity : ComponentActivity() {
 
                                     onOpenGoal = { goal ->
 
-                                        selectedGoal =
-                                            goal
+                                        selectedGoal = goal
 
                                         selectedScreen =
                                             "goalDetails"
@@ -658,8 +573,7 @@ class MainActivity : ComponentActivity() {
 
                                         onBack = {
 
-                                            selectedGoal =
-                                                null
+                                            selectedGoal = null
 
                                             selectedScreen =
                                                 "goals"
@@ -667,8 +581,7 @@ class MainActivity : ComponentActivity() {
 
                                         onEdit = {
 
-                                            editingGoal =
-                                                goal
+                                            editingGoal = goal
 
                                             selectedScreen =
                                                 "addGoal"
@@ -704,34 +617,26 @@ class MainActivity : ComponentActivity() {
                                                             task.goalTitle ==
                                                             goal.title
                                                         ) {
-
                                                             task.copy(
                                                                 goalTitle =
                                                                     null
                                                             )
-
                                                         } else {
-
                                                             task
                                                         }
                                                     }
 
                                                 tasks.clear()
-
                                                 tasks.addAll(
                                                     updatedTasks
                                                 )
 
                                                 goals.removeAll {
-                                                    it.id ==
-                                                            goal.id
+                                                    it.id == goal.id
                                                 }
 
-                                                selectedGoal =
-                                                    null
-
-                                                taskGoal =
-                                                    null
+                                                selectedGoal = null
+                                                taskGoal = null
 
                                                 updateTodayProgress()
 
@@ -759,7 +664,6 @@ class MainActivity : ComponentActivity() {
                                                     updatedTask
 
                                                 scope.launch {
-
                                                     repository.updateTask(
                                                         updatedTask
                                                     )
@@ -772,8 +676,7 @@ class MainActivity : ComponentActivity() {
 
                                         onAddTask = {
 
-                                            taskGoal =
-                                                goal
+                                            taskGoal = goal
 
                                             selectedScreen =
                                                 "addTask"
@@ -787,7 +690,6 @@ class MainActivity : ComponentActivity() {
                             // ==================================================
 
                             "insights" -> {
-
                                 InsightScreen()
                             }
 
@@ -798,7 +700,25 @@ class MainActivity : ComponentActivity() {
                             "ai" -> {
 
                                 AiScreen(
-                                    engine = aiEngine
+                                    engine = aiEngine,
+                                    onOpenGoalDecomposer = {
+                                        selectedScreen =
+                                            "goalDecomposer"
+                                    }
+                                )
+                            }
+
+                            // ==================================================
+                            // AI GOAL DECOMPOSER
+                            // ==================================================
+
+                            "goalDecomposer" -> {
+
+                                AiGoalDecomposerScreen(
+                                    engine = aiEngine,
+                                    onBack = {
+                                        selectedScreen = "ai"
+                                    }
                                 )
                             }
 
@@ -867,8 +787,7 @@ class MainActivity : ComponentActivity() {
                                             updateTodayProgress()
                                         }
 
-                                        taskGoal =
-                                            null
+                                        taskGoal = null
 
                                         selectedScreen =
                                             "tasks"
@@ -889,11 +808,8 @@ class MainActivity : ComponentActivity() {
 
                                     onBack = {
 
-                                        editingGoal =
-                                            null
-
-                                        selectedGoal =
-                                            null
+                                        editingGoal = null
+                                        selectedGoal = null
 
                                         selectedScreen =
                                             "goals"
@@ -906,8 +822,7 @@ class MainActivity : ComponentActivity() {
                                             _ ->
 
                                         if (
-                                            editingGoal ==
-                                            null
+                                            editingGoal == null
                                         ) {
 
                                             val newGoal =
@@ -976,7 +891,6 @@ class MainActivity : ComponentActivity() {
                                                     selectedGoal?.id ==
                                                     updatedGoal.id
                                                 ) {
-
                                                     selectedGoal =
                                                         updatedGoal
                                                 }
@@ -1011,11 +925,11 @@ class MainActivity : ComponentActivity() {
                                                                 }
 
                                                             if (
-                                                                taskIndex >=
-                                                                0
+                                                                taskIndex >= 0
                                                             ) {
-
-                                                                tasks[taskIndex] =
+                                                                tasks[
+                                                                    taskIndex
+                                                                ] =
                                                                     updatedTask
                                                             }
                                                         }
@@ -1026,11 +940,8 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
 
-                                        editingGoal =
-                                            null
-
-                                        selectedGoal =
-                                            null
+                                        editingGoal = null
+                                        selectedGoal = null
 
                                         selectedScreen =
                                             "goals"

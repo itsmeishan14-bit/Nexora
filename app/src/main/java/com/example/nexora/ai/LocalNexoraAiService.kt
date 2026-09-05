@@ -32,6 +32,19 @@ class LocalNexoraAiService : NexoraAiService {
         return planner.analyzeProductivity(context)
     }
 
+    override suspend fun decomposeGoal(
+        context: AiContext,
+        goalTitle: String,
+        goalDescription: String
+    ): AiGoalDecomposition {
+
+        return planner.decomposeGoal(
+            context = context,
+            goalTitle = goalTitle,
+            goalDescription = goalDescription
+        )
+    }
+
     override suspend fun askNexora(
         context: AiContext,
         userMessage: String

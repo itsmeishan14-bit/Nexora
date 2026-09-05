@@ -4,6 +4,75 @@ import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 
 class AiPlanner {
+    fun decomposeGoal(
+        context: AiContext,
+        goalTitle: String,
+        goalDescription: String = ""
+    ): AiGoalDecomposition {
+
+        val cleanTitle = goalTitle.trim()
+
+        if (cleanTitle.isBlank()) {
+            return AiGoalDecomposition(
+                goalTitle = "",
+                summary = "Give Nexora a goal so it can break it into meaningful steps.",
+                steps = emptyList()
+            )
+        }
+
+        val steps = mutableListOf<AiGoalStep>()
+
+        steps.add(
+            AiGoalStep(
+                title = "Define the first milestone",
+                description = "Clarify what meaningful progress toward \"$cleanTitle\" looks like.",
+                priority = AiPriority.HIGH,
+                estimatedDuration = "20 min",
+                order = 1
+            )
+        )
+
+        steps.add(
+            AiGoalStep(
+                title = "Build the foundation",
+                description = "Learn or complete the fundamental work required for \"$cleanTitle\".",
+                priority = AiPriority.HIGH,
+                estimatedDuration = "60 min",
+                order = 2
+            )
+        )
+
+        steps.add(
+            AiGoalStep(
+                title = "Complete a practical step",
+                description = "Turn the goal into a concrete piece of work you can finish.",
+                priority = AiPriority.MEDIUM,
+                estimatedDuration = "60 min",
+                order = 3
+            )
+        )
+
+        steps.add(
+            AiGoalStep(
+                title = "Review your progress",
+                description = "Evaluate what is complete and identify the next useful step.",
+                priority = AiPriority.MEDIUM,
+                estimatedDuration = "20 min",
+                order = 4
+            )
+        )
+
+        return AiGoalDecomposition(
+            goalTitle = cleanTitle,
+            summary =
+                if (goalDescription.isBlank()) {
+                    "Nexora has broken your goal into a sequence of practical steps."
+                } else {
+                    "Nexora used your goal and description to create a practical starting sequence."
+                },
+            steps = steps
+        )
+    }
 
     fun analyze(context: AiContext): List<AiRecommendation> {
 

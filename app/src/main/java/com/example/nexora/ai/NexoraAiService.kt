@@ -18,6 +18,12 @@ interface NexoraAiService {
         context: AiContext
     ): List<AiRecommendation>
 
+    suspend fun decomposeGoal(
+        context: AiContext,
+        goalTitle: String,
+        goalDescription: String = ""
+    ): AiGoalDecomposition
+
     suspend fun askNexora(
         context: AiContext,
         userMessage: String
