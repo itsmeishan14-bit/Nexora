@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -43,35 +44,25 @@ private val Green = Color(0xFF78A982)
 private val SoftGreen = Color(0xFFE4EFE5)
 private val Border = Color(0xFFE1E5E1)
 
-enum class TaskPriority {
-    LOW,
-    MEDIUM,
-    HIGH,
-    URGENT
-}
-
-data class PremiumTask(
-    val id: Long = 0,
-    val title: String,
-    val category: String,
-    val duration: String,
-    val goalTitle: String? = null,
-    val priority: TaskPriority = TaskPriority.MEDIUM,
-    var completed: Boolean = false
-)
 @Composable
 fun TasksScreen(
     tasks: SnapshotStateList<PremiumTask>,
     onAddTask: () -> Unit,
-    onToggleTask: (PremiumTask) -> Unit
+    onToggleTask: (PremiumTask) -> Unit,
+
+    // Delete callback
+    onDeleteTask: (PremiumTask) -> Unit = { task ->
+        tasks.remove(task)
+    }
 ) {
+
     val completed = tasks.count { it.completed }
     val total = tasks.size
 
     val progress = if (total == 0) {
         0f
     } else {
-        completed.toFloat() / total
+        completed.toFloat() / total.toFloat()
     }
 
     Box(
@@ -82,34 +73,43 @@ fun TasksScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 22.dp,
                 top = 26.dp,
                 end = 22.dp,
-                bottom = 100.dp
+                bottom = 110.dp
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
 
+            // ============================================================
+            // HEADER
+            // ============================================================
+
             item {
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+
                     Column(
                         modifier = Modifier.weight(1f)
                     ) {
+
                         Text(
-                            "Tasks",
+                            text = "Tasks",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = Ink
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(
+                            modifier = Modifier.height(6.dp)
+                        )
 
                         Text(
-                            "Focus on what matters today.",
+                            text = "Focus on what matters today.",
                             fontSize = 15.sp,
                             color = Muted
                         )
@@ -118,8 +118,9 @@ fun TasksScreen(
                     IconButton(
                         onClick = onAddTask
                     ) {
+
                         Icon(
-                            Icons.Default.Add,
+                            imageVector = Icons.Default.Add,
                             contentDescription = "Add task",
                             tint = Ink
                         )
@@ -127,7 +128,12 @@ fun TasksScreen(
                 }
             }
 
+            // ============================================================
+            // PROGRESS CARD
+            // ============================================================
+
             item {
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
@@ -135,41 +141,50 @@ fun TasksScreen(
                         containerColor = Ink
                     )
                 ) {
+
                     Column(
                         modifier = Modifier.padding(20.dp)
                     ) {
+
                         Text(
-                            "TODAY'S PROGRESS",
+                            text = "TODAY'S PROGRESS",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.3.sp,
                             color = Color(0xFFB8C1BA)
                         )
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.Bottom
                         ) {
+
                             Text(
-                                "${(progress * 100).toInt()}%",
+                                text = "${(progress * 100).toInt()}%",
                                 fontSize = 38.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
 
-                            Spacer(modifier = Modifier.size(12.dp))
+                            Spacer(
+                                modifier = Modifier.size(12.dp)
+                            )
 
                             Text(
-                                "$completed of $total completed",
+                                text = "$completed of $total completed",
                                 fontSize = 13.sp,
                                 color = Color(0xFFB8C1BA),
                                 modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(
+                            modifier = Modifier.height(16.dp)
+                        )
 
                         LinearProgressIndicator(
                             progress = { progress },
@@ -184,16 +199,27 @@ fun TasksScreen(
                 }
             }
 
+            // ============================================================
+            // SECTION TITLE
+            // ============================================================
+
             item {
-                Spacer(modifier = Modifier.height(10.dp))
+
+                Spacer(
+                    modifier = Modifier.height(8.dp)
+                )
 
                 Text(
-                    "Your tasks",
+                    text = "Your tasks",
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
                     color = Ink
                 )
             }
+
+            // ============================================================
+            // EMPTY STATE
+            // ============================================================
 
             if (tasks.isEmpty()) {
 
@@ -203,25 +229,43 @@ fun TasksScreen(
 
             } else {
 
-                items(
+                // ========================================================
+                // TASK LIST
+                // ========================================================
+
+                itemsIndexed(
                     items = tasks,
-                    key = { task ->
-                        task.title + task.category + task.duration
+
+                    // NEVER use title/category/duration as the key.
+                    key = { index, task ->
+
+                        if (task.id != 0L) {
+                            "task_${task.id}"
+                        } else {
+                            "temporary_task_$index"
+                        }
                     }
-                ) { task ->
+
+                ) { _, task ->
 
                     TaskCard(
                         task = task,
+
                         onToggle = {
                             onToggleTask(task)
                         },
+
                         onDelete = {
-                            tasks.remove(task)
+                            onDeleteTask(task)
                         }
                     )
                 }
             }
         }
+
+        // ================================================================
+        // ADD BUTTON
+        // ================================================================
 
         FloatingActionButton(
             onClick = onAddTask,
@@ -231,13 +275,18 @@ fun TasksScreen(
             containerColor = Ink,
             contentColor = Color.White
         ) {
+
             Icon(
-                Icons.Default.Add,
+                imageVector = Icons.Default.Add,
                 contentDescription = "Add task"
             )
         }
     }
 }
+
+// ========================================================================
+// TASK CARD
+// ========================================================================
 
 @Composable
 private fun TaskCard(
@@ -245,6 +294,7 @@ private fun TaskCard(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -255,6 +305,7 @@ private fun TaskCard(
             defaultElevation = 1.dp
         )
     ) {
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -262,22 +313,33 @@ private fun TaskCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
 
+            // ============================================================
+            // COMPLETE BUTTON
+            // ============================================================
+
             Box(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(
-                        if (task.completed) Green else Border
+                        if (task.completed) {
+                            Green
+                        } else {
+                            Border
+                        }
                     ),
                 contentAlignment = Alignment.Center
             ) {
+
                 IconButton(
                     onClick = onToggle,
                     modifier = Modifier.size(28.dp)
                 ) {
+
                     if (task.completed) {
+
                         Icon(
-                            Icons.Default.Check,
+                            imageVector = Icons.Default.Check,
                             contentDescription = "Completed",
                             tint = Color.White,
                             modifier = Modifier.size(17.dp)
@@ -286,71 +348,76 @@ private fun TaskCard(
                 }
             }
 
-            Spacer(modifier = Modifier.size(14.dp))
+            Spacer(
+                modifier = Modifier.size(14.dp)
+            )
+
+            // ============================================================
+            // TASK INFORMATION
+            // ============================================================
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
+
                 Text(
-                    task.title,
+                    text = task.title,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (task.completed) Muted else Ink
+                    color = if (task.completed) {
+                        Muted
+                    } else {
+                        Ink
+                    }
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(
+                    modifier = Modifier.height(4.dp)
+                )
 
                 Text(
-                    buildString {
+                    text = buildString {
+
                         append(task.category)
                         append(" • ")
                         append(task.duration)
 
-                        if (task.goalTitle != null) {
+                        task.goalTitle?.let {
+
                             append(" • ")
-                            append(task.goalTitle)
+                            append(it)
                         }
                     },
                     fontSize = 12.sp,
                     color = Muted
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    when (task.priority) {
-                        TaskPriority.URGENT -> "URGENT"
-                        TaskPriority.HIGH -> "HIGH"
-                        TaskPriority.MEDIUM -> "MEDIUM"
-                        TaskPriority.LOW -> "LOW"
-                    },
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = when (task.priority) {
-                        TaskPriority.URGENT -> Color(0xFF9B3D3D)
-                        TaskPriority.HIGH -> Color(0xFFB06A32)
-                        TaskPriority.MEDIUM -> Muted
-                        TaskPriority.LOW -> Green
-                    }
-                )
             }
+
+            // ============================================================
+            // DELETE BUTTON
+            // ============================================================
 
             IconButton(
                 onClick = onDelete
             ) {
+
                 Icon(
-                    Icons.Default.Delete,
+                    imageVector = Icons.Default.Delete,
                     contentDescription = "Delete task",
-                    tint = Color(0xFF9A9F9B)
+                    tint = Muted
                 )
             }
         }
     }
 }
 
+// ========================================================================
+// EMPTY STATE
+// ========================================================================
+
 @Composable
 private fun EmptyTasksCard() {
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
@@ -358,6 +425,7 @@ private fun EmptyTasksCard() {
             containerColor = Color.White
         )
     ) {
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -372,27 +440,32 @@ private fun EmptyTasksCard() {
                     .background(SoftGreen),
                 contentAlignment = Alignment.Center
             ) {
+
                 Icon(
-                    Icons.Default.Check,
+                    imageVector = Icons.Default.Check,
                     contentDescription = null,
                     tint = Green,
                     modifier = Modifier.size(25.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(
+                modifier = Modifier.height(14.dp)
+            )
 
             Text(
-                "No tasks yet",
+                text = "No tasks yet",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Ink
             )
 
-            Spacer(modifier = Modifier.height(5.dp))
+            Spacer(
+                modifier = Modifier.height(5.dp)
+            )
 
             Text(
-                "Add a task and start making progress.",
+                text = "Add a task and start making progress.",
                 fontSize = 13.sp,
                 color = Muted
             )

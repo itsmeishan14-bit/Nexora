@@ -1,8 +1,8 @@
 package com.example.nexora.data
 
-import com.example.nexora.uii.DailyProgress
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
+import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -14,10 +14,6 @@ class NexoraRepository(
     private val goalDao = database.goalDao()
     private val dailyProgressDao = database.dailyProgressDao()
 
-    // ---------------------------------------------------------
-    // TASKS
-    // ---------------------------------------------------------
-
     fun observeTasks(): Flow<List<PremiumTask>> {
         return taskDao.observeAll().map { entities ->
             entities.map { entity ->
@@ -27,24 +23,30 @@ class NexoraRepository(
                     category = entity.category,
                     duration = entity.duration,
                     goalTitle = entity.goalTitle,
-                    priority = entity.priority,
+                    priority = try {
+                        TaskPriority.valueOf(entity.priority)
+                    } catch (e: IllegalArgumentException) {
+                        TaskPriority.MEDIUM
+                    },
                     completed = entity.completed
                 )
             }
         }
     }
 
-    suspend fun addTask(task: PremiumTask) {
-        taskDao.insert(
+    suspend fun addTask(task: PremiumTask): PremiumTask {
+        val id = taskDao.insert(
             TaskEntity(
                 title = task.title,
                 category = task.category,
                 duration = task.duration,
                 goalTitle = task.goalTitle,
-                priority = task.priority,
+                priority = task.priority.name,
                 completed = task.completed
             )
         )
+
+        return task.copy(id = id)
     }
 
     suspend fun updateTask(task: PremiumTask) {
@@ -55,7 +57,7 @@ class NexoraRepository(
                 category = task.category,
                 duration = task.duration,
                 goalTitle = task.goalTitle,
-                priority = task.priority,
+                priority = task.priority.name,
                 completed = task.completed
             )
         )
@@ -69,15 +71,11 @@ class NexoraRepository(
                 category = task.category,
                 duration = task.duration,
                 goalTitle = task.goalTitle,
-                priority = task.priority,
+                priority = task.priority.name,
                 completed = task.completed
             )
         )
     }
-
-    // ---------------------------------------------------------
-    // GOALS
-    // ---------------------------------------------------------
 
     fun observeGoals(): Flow<List<NexoraGoal>> {
         return goalDao.observeAll().map { entities ->
@@ -93,8 +91,8 @@ class NexoraRepository(
         }
     }
 
-    suspend fun addGoal(goal: NexoraGoal) {
-        goalDao.insert(
+    suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
+        val id = goalDao.insert(
             GoalEntity(
                 title = goal.title,
                 category = goal.category,
@@ -102,6 +100,8 @@ class NexoraRepository(
                 progress = goal.progress
             )
         )
+
+        return goal.copy(id = id)
     }
 
     suspend fun updateGoal(goal: NexoraGoal) {
@@ -127,10 +127,6 @@ class NexoraRepository(
             )
         )
     }
-
-    // ---------------------------------------------------------
-    // DAILY PROGRESS
-    // ---------------------------------------------------------
 
     fun observeDailyProgress(): Flow<List<DailyProgressEntity>> {
         return dailyProgressDao.observeAll()

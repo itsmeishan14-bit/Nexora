@@ -21,10 +21,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.example.nexora.data.DailyProgressEntity
+import com.example.nexora.data.NexoraDatabase
+import com.example.nexora.data.NexoraRepository
 import com.example.nexora.ui.theme.NexoraTheme
 import java.time.LocalDate
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
 
 class MainActivity : ComponentActivity() {
 
@@ -35,113 +43,33 @@ class MainActivity : ComponentActivity() {
 
             NexoraTheme {
 
+                val context = LocalContext.current
+
                 // ============================================================
-                // TASKS
+                // DATABASE
+                // ============================================================
+
+                val database = remember {
+                    NexoraDatabase.getDatabase(context)
+                }
+
+                val repository = remember {
+                    NexoraRepository(database)
+                }
+
+                val scope = rememberCoroutineScope()
+
+                // ============================================================
+                // APP STATE
                 // ============================================================
 
                 val tasks = remember {
-
-                    mutableStateListOf(
-
-                        PremiumTask(
-                            title = "Complete Java assignment",
-                            category = "Academic",
-                            duration = "30 minutes",
-                            goalTitle = "Master Java",
-                            priority = TaskPriority.HIGH,
-                            completed = true
-                        ),
-
-                        PremiumTask(
-                            title = "Study Java inheritance",
-                            category = "Academic",
-                            duration = "40 minutes",
-                            goalTitle = "Master Java",
-                            priority = TaskPriority.HIGH,
-                            completed = false
-                        ),
-
-                        PremiumTask(
-                            title = "Practice Java problems",
-                            category = "Academic",
-                            duration = "30 minutes",
-                            goalTitle = "Master Java",
-                            priority = TaskPriority.MEDIUM,
-                            completed = false
-                        ),
-
-                        PremiumTask(
-                            title = "Study Operating Systems",
-                            category = "Academic",
-                            duration = "45 minutes",
-                            goalTitle = null,
-                            priority = TaskPriority.MEDIUM,
-                            completed = false
-                        ),
-
-                        PremiumTask(
-                            title = "Build Nexora",
-                            category = "Personal Project",
-                            duration = "60 minutes",
-                            goalTitle = "Build Nexora",
-                            priority = TaskPriority.URGENT,
-                            completed = false
-                        ),
-
-                        PremiumTask(
-                            title = "Design Nexora dashboard",
-                            category = "Personal Project",
-                            duration = "45 minutes",
-                            goalTitle = "Build Nexora",
-                            priority = TaskPriority.HIGH,
-                            completed = false
-                        ),
-
-                        PremiumTask(
-                            title = "Read 20 pages",
-                            category = "Personal",
-                            duration = "25 minutes",
-                            goalTitle = "Read 5 Books",
-                            priority = TaskPriority.LOW,
-                            completed = false
-                        )
-                    )
+                    mutableStateListOf<PremiumTask>()
                 }
-
-                // ============================================================
-                // GOALS
-                // ============================================================
 
                 val goals = remember {
-
-                    mutableStateListOf(
-
-                        NexoraGoal(
-                            title = "Master Java",
-                            category = "Academic",
-                            targetDate = "September 30",
-                            progress = 0f
-                        ),
-
-                        NexoraGoal(
-                            title = "Build Nexora",
-                            category = "Personal Project",
-                            targetDate = "October 15",
-                            progress = 0f
-                        ),
-
-                        NexoraGoal(
-                            title = "Read 5 Books",
-                            category = "Personal",
-                            targetDate = "December 31",
-                            progress = 0f
-                        )
-                    )
+                    mutableStateListOf<NexoraGoal>()
                 }
-
-                // ============================================================
-                // DAILY PROGRESS
-                // ============================================================
 
                 val progressHistory = remember {
                     mutableStateListOf<DailyProgress>()
@@ -175,42 +103,58 @@ class MainActivity : ComponentActivity() {
 
                     val today = LocalDate.now()
 
-                    val completedTasks = tasks.count {
-                        it.completed
-                    }
+                    val completedTasks =
+                        tasks.count { it.completed }
 
-                    val totalTasks = tasks.size
+                    val totalTasks =
+                        tasks.size
 
-                    val goalsWorkedOn = tasks
-                        .filter {
-                            it.goalTitle != null
+                    val goalsWorkedOn =
+                        tasks
+                            .mapNotNull { it.goalTitle }
+                            .distinct()
+                            .size
+
+                    val todayProgress =
+                        DailyProgress(
+                            date = today,
+                            tasksPlanned = totalTasks,
+                            tasksCompleted = completedTasks,
+                            focusMinutes = 0,
+                            goalsWorkedOn = goalsWorkedOn,
+                            carriedTasks = 0
+                        )
+
+                    val existingIndex =
+                        progressHistory.indexOfFirst {
+                            it.date == today
                         }
-                        .mapNotNull {
-                            it.goalTitle
-                        }
-                        .distinct()
-                        .size
-
-                    val existingIndex = progressHistory.indexOfFirst {
-                        it.date == today
-                    }
-
-                    val todayProgress = DailyProgress(
-                        date = today,
-                        tasksPlanned = totalTasks,
-                        tasksCompleted = completedTasks,
-                        focusMinutes = 0,
-                        goalsWorkedOn = goalsWorkedOn,
-                        carriedTasks = 0
-                    )
 
                     if (existingIndex >= 0) {
 
-                        progressHistory[existingIndex] = todayProgress
+                        progressHistory[existingIndex] =
+                            todayProgress
 
                     } else {
 
-                        progressHistory.add(todayProgress)
+                        progressHistory.add(
+                            todayProgress
+                        )
+                    }
+
+                    scope.launch {
+
+                        repository.saveDailyProgress(
+
+                            DailyProgressEntity(
+                                date = today.toString(),
+                                tasksPlanned = totalTasks,
+                                tasksCompleted = completedTasks,
+                                focusMinutes = 0,
+                                goalsWorkedOn = goalsWorkedOn,
+                                carriedTasks = 0
+                            )
+                        )
                     }
                 }
 
@@ -222,37 +166,141 @@ class MainActivity : ComponentActivity() {
 
                     goals.indices.forEach { index ->
 
-                        val goal = goals[index]
+                        val goal =
+                            goals[index]
 
-                        val newProgress = calculateGoalProgress(
-                            goal = goal,
-                            tasks = tasks
-                        )
+                        val newProgress =
+                            calculateGoalProgress(
+                                goal = goal,
+                                tasks = tasks
+                            )
 
-                        val updatedGoal = goal.copy(
-                            progress = newProgress
-                        )
+                        val updatedGoal =
+                            goal.copy(
+                                progress = newProgress
+                            )
 
-                        goals[index] = updatedGoal
+                        goals[index] =
+                            updatedGoal
 
-                        if (selectedGoal?.title == goal.title) {
-                            selectedGoal = updatedGoal
+                        if (
+                            selectedGoal?.id ==
+                            updatedGoal.id
+                        ) {
+
+                            selectedGoal =
+                                updatedGoal
+                        }
+
+                        scope.launch {
+
+                            repository.updateGoal(
+                                updatedGoal
+                            )
                         }
                     }
                 }
 
                 // ============================================================
-                // INITIAL DATA CALCULATION
+                // LOAD DATA FROM ROOM
                 // ============================================================
 
                 LaunchedEffect(Unit) {
 
-                    refreshGoalProgress()
+                    val savedTasks =
+                        repository
+                            .observeTasks()
+                            .first()
+
+                    val savedGoals =
+                        repository
+                            .observeGoals()
+                            .first()
+
+                    val savedProgress =
+                        repository
+                            .observeDailyProgress()
+                            .first()
+
+                    // ========================================================
+                    // IMPORTANT
+                    //
+                    // THERE IS NO SEEDING.
+                    //
+                    // Room is the single source of truth.
+                    // ========================================================
+
+                    tasks.clear()
+                    tasks.addAll(savedTasks)
+
+                    goals.clear()
+                    goals.addAll(savedGoals)
+
+                    progressHistory.clear()
+
+                    progressHistory.addAll(
+                        savedProgress.map { entity ->
+
+                            DailyProgress(
+                                date =
+                                    LocalDate.parse(
+                                        entity.date
+                                    ),
+                                tasksPlanned =
+                                    entity.tasksPlanned,
+                                tasksCompleted =
+                                    entity.tasksCompleted,
+                                focusMinutes =
+                                    entity.focusMinutes,
+                                goalsWorkedOn =
+                                    entity.goalsWorkedOn,
+                                carriedTasks =
+                                    entity.carriedTasks
+                            )
+                        }
+                    )
+
+                    // ========================================================
+                    // RECALCULATE GOAL PROGRESS
+                    // ========================================================
+
+                    goals.indices.forEach { index ->
+
+                        val goal =
+                            goals[index]
+
+                        val calculatedProgress =
+                            calculateGoalProgress(
+                                goal = goal,
+                                tasks = tasks
+                            )
+
+                        val updatedGoal =
+                            goal.copy(
+                                progress =
+                                    calculatedProgress
+                            )
+
+                        goals[index] =
+                            updatedGoal
+
+                        scope.launch {
+
+                            repository.updateGoal(
+                                updatedGoal
+                            )
+                        }
+                    }
+
+                    // ========================================================
+                    // UPDATE TODAY
+                    // ========================================================
+
                     updateTodayProgress()
                 }
 
                 // ============================================================
-                // APP
+                // MAIN SCAFFOLD
                 // ============================================================
 
                 Scaffold(
@@ -269,16 +317,25 @@ class MainActivity : ComponentActivity() {
 
                                 // HOME
                                 NavigationBarItem(
-                                    selected = selectedScreen == "home",
+
+                                    selected =
+                                        selectedScreen == "home",
+
                                     onClick = {
-                                        selectedScreen = "home"
+                                        selectedScreen =
+                                            "home"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Home,
-                                            contentDescription = "Home"
+                                            imageVector =
+                                                Icons.Default.Home,
+                                            contentDescription =
+                                                "Home"
                                         )
                                     },
+
                                     label = {
                                         Text("Home")
                                     }
@@ -286,16 +343,25 @@ class MainActivity : ComponentActivity() {
 
                                 // TASKS
                                 NavigationBarItem(
-                                    selected = selectedScreen == "tasks",
+
+                                    selected =
+                                        selectedScreen == "tasks",
+
                                     onClick = {
-                                        selectedScreen = "tasks"
+                                        selectedScreen =
+                                            "tasks"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Tasks"
+                                            imageVector =
+                                                Icons.Default.CheckCircle,
+                                            contentDescription =
+                                                "Tasks"
                                         )
                                     },
+
                                     label = {
                                         Text("Tasks")
                                     }
@@ -303,16 +369,25 @@ class MainActivity : ComponentActivity() {
 
                                 // GOALS
                                 NavigationBarItem(
-                                    selected = selectedScreen == "goals",
+
+                                    selected =
+                                        selectedScreen == "goals",
+
                                     onClick = {
-                                        selectedScreen = "goals"
+                                        selectedScreen =
+                                            "goals"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Flag,
-                                            contentDescription = "Goals"
+                                            imageVector =
+                                                Icons.Default.Flag,
+                                            contentDescription =
+                                                "Goals"
                                         )
                                     },
+
                                     label = {
                                         Text("Goals")
                                     }
@@ -320,16 +395,25 @@ class MainActivity : ComponentActivity() {
 
                                 // INSIGHTS
                                 NavigationBarItem(
-                                    selected = selectedScreen == "insights",
+
+                                    selected =
+                                        selectedScreen == "insights",
+
                                     onClick = {
-                                        selectedScreen = "insights"
+                                        selectedScreen =
+                                            "insights"
                                     },
+
                                     icon = {
+
                                         Icon(
-                                            imageVector = Icons.Default.Insights,
-                                            contentDescription = "Insights"
+                                            imageVector =
+                                                Icons.Default.Insights,
+                                            contentDescription =
+                                                "Insights"
                                         )
                                     },
+
                                     label = {
                                         Text("Insights")
                                     }
@@ -341,9 +425,12 @@ class MainActivity : ComponentActivity() {
                 ) { paddingValues ->
 
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(paddingValues)
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    paddingValues
+                                )
                     ) {
 
                         when (selectedScreen) {
@@ -355,23 +442,44 @@ class MainActivity : ComponentActivity() {
                             "home" -> {
 
                                 HomeScreen(
+
                                     tasks = tasks,
-                                    progressHistory = progressHistory,
+
+                                    progressHistory =
+                                        progressHistory,
 
                                     onAddTask = {
+
                                         taskGoal = null
-                                        selectedScreen = "addTask"
+
+                                        selectedScreen =
+                                            "addTask"
                                     },
 
                                     onToggleTask = { task ->
 
-                                        val index = tasks.indexOf(task)
+                                        val index =
+                                            tasks.indexOfFirst {
+                                                it.id == task.id
+                                            }
 
                                         if (index >= 0) {
 
-                                            tasks[index] = task.copy(
-                                                completed = !task.completed
-                                            )
+                                            val updatedTask =
+                                                task.copy(
+                                                    completed =
+                                                        !task.completed
+                                                )
+
+                                            tasks[index] =
+                                                updatedTask
+
+                                            scope.launch {
+
+                                                repository.updateTask(
+                                                    updatedTask
+                                                )
+                                            }
 
                                             refreshGoalProgress()
                                             updateTodayProgress()
@@ -387,22 +495,64 @@ class MainActivity : ComponentActivity() {
                             "tasks" -> {
 
                                 TasksScreen(
+
                                     tasks = tasks,
 
                                     onAddTask = {
+
                                         taskGoal = null
-                                        selectedScreen = "addTask"
+
+                                        selectedScreen =
+                                            "addTask"
                                     },
 
                                     onToggleTask = { task ->
 
-                                        val index = tasks.indexOf(task)
+                                        val index =
+                                            tasks.indexOfFirst {
+                                                it.id == task.id
+                                            }
 
                                         if (index >= 0) {
 
-                                            tasks[index] = task.copy(
-                                                completed = !task.completed
+                                            val updatedTask =
+                                                task.copy(
+                                                    completed =
+                                                        !task.completed
+                                                )
+
+                                            tasks[index] =
+                                                updatedTask
+
+                                            scope.launch {
+
+                                                repository.updateTask(
+                                                    updatedTask
+                                                )
+                                            }
+
+                                            refreshGoalProgress()
+                                            updateTodayProgress()
+                                        }
+                                    },
+
+                                    // ==================================================
+                                    // DELETE TASK
+                                    // ==================================================
+
+                                    onDeleteTask = { task ->
+
+                                        scope.launch {
+
+                                            // Delete from Room FIRST
+                                            repository.deleteTask(
+                                                task
                                             )
+
+                                            // Then remove from UI
+                                            tasks.removeAll {
+                                                it.id == task.id
+                                            }
 
                                             refreshGoalProgress()
                                             updateTodayProgress()
@@ -418,25 +568,37 @@ class MainActivity : ComponentActivity() {
                             "goals" -> {
 
                                 GoalScreen(
+
                                     goals = goals,
 
                                     onAddGoal = {
+
                                         editingGoal = null
                                         selectedGoal = null
-                                        selectedScreen = "addGoal"
+
+                                        selectedScreen =
+                                            "addGoal"
                                     },
 
                                     onEditGoal = { goal ->
 
-                                        editingGoal = goal
-                                        selectedGoal = goal
-                                        selectedScreen = "addGoal"
+                                        editingGoal =
+                                            goal
+
+                                        selectedGoal =
+                                            goal
+
+                                        selectedScreen =
+                                            "addGoal"
                                     },
 
                                     onOpenGoal = { goal ->
 
-                                        selectedGoal = goal
-                                        selectedScreen = "goalDetails"
+                                        selectedGoal =
+                                            goal
+
+                                        selectedScreen =
+                                            "goalDetails"
                                     }
                                 )
                             }
@@ -453,69 +615,150 @@ class MainActivity : ComponentActivity() {
 
                                         goal = goal,
 
-                                        relatedTasks = tasks.filter {
-                                            it.goalTitle == goal.title
-                                        },
+                                        relatedTasks =
+                                            tasks.filter {
+
+                                                it.goalTitle ==
+                                                        goal.title
+                                            },
 
                                         onBack = {
-                                            selectedGoal = null
-                                            selectedScreen = "goals"
+
+                                            selectedGoal =
+                                                null
+
+                                            selectedScreen =
+                                                "goals"
                                         },
 
                                         onEdit = {
-                                            editingGoal = goal
-                                            selectedScreen = "addGoal"
+
+                                            editingGoal =
+                                                goal
+
+                                            selectedScreen =
+                                                "addGoal"
                                         },
+
+                                        // ==================================================
+                                        // DELETE GOAL
+                                        // ==================================================
 
                                         onDelete = {
 
-                                            goals.remove(goal)
+                                            scope.launch {
 
-                                            val updatedTasks = tasks.map { task ->
+                                                // Delete goal
+                                                repository.deleteGoal(
+                                                    goal
+                                                )
 
-                                                if (task.goalTitle == goal.title) {
+                                                // Remove goal relation
+                                                tasks
+                                                    .filter {
+                                                        it.goalTitle ==
+                                                                goal.title
+                                                    }
+                                                    .forEach { task ->
 
-                                                    task.copy(
-                                                        goalTitle = null
-                                                    )
+                                                        repository.updateTask(
 
-                                                } else {
+                                                            task.copy(
+                                                                goalTitle =
+                                                                    null
+                                                            )
+                                                        )
+                                                    }
 
-                                                    task
+                                                // Update UI
+                                                val updatedTasks =
+                                                    tasks.map { task ->
+
+                                                        if (
+                                                            task.goalTitle ==
+                                                            goal.title
+                                                        ) {
+
+                                                            task.copy(
+                                                                goalTitle =
+                                                                    null
+                                                            )
+
+                                                        } else {
+
+                                                            task
+                                                        }
+                                                    }
+
+                                                tasks.clear()
+
+                                                tasks.addAll(
+                                                    updatedTasks
+                                                )
+
+                                                goals.removeAll {
+                                                    it.id ==
+                                                            goal.id
                                                 }
+
+                                                selectedGoal =
+                                                    null
+
+                                                taskGoal =
+                                                    null
+
+                                                updateTodayProgress()
+
+                                                selectedScreen =
+                                                    "goals"
                                             }
-
-                                            tasks.clear()
-                                            tasks.addAll(updatedTasks)
-
-                                            selectedGoal = null
-                                            taskGoal = null
-
-                                            refreshGoalProgress()
-                                            updateTodayProgress()
-
-                                            selectedScreen = "goals"
                                         },
+
+                                        // ==================================================
+                                        // TOGGLE TASK INSIDE GOAL
+                                        // ==================================================
 
                                         onToggleTask = { task ->
 
-                                            val index = tasks.indexOf(task)
+                                            val index =
+                                                tasks.indexOfFirst {
+                                                    it.id == task.id
+                                                }
 
                                             if (index >= 0) {
 
-                                                tasks[index] = task.copy(
-                                                    completed = !task.completed
-                                                )
+                                                val updatedTask =
+                                                    task.copy(
+                                                        completed =
+                                                            !task.completed
+                                                    )
+
+                                                tasks[index] =
+                                                    updatedTask
+
+                                                scope.launch {
+
+                                                    repository.updateTask(
+                                                        updatedTask
+                                                    )
+                                                }
 
                                                 refreshGoalProgress()
                                                 updateTodayProgress()
                                             }
                                         },
 
+                                        // ==================================================
+                                        // ADD TASK TO GOAL
+                                        // ==================================================
+
                                         onAddTask = {
 
-                                            taskGoal = goal
-                                            selectedScreen = "addTask"
+                                            taskGoal =
+                                                goal
+
+                                            selectedScreen =
+                                                "addTask"
                                         }
                                     )
                                 }
@@ -541,12 +784,19 @@ class MainActivity : ComponentActivity() {
                                     onBack = {
 
                                         taskGoal = null
-                                        selectedScreen = "tasks"
+
+                                        selectedScreen =
+                                            "tasks"
                                     },
 
                                     goals = goals,
 
-                                    selectedGoal = taskGoal,
+                                    selectedGoal =
+                                        taskGoal,
+
+                                    // ==================================================
+                                    // SAVE TASK
+                                    // ==================================================
 
                                     onSave = {
                                             title,
@@ -555,24 +805,56 @@ class MainActivity : ComponentActivity() {
                                             goalTitle,
                                             priority ->
 
-                                        tasks.add(
-
+                                        val newTask =
                                             PremiumTask(
-                                                title = title,
-                                                category = category,
-                                                duration = duration,
-                                                goalTitle = goalTitle,
-                                                priority = priority,
-                                                completed = false
+
+                                                title =
+                                                    title,
+
+                                                category =
+                                                    category,
+
+                                                duration =
+                                                    duration,
+
+                                                goalTitle =
+                                                    goalTitle,
+
+                                                priority =
+                                                    priority,
+
+                                                completed =
+                                                    false
                                             )
-                                        )
 
-                                        refreshGoalProgress()
-                                        updateTodayProgress()
+                                        scope.launch {
 
-                                        taskGoal = null
+                                            // Save to Room
+                                            repository.addTask(
+                                                newTask
+                                            )
 
-                                        selectedScreen = "tasks"
+                                            // Reload from Room
+                                            val savedTasks =
+                                                repository
+                                                    .observeTasks()
+                                                    .first()
+
+                                            tasks.clear()
+
+                                            tasks.addAll(
+                                                savedTasks
+                                            )
+
+                                            refreshGoalProgress()
+                                            updateTodayProgress()
+                                        }
+
+                                        taskGoal =
+                                            null
+
+                                        selectedScreen =
+                                            "tasks"
                                     }
                                 )
                             }
@@ -585,13 +867,19 @@ class MainActivity : ComponentActivity() {
 
                                 AddGoalScreen(
 
-                                    existingGoal = editingGoal,
+                                    existingGoal =
+                                        editingGoal,
 
                                     onBack = {
 
-                                        editingGoal = null
-                                        selectedGoal = null
-                                        selectedScreen = "goals"
+                                        editingGoal =
+                                            null
+
+                                        selectedGoal =
+                                            null
+
+                                        selectedScreen =
+                                            "goals"
                                     },
 
                                     onSave = {
@@ -600,44 +888,158 @@ class MainActivity : ComponentActivity() {
                                             targetDate,
                                             _ ->
 
-                                        if (editingGoal == null) {
+                                        // ==================================================
+                                        // NEW GOAL
+                                        // ==================================================
 
-                                            goals.add(
+                                        if (
+                                            editingGoal ==
+                                            null
+                                        ) {
 
+                                            val newGoal =
                                                 NexoraGoal(
-                                                    title = title,
-                                                    category = category,
-                                                    targetDate = targetDate,
-                                                    progress = 0f
-                                                )
-                                            )
 
-                                        } else {
+                                                    title =
+                                                        title,
+
+                                                    category =
+                                                        category,
+
+                                                    targetDate =
+                                                        targetDate,
+
+                                                    progress =
+                                                        0f
+                                                )
+
+                                            scope.launch {
+
+                                                repository.addGoal(
+                                                    newGoal
+                                                )
+
+                                                val savedGoals =
+                                                    repository
+                                                        .observeGoals()
+                                                        .first()
+
+                                                goals.clear()
+
+                                                goals.addAll(
+                                                    savedGoals
+                                                )
+
+                                                refreshGoalProgress()
+                                                updateTodayProgress()
+                                            }
+
+                                        }
+
+                                        // ==================================================
+                                        // EDIT GOAL
+                                        // ==================================================
+
+                                        else {
+
+                                            val oldGoal =
+                                                editingGoal
 
                                             val index =
-                                                goals.indexOf(editingGoal)
+                                                goals.indexOfFirst {
+
+                                                    it.id ==
+                                                            oldGoal?.id
+                                                }
 
                                             if (index >= 0) {
 
-                                                val oldGoal = goals[index]
+                                                val previousTitle =
+                                                    goals[index].title
+
+                                                val updatedGoal =
+                                                    goals[index].copy(
+
+                                                        title =
+                                                            title,
+
+                                                        category =
+                                                            category,
+
+                                                        targetDate =
+                                                            targetDate
+                                                    )
 
                                                 goals[index] =
-                                                    NexoraGoal(
-                                                        title = title,
-                                                        category = category,
-                                                        targetDate = targetDate,
-                                                        progress = oldGoal.progress
+                                                    updatedGoal
+
+                                                if (
+                                                    selectedGoal?.id ==
+                                                    updatedGoal.id
+                                                ) {
+
+                                                    selectedGoal =
+                                                        updatedGoal
+                                                }
+
+                                                scope.launch {
+
+                                                    repository.updateGoal(
+                                                        updatedGoal
                                                     )
+
+                                                    // Update tasks linked
+                                                    // to the old goal title.
+                                                    tasks
+                                                        .filter {
+
+                                                            it.goalTitle ==
+                                                                    previousTitle
+                                                        }
+                                                        .forEach { task ->
+
+                                                            val updatedTask =
+                                                                task.copy(
+
+                                                                    goalTitle =
+                                                                        title
+                                                                )
+
+                                                            repository.updateTask(
+                                                                updatedTask
+                                                            )
+
+                                                            val taskIndex =
+                                                                tasks.indexOfFirst {
+
+                                                                    it.id ==
+                                                                            task.id
+                                                                }
+
+                                                            if (
+                                                                taskIndex >=
+                                                                0
+                                                            ) {
+
+                                                                tasks[taskIndex] =
+                                                                    updatedTask
+                                                            }
+                                                        }
+
+                                                    refreshGoalProgress()
+                                                    updateTodayProgress()
+                                                }
                                             }
                                         }
 
-                                        refreshGoalProgress()
-                                        updateTodayProgress()
+                                        editingGoal =
+                                            null
 
-                                        editingGoal = null
-                                        selectedGoal = null
+                                        selectedGoal =
+                                            null
 
-                                        selectedScreen = "goals"
+                                        selectedScreen =
+                                            "goals"
                                     }
                                 )
                             }
