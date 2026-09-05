@@ -14,6 +14,10 @@ class NexoraRepository(
     private val goalDao = database.goalDao()
     private val dailyProgressDao = database.dailyProgressDao()
 
+    // ─────────────────────────────────────
+    // TASKS
+    // ─────────────────────────────────────
+
     fun observeTasks(): Flow<List<PremiumTask>> {
         return taskDao.observeAll().map { entities ->
             entities.map { entity ->
@@ -31,6 +35,24 @@ class NexoraRepository(
                     completed = entity.completed
                 )
             }
+        }
+    }
+
+    suspend fun observeTasksOnce(): List<PremiumTask> {
+        return taskDao.observeAllOnce().map { entity ->
+            PremiumTask(
+                id = entity.id,
+                title = entity.title,
+                category = entity.category,
+                duration = entity.duration,
+                goalTitle = entity.goalTitle,
+                priority = try {
+                    TaskPriority.valueOf(entity.priority)
+                } catch (e: IllegalArgumentException) {
+                    TaskPriority.MEDIUM
+                },
+                completed = entity.completed
+            )
         }
     }
 
@@ -77,6 +99,10 @@ class NexoraRepository(
         )
     }
 
+    // ─────────────────────────────────────
+    // GOALS
+    // ─────────────────────────────────────
+
     fun observeGoals(): Flow<List<NexoraGoal>> {
         return goalDao.observeAll().map { entities ->
             entities.map { entity ->
@@ -88,6 +114,18 @@ class NexoraRepository(
                     progress = entity.progress
                 )
             }
+        }
+    }
+
+    suspend fun observeGoalsOnce(): List<NexoraGoal> {
+        return goalDao.observeAllOnce().map { entity ->
+            NexoraGoal(
+                id = entity.id,
+                title = entity.title,
+                category = entity.category,
+                targetDate = entity.targetDate,
+                progress = entity.progress
+            )
         }
     }
 
@@ -128,11 +166,23 @@ class NexoraRepository(
         )
     }
 
+    // ─────────────────────────────────────
+    // DAILY PROGRESS
+    // ─────────────────────────────────────
+
     fun observeDailyProgress(): Flow<List<DailyProgressEntity>> {
         return dailyProgressDao.observeAll()
     }
 
-    suspend fun saveDailyProgress(progress: DailyProgressEntity) {
+    suspend fun getDailyProgress(
+        date: String
+    ): DailyProgressEntity? {
+        return dailyProgressDao.getByDate(date)
+    }
+
+    suspend fun saveDailyProgress(
+        progress: DailyProgressEntity
+    ) {
         dailyProgressDao.insert(progress)
     }
 }

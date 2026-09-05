@@ -36,4 +36,19 @@ class LocalNexoraAiService : NexoraAiService {
                         it.type == AiRecommendationType.WARNING
             }
     }
+
+    override suspend fun askNexora(
+        context: AiContext,
+        userMessage: String
+    ): String {
+        val recommendations = AiPlanner.generateRecommendations(context)
+
+        return if (recommendations.isEmpty()) {
+            "I don't have enough information yet to make a useful recommendation."
+        } else {
+            recommendations.joinToString("\n\n") {
+                "${it.title}: ${it.message}"
+            }
+        }
+    }
 }

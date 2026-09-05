@@ -17,4 +17,9 @@ interface NexoraAiService {
     suspend fun analyzeProductivity(
         context: AiContext
     ): List<AiRecommendation>
+
+    suspend fun askNexora(
+        context: AiContext,
+        userMessage: String
+    ): String
 }
