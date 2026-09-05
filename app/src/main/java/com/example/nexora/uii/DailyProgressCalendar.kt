@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBackIosNew
+import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,8 +52,12 @@ fun DailyProgressCalendar(
     progressHistory: List<DailyProgress>
 ) {
 
-    val currentMonth = remember {
-        YearMonth.now()
+    // --------------------------------------------------------
+    // CALENDAR STATE
+    // --------------------------------------------------------
+
+    var displayedMonth by remember {
+        mutableStateOf(YearMonth.now())
     }
 
     var selectedDate by remember {
@@ -60,6 +67,10 @@ fun DailyProgressCalendar(
     val progressByDate = progressHistory.associateBy {
         it.date
     }
+
+    // --------------------------------------------------------
+    // GLOBAL STATS
+    // --------------------------------------------------------
 
     val currentStreak = calculateCurrentStreak(
         progressHistory = progressHistory
@@ -77,8 +88,12 @@ fun DailyProgressCalendar(
         it.isPerfectDay
     }
 
+    // --------------------------------------------------------
+    // DISPLAYED MONTH DATA
+    // --------------------------------------------------------
+
     val monthProgress = progressHistory.filter {
-        YearMonth.from(it.date) == currentMonth
+        YearMonth.from(it.date) == displayedMonth
     }
 
     val monthCompletedTasks = monthProgress.sumOf {
@@ -103,9 +118,9 @@ fun DailyProgressCalendar(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
 
-        // --------------------------------
+        // ====================================================
         // HEADER
-        // --------------------------------
+        // ====================================================
 
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -147,9 +162,9 @@ fun DailyProgressCalendar(
             }
         }
 
-        // --------------------------------
+        // ====================================================
         // STATS
-        // --------------------------------
+        // ====================================================
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -178,9 +193,9 @@ fun DailyProgressCalendar(
             )
         }
 
-        // --------------------------------
+        // ====================================================
         // CALENDAR
-        // --------------------------------
+        // ====================================================
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -198,22 +213,131 @@ fun DailyProgressCalendar(
                 modifier = Modifier.padding(20.dp)
             ) {
 
-                Text(
-                    text =
-                        currentMonth.month.name
-                            .lowercase()
-                            .replaceFirstChar {
-                                it.uppercase()
-                            } +
-                                " ${currentMonth.year}",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = NexoraInk
-                )
+                // --------------------------------------------
+                // MONTH NAVIGATION
+                // --------------------------------------------
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+
+                    IconButton(
+                        onClick = {
+
+                            displayedMonth =
+                                displayedMonth.minusMonths(1)
+
+                            selectedDate =
+                                displayedMonth.atDay(1)
+                        }
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Default.ArrowBackIosNew,
+                            contentDescription =
+                                "Previous month",
+                            tint = NexoraInk,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column(
+                        horizontalAlignment =
+                            Alignment.CenterHorizontally
+                    ) {
+
+                        Text(
+                            text =
+                                displayedMonth.month.name
+                                    .lowercase()
+                                    .replaceFirstChar {
+                                        it.uppercase()
+                                    },
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NexoraInk
+                        )
+
+                        Text(
+                            text = displayedMonth.year.toString(),
+                            fontSize = 13.sp,
+                            color = NexoraMuted
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+
+                            displayedMonth =
+                                displayedMonth.plusMonths(1)
+
+                            selectedDate =
+                                displayedMonth.atDay(1)
+                        }
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Default.ArrowForwardIos,
+                            contentDescription =
+                                "Next month",
+                            tint = NexoraInk,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
 
                 Spacer(
-                    modifier = Modifier.height(18.dp)
+                    modifier = Modifier.height(14.dp)
                 )
+
+                // --------------------------------------------
+                // TODAY BUTTON
+                // --------------------------------------------
+
+                if (displayedMonth != YearMonth.now()) {
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(
+                                RoundedCornerShape(12.dp)
+                            )
+                            .background(
+                                NexoraSoftGreen
+                            )
+                            .clickable {
+
+                                displayedMonth =
+                                    YearMonth.now()
+
+                                selectedDate =
+                                    LocalDate.now()
+                            }
+                            .padding(vertical = 9.dp),
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+
+                        Text(
+                            text = "Return to today",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = NexoraInk
+                        )
+                    }
+
+                    Spacer(
+                        modifier = Modifier.height(14.dp)
+                    )
+                }
+
+                // --------------------------------------------
+                // WEEK HEADER
+                // --------------------------------------------
 
                 CalendarWeekHeader()
 
@@ -221,8 +345,12 @@ fun DailyProgressCalendar(
                     modifier = Modifier.height(8.dp)
                 )
 
+                // --------------------------------------------
+                // CALENDAR GRID
+                // --------------------------------------------
+
                 CalendarGrid(
-                    month = currentMonth,
+                    month = displayedMonth,
                     progressByDate = progressByDate,
                     selectedDate = selectedDate,
                     onDateSelected = {
@@ -238,9 +366,9 @@ fun DailyProgressCalendar(
             }
         }
 
-        // --------------------------------
+        // ====================================================
         // MONTHLY OVERVIEW
-        // --------------------------------
+        // ====================================================
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -260,7 +388,7 @@ fun DailyProgressCalendar(
 
                 Text(
                     text =
-                        "${currentMonth.month.name
+                        "${displayedMonth.month.name
                             .lowercase()
                             .replaceFirstChar {
                                 it.uppercase()
@@ -298,9 +426,9 @@ fun DailyProgressCalendar(
             }
         }
 
-        // --------------------------------
+        // ====================================================
         // SELECTED DAY
-        // --------------------------------
+        // ====================================================
 
         val selectedProgress =
             progressByDate[selectedDate]
