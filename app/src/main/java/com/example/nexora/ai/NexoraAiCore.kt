@@ -1,53 +1,60 @@
 package com.example.nexora.ai
 
-import com.example.nexora.uii.NexoraGoal
-import com.example.nexora.uii.PremiumTask
+class NexoraAiCore(
+    private val contextBuilder: AiContextBuilder,
+    private val aiService: NexoraAiService
+) {
 
-object NexoraAiCore {
+    suspend fun analyze(): List<AiRecommendation> {
 
-    fun analyze(
-        tasks: List<PremiumTask>,
-        goals: List<NexoraGoal>,
-        tasksCompletedToday: Int = 0,
-        tasksPlannedToday: Int = 0,
-        focusMinutesToday: Int = 0,
-        goalsWorkedOnToday: Int = 0,
-        carriedTasks: Int = 0
-    ): List<AiRecommendation> {
+        val context =
+            contextBuilder.build()
 
-        val context = AiContext(
-            tasks = tasks,
-            goals = goals,
-            tasksCompletedToday = tasksCompletedToday,
-            tasksPlannedToday = tasksPlannedToday,
-            focusMinutesToday = focusMinutesToday,
-            goalsWorkedOnToday = goalsWorkedOnToday,
-            carriedTasks = carriedTasks
+        return aiService.generateRecommendations(
+            context
         )
-
-        return AiPlanner.generateRecommendations(context)
     }
 
-    fun buildAiPrompt(
-        tasks: List<PremiumTask>,
-        goals: List<NexoraGoal>,
-        tasksCompletedToday: Int = 0,
-        tasksPlannedToday: Int = 0,
-        focusMinutesToday: Int = 0,
-        goalsWorkedOnToday: Int = 0,
-        carriedTasks: Int = 0
+    suspend fun createDailyPlan(): List<AiRecommendation> {
+
+        val context =
+            contextBuilder.build()
+
+        return aiService.generateDailyPlan(
+            context
+        )
+    }
+
+    suspend fun analyzeGoals(): List<AiRecommendation> {
+
+        val context =
+            contextBuilder.build()
+
+        return aiService.analyzeGoals(
+            context
+        )
+    }
+
+    suspend fun analyzeProductivity(): List<AiRecommendation> {
+
+        val context =
+            contextBuilder.build()
+
+        return aiService.analyzeProductivity(
+            context
+        )
+    }
+
+    suspend fun ask(
+        userMessage: String
     ): String {
 
-        val context = AiContext(
-            tasks = tasks,
-            goals = goals,
-            tasksCompletedToday = tasksCompletedToday,
-            tasksPlannedToday = tasksPlannedToday,
-            focusMinutesToday = focusMinutesToday,
-            goalsWorkedOnToday = goalsWorkedOnToday,
-            carriedTasks = carriedTasks
-        )
+        val context =
+            contextBuilder.build()
 
-        return AiPromptBuilder.buildContextPrompt(context)
+        return aiService.askNexora(
+            context = context,
+            userMessage = userMessage
+        )
     }
 }

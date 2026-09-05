@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Home
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.example.nexora.ai.NexoraAiProvider
 import com.example.nexora.data.DailyProgressEntity
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
@@ -55,6 +57,14 @@ class MainActivity : ComponentActivity() {
 
                 val repository = remember {
                     NexoraRepository(database)
+                }
+
+                // ============================================================
+                // AI ENGINE
+                // ============================================================
+
+                val aiEngine = remember {
+                    NexoraAiProvider.createEngine(context)
                 }
 
                 val scope = rememberCoroutineScope()
@@ -145,7 +155,6 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
 
                         repository.saveDailyProgress(
-
                             DailyProgressEntity(
                                 date = today.toString(),
                                 tasksPlanned = totalTasks,
@@ -222,13 +231,8 @@ class MainActivity : ComponentActivity() {
                             .observeDailyProgress()
                             .first()
 
-                    // ========================================================
-                    // IMPORTANT
-                    //
-                    // THERE IS NO SEEDING.
-                    //
                     // Room is the single source of truth.
-                    // ========================================================
+                    // No demo data is created.
 
                     tasks.clear()
                     tasks.addAll(savedTasks)
@@ -292,10 +296,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ========================================================
-                    // UPDATE TODAY
-                    // ========================================================
-
                     updateTodayProgress()
                 }
 
@@ -315,7 +315,10 @@ class MainActivity : ComponentActivity() {
 
                             NavigationBar {
 
+                                // ==================================================
                                 // HOME
+                                // ==================================================
+
                                 NavigationBarItem(
 
                                     selected =
@@ -341,7 +344,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // ==================================================
                                 // TASKS
+                                // ==================================================
+
                                 NavigationBarItem(
 
                                     selected =
@@ -367,7 +373,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // ==================================================
                                 // GOALS
+                                // ==================================================
+
                                 NavigationBarItem(
 
                                     selected =
@@ -393,7 +402,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
 
+                                // ==================================================
                                 // INSIGHTS
+                                // ==================================================
+
                                 NavigationBarItem(
 
                                     selected =
@@ -416,6 +428,35 @@ class MainActivity : ComponentActivity() {
 
                                     label = {
                                         Text("Insights")
+                                    }
+                                )
+
+                                // ==================================================
+                                // AI
+                                // ==================================================
+
+                                NavigationBarItem(
+
+                                    selected =
+                                        selectedScreen == "ai",
+
+                                    onClick = {
+                                        selectedScreen =
+                                            "ai"
+                                    },
+
+                                    icon = {
+
+                                        Icon(
+                                            imageVector =
+                                                Icons.Default.AutoAwesome,
+                                            contentDescription =
+                                                "Nexora AI"
+                                        )
+                                    },
+
+                                    label = {
+                                        Text("AI")
                                     }
                                 )
                             }
@@ -536,20 +577,14 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
 
-                                    // ==================================================
-                                    // DELETE TASK
-                                    // ==================================================
-
                                     onDeleteTask = { task ->
 
                                         scope.launch {
 
-                                            // Delete from Room FIRST
                                             repository.deleteTask(
                                                 task
                                             )
 
-                                            // Then remove from UI
                                             tasks.removeAll {
                                                 it.id == task.id
                                             }
@@ -617,7 +652,6 @@ class MainActivity : ComponentActivity() {
 
                                         relatedTasks =
                                             tasks.filter {
-
                                                 it.goalTitle ==
                                                         goal.title
                                             },
@@ -640,20 +674,14 @@ class MainActivity : ComponentActivity() {
                                                 "addGoal"
                                         },
 
-                                        // ==================================================
-                                        // DELETE GOAL
-                                        // ==================================================
-
                                         onDelete = {
 
                                             scope.launch {
 
-                                                // Delete goal
                                                 repository.deleteGoal(
                                                     goal
                                                 )
 
-                                                // Remove goal relation
                                                 tasks
                                                     .filter {
                                                         it.goalTitle ==
@@ -662,7 +690,6 @@ class MainActivity : ComponentActivity() {
                                                     .forEach { task ->
 
                                                         repository.updateTask(
-
                                                             task.copy(
                                                                 goalTitle =
                                                                     null
@@ -670,7 +697,6 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     }
 
-                                                // Update UI
                                                 val updatedTasks =
                                                     tasks.map { task ->
 
@@ -714,10 +740,6 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
 
-                                        // ==================================================
-                                        // TOGGLE TASK INSIDE GOAL
-                                        // ==================================================
-
                                         onToggleTask = { task ->
 
                                             val index =
@@ -748,10 +770,6 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
 
-                                        // ==================================================
-                                        // ADD TASK TO GOAL
-                                        // ==================================================
-
                                         onAddTask = {
 
                                             taskGoal =
@@ -771,6 +789,17 @@ class MainActivity : ComponentActivity() {
                             "insights" -> {
 
                                 InsightScreen()
+                            }
+
+                            // ==================================================
+                            // AI
+                            // ==================================================
+
+                            "ai" -> {
+
+                                AiScreen(
+                                    engine = aiEngine
+                                )
                             }
 
                             // ==================================================
@@ -794,10 +823,6 @@ class MainActivity : ComponentActivity() {
                                     selectedGoal =
                                         taskGoal,
 
-                                    // ==================================================
-                                    // SAVE TASK
-                                    // ==================================================
-
                                     onSave = {
                                             title,
                                             category,
@@ -807,34 +832,26 @@ class MainActivity : ComponentActivity() {
 
                                         val newTask =
                                             PremiumTask(
-
                                                 title =
                                                     title,
-
                                                 category =
                                                     category,
-
                                                 duration =
                                                     duration,
-
                                                 goalTitle =
                                                     goalTitle,
-
                                                 priority =
                                                     priority,
-
                                                 completed =
                                                     false
                                             )
 
                                         scope.launch {
 
-                                            // Save to Room
                                             repository.addTask(
                                                 newTask
                                             )
 
-                                            // Reload from Room
                                             val savedTasks =
                                                 repository
                                                     .observeTasks()
@@ -888,10 +905,6 @@ class MainActivity : ComponentActivity() {
                                             targetDate,
                                             _ ->
 
-                                        // ==================================================
-                                        // NEW GOAL
-                                        // ==================================================
-
                                         if (
                                             editingGoal ==
                                             null
@@ -899,16 +912,12 @@ class MainActivity : ComponentActivity() {
 
                                             val newGoal =
                                                 NexoraGoal(
-
                                                     title =
                                                         title,
-
                                                     category =
                                                         category,
-
                                                     targetDate =
                                                         targetDate,
-
                                                     progress =
                                                         0f
                                                 )
@@ -934,20 +943,13 @@ class MainActivity : ComponentActivity() {
                                                 updateTodayProgress()
                                             }
 
-                                        }
-
-                                        // ==================================================
-                                        // EDIT GOAL
-                                        // ==================================================
-
-                                        else {
+                                        } else {
 
                                             val oldGoal =
                                                 editingGoal
 
                                             val index =
                                                 goals.indexOfFirst {
-
                                                     it.id ==
                                                             oldGoal?.id
                                                 }
@@ -959,13 +961,10 @@ class MainActivity : ComponentActivity() {
 
                                                 val updatedGoal =
                                                     goals[index].copy(
-
                                                         title =
                                                             title,
-
                                                         category =
                                                             category,
-
                                                         targetDate =
                                                             targetDate
                                                     )
@@ -988,11 +987,8 @@ class MainActivity : ComponentActivity() {
                                                         updatedGoal
                                                     )
 
-                                                    // Update tasks linked
-                                                    // to the old goal title.
                                                     tasks
                                                         .filter {
-
                                                             it.goalTitle ==
                                                                     previousTitle
                                                         }
@@ -1000,7 +996,6 @@ class MainActivity : ComponentActivity() {
 
                                                             val updatedTask =
                                                                 task.copy(
-
                                                                     goalTitle =
                                                                         title
                                                                 )
@@ -1011,7 +1006,6 @@ class MainActivity : ComponentActivity() {
 
                                                             val taskIndex =
                                                                 tasks.indexOfFirst {
-
                                                                     it.id ==
                                                                             task.id
                                                                 }

@@ -10,15 +10,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +35,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun AddGoalScreen(
@@ -48,6 +56,10 @@ fun AddGoalScreen(
 
     var targetDate by remember {
         mutableStateOf(existingGoal?.targetDate ?: "")
+    }
+
+    var showDatePicker by remember {
+        mutableStateOf(false)
     }
 
     val isEditing = existingGoal != null
@@ -164,14 +176,28 @@ fun AddGoalScreen(
             OutlinedTextField(
                 value = targetDate,
                 onValueChange = {
-                    targetDate = it
+                    // Date is selected through the calendar.
                 },
                 modifier = Modifier.fillMaxWidth(),
+                readOnly = true,
                 placeholder = {
-                    Text("e.g. September 30")
+                    Text("Select a date")
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            showDatePicker = true
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = "Select target date",
+                            tint = Color(0xFF17231C)
+                        )
+                    }
+                }
             )
 
             Spacer(modifier = Modifier.height(30.dp))
@@ -228,7 +254,7 @@ fun AddGoalScreen(
                             if (targetDate.isBlank())
                                 "No date"
                             else
-                                targetDate.trim(),
+                                targetDate,
 
                             existingGoal?.progress ?: 0f
                         )
@@ -265,6 +291,65 @@ fun AddGoalScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+
+    // Calendar dialog
+    if (showDatePicker) {
+
+        val datePickerState = rememberDatePickerState()
+
+        DatePickerDialog(
+            onDismissRequest = {
+                showDatePicker = false
+            },
+
+            confirmButton = {
+
+                TextButton(
+                    onClick = {
+
+                        datePickerState.selectedDateMillis?.let { millis ->
+
+                            val formatter =
+                                SimpleDateFormat(
+                                    "MMMM d, yyyy",
+                                    Locale.getDefault()
+                                )
+
+                            targetDate =
+                                formatter.format(Date(millis))
+                        }
+
+                        showDatePicker = false
+                    }
+                ) {
+                    Text(
+                        text = "Select",
+                        color = Color(0xFF17231C),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+
+            dismissButton = {
+
+                TextButton(
+                    onClick = {
+                        showDatePicker = false
+                    }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = Color(0xFF747B75)
+                    )
+                }
+            }
+        ) {
+
+            DatePicker(
+                state = datePickerState
+            )
         }
     }
 }
