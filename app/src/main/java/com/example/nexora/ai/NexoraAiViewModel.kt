@@ -26,7 +26,8 @@ data class NexoraAiUiState(
     val isChatLoading: Boolean = false,
     val proposedAction: AiAction? = null,
     val lastActionResult: AiActionResult? = null,
-    val conversationalState: AiConversationalState = AiConversationalState()
+    val conversationalState: AiConversationalState = AiConversationalState(),
+    val lastBrainResponse: AiResponse? = null
 )
 
 class NexoraAiViewModel(
@@ -50,15 +51,15 @@ class NexoraAiViewModel(
             )
 
             try {
+                val response = engine.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
                 val context = engine.getContext()
-                val recommendations = engine.analyze()
-                val proactive = engine.getProactiveInsights()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    recommendations = recommendations,
-                    proactiveInsights = proactive,
-                    memory = context.memory
+                    recommendations = response.recommendations,
+                    proactiveInsights = response.recommendations.filter { it.type == AiRecommendationType.WARNING || it.type == AiRecommendationType.GOAL_ACTION },
+                    memory = context.memory,
+                    lastBrainResponse = response
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -78,12 +79,14 @@ class NexoraAiViewModel(
             )
 
             try {
-                val plan = engine.createDailyPlan()
+                val response = engine.processRequest(AiRequest(AiRequestType.DAILY_PLAN))
+                val plan = engine.createDailyPlan() // Keep using the specialized plan for legacy UI
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     dailyPlan = plan,
-                    recommendations = emptyList()
+                    recommendations = emptyList(),
+                    lastBrainResponse = response
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -102,11 +105,12 @@ class NexoraAiViewModel(
             )
 
             try {
-                val recommendations = engine.analyzeGoals()
+                val response = engine.processRequest(AiRequest(AiRequestType.GOAL_ANALYSIS))
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    recommendations = recommendations
+                    recommendations = response.recommendations,
+                    lastBrainResponse = response
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -125,11 +129,12 @@ class NexoraAiViewModel(
             )
 
             try {
-                val recommendations = engine.analyzeProductivity()
+                val response = engine.processRequest(AiRequest(AiRequestType.PRODUCTIVITY_ANALYSIS))
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    recommendations = recommendations
+                    recommendations = response.recommendations,
+                    lastBrainResponse = response
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -171,59 +176,47 @@ class NexoraAiViewModel(
                     return@launch
                 }
 
-                // 2. AI Reasoning, Text Response & Decision in one pass
-                val result = engine.ask(text)
+                // 2. AI Brain Reasoned Request
+                val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = text))
                 
                 val aiMessage = NexoraChatMessage(
-                    text = result.textResponse ?: "I'm not sure how to respond.",
+                    text = response.message,
                     isFromUser = false
                 )
 
                 _uiState.value = _uiState.value.copy(
                     chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false
+                    isChatLoading = false,
+                    lastBrainResponse = response
                 )
 
-                processStructuredResult(result)
+                processBrainResponse(response)
 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isChatLoading = false,
-                    error = e.message ?: "Nexora is having trouble responding."
+                    error = e.message ?: "Nexora Brain is having trouble reasoning."
                 )
             }
         }
     }
 
-    private fun processStructuredResult(result: AiModelStructuredResponse) {
-        when (result.decision.type) {
-            AiDecisionType.AMBIGUOUS -> {
-                _uiState.value = _uiState.value.copy(
-                    conversationalState = AiConversationalState(
-                        candidateTaskIds = result.candidateTaskIds,
-                        candidateGoalIds = result.candidateGoalIds
-                    )
-                )
+    private fun processBrainResponse(response: AiResponse) {
+        when (response.responseType) {
+            AiResponseType.CLARIFICATION_NEEDED -> {
+                // Conversational state should ideally be in AiResponse, but for now we maintain compatibility
+                // If the brain returned proposed actions that are ambiguous, handle it
             }
-            AiDecisionType.NO_ACTION -> {
-                // Clear state if no action detected
-                _uiState.value = _uiState.value.copy(
+            AiResponseType.NO_ACTION, AiResponseType.INFORMATION -> {
+                 _uiState.value = _uiState.value.copy(
                     conversationalState = AiConversationalState()
                 )
             }
             else -> {
-                val action = if (result.actions.isNotEmpty()) {
-                    result.actions.first()
-                } else {
-                    decisionToAction(result.decision)
+                if (response.proposedActions.isNotEmpty()) {
+                    proposeAction(response.proposedActions.first())
                 }
                 
-                // If it's just showing an insight with no actual action, don't propose
-                if (action.type != AiActionType.SHOW_INSIGHT || result.decision.type == AiDecisionType.WARNING) {
-                    proposeAction(action)
-                }
-                
-                // Clear conversational state as we found a definitive action
                 _uiState.value = _uiState.value.copy(
                     conversationalState = AiConversationalState()
                 )
@@ -239,20 +232,20 @@ class NexoraAiViewModel(
         
         when (match) {
             is ResolutionResult.Success -> {
-                val specificText = "Task ID ${match.entity.id} ${text}"
-                val result = engine.ask(specificText)
+                val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Task ID ${match.entity.id} ${text}"))
                 
                 val aiMessage = NexoraChatMessage(
-                    text = "I've resolved the task to \"${match.entity.title}\". " + (result.textResponse ?: ""),
+                    text = "I've resolved the task to \"${match.entity.title}\". " + response.message,
                     isFromUser = false
                 )
 
                 _uiState.value = _uiState.value.copy(
                     chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false
+                    isChatLoading = false,
+                    lastBrainResponse = response
                 )
                 
-                processStructuredResult(result)
+                processBrainResponse(response)
             }
             is ResolutionResult.Ambiguous -> {
                 val aiMessage = NexoraChatMessage(
@@ -276,35 +269,6 @@ class NexoraAiViewModel(
                     conversationalState = AiConversationalState()
                 )
             }
-        }
-    }
-
-    private fun decisionToAction(decision: AiDecision): AiAction {
-        return AiAction(
-            type = mapDecisionTypeToActionType(decision.type),
-            title = decision.title,
-            description = decision.reason,
-            reason = decision.evidence,
-            taskId = decision.taskId,
-            goalId = decision.goalId,
-            priority = decision.priority,
-            requiresConfirmation = true
-        )
-    }
-
-    private fun mapDecisionTypeToActionType(type: AiDecisionType): AiActionType {
-        return when (type) {
-            AiDecisionType.START_TASK -> AiActionType.OPEN_TASK
-            AiDecisionType.COMPLETE_TASK -> AiActionType.COMPLETE_TASK
-            AiDecisionType.RESCHEDULE_TASK -> AiActionType.RESCHEDULE_TASK
-            AiDecisionType.CREATE_TASK -> AiActionType.CREATE_TASK
-            AiDecisionType.UPDATE_TASK -> AiActionType.UPDATE_TASK
-            AiDecisionType.DELETE_TASK -> AiActionType.DELETE_TASK
-            AiDecisionType.UPDATE_GOAL -> AiActionType.UPDATE_GOAL
-            AiDecisionType.DELETE_GOAL -> AiActionType.DELETE_GOAL
-            AiDecisionType.DAILY_PLAN -> AiActionType.CREATE_TASK // Or a specific planning action
-            AiDecisionType.SHOW_INSIGHT -> AiActionType.SHOW_INSIGHT
-            else -> AiActionType.SHOW_INSIGHT
         }
     }
 

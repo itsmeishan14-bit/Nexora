@@ -6,11 +6,12 @@ import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import java.time.LocalDate
 
-class AiContextBuilder(
-    private val repository: NexoraRepository
+open class AiContextBuilder(
+    private val repository: NexoraRepository?
 ) {
 
-    suspend fun build(): AiContext {
+    open suspend fun build(): AiContext {
+        if (repository == null) return AiContext()
 
         val tasks = repository.observeTasksOnce()
         val goals = repository.observeGoalsOnce()
@@ -77,14 +78,14 @@ class AiContextBuilder(
             else -> AdaptiveConfidence.UNKNOWN
         }
 
-        // Calculate consistency (variance in completion rate could be used, but keep it simple)
+        // Calculate consistency
         val rates = history.filter { it.tasksPlanned > 0 }
             .map { it.tasksCompleted.toFloat() / it.tasksPlanned }
         
         val consistency = if (rates.size > 1) {
             val mean = rates.average()
             val variance = rates.map { Math.pow(it - mean, 2.0) }.average()
-            (1.0 - Math.min(variance * 5, 1.0)).toFloat() // Heuristic: high variance = low consistency
+            (1.0 - Math.min(variance * 5, 1.0)).toFloat()
         } else 0.5f
 
         // Preferred task size based on completed tasks

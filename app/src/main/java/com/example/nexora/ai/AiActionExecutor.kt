@@ -5,14 +5,16 @@ import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import com.example.nexora.uii.NexoraGoal
 
-class AiActionExecutor(
-    private val repository: NexoraRepository
+open class AiActionExecutor(
+    private val repository: NexoraRepository?
 ) {
-    private val validator = NexoraAiValidator(repository)
+    private val validator = repository?.let { NexoraAiValidator(it) }
 
-    suspend fun execute(action: AiAction): AiActionResult {
+    open suspend fun execute(action: AiAction): AiActionResult {
+        val repo = repository ?: return AiActionResult(false, "Repository not available")
+        
         // 1. Validation Layer
-        val validationResult = validator.validate(action)
+        val validationResult = validator?.validate(action)
         if (validationResult is ValidationResult.Invalid) {
             return AiActionResult(
                 success = false,
@@ -24,14 +26,14 @@ class AiActionExecutor(
         // 2. Execution Layer
         return try {
             when (action.type) {
-                AiActionType.CREATE_TASK -> createTask(action)
-                AiActionType.COMPLETE_TASK -> completeTask(action)
-                AiActionType.UPDATE_TASK -> updateTask(action)
-                AiActionType.DELETE_TASK -> deleteTask(action)
-                AiActionType.RESCHEDULE_TASK -> rescheduleTask(action)
-                AiActionType.CREATE_GOAL -> createGoal(action)
-                AiActionType.UPDATE_GOAL -> updateGoal(action)
-                AiActionType.DELETE_GOAL -> deleteGoal(action)
+                AiActionType.CREATE_TASK -> createTask(repo, action)
+                AiActionType.COMPLETE_TASK -> completeTask(repo, action)
+                AiActionType.UPDATE_TASK -> updateTask(repo, action)
+                AiActionType.DELETE_TASK -> deleteTask(repo, action)
+                AiActionType.RESCHEDULE_TASK -> rescheduleTask(repo, action)
+                AiActionType.CREATE_GOAL -> createGoal(repo, action)
+                AiActionType.UPDATE_GOAL -> updateGoal(repo, action)
+                AiActionType.DELETE_GOAL -> deleteGoal(repo, action)
                 AiActionType.DECOMPOSE_GOAL -> AiActionResult(true, "Goal decomposition requested.")
                 AiActionType.SHOW_INSIGHT -> AiActionResult(true, "Insight displayed.")
                 AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
@@ -46,7 +48,7 @@ class AiActionExecutor(
         }
     }
 
-    private suspend fun createTask(action: AiAction): AiActionResult {
+    private suspend fun createTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val title = action.parameters["title"] as? String ?: action.title
         val category = action.parameters["category"] as? String ?: "Personal"
         val duration = action.parameters["duration"] as? String ?: "30 minutes"
@@ -76,7 +78,7 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun completeTask(action: AiAction): AiActionResult {
+    private suspend fun completeTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
         val tasks = repository.observeTasksOnce()
         val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
@@ -91,7 +93,7 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun updateTask(action: AiAction): AiActionResult {
+    private suspend fun updateTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
         val tasks = repository.observeTasksOnce()
         val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
@@ -121,7 +123,7 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun deleteTask(action: AiAction): AiActionResult {
+    private suspend fun deleteTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
         val tasks = repository.observeTasksOnce()
         val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
@@ -135,12 +137,12 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun rescheduleTask(action: AiAction): AiActionResult {
+    private suspend fun rescheduleTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         // In this simple app, reschedule might just mean changing a parameter or just a confirmation
         return AiActionResult(true, "Task rescheduled: ${action.title}")
     }
 
-    private suspend fun createGoal(action: AiAction): AiActionResult {
+    private suspend fun createGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val title = action.parameters["title"] as? String ?: action.title
         val category = action.parameters["category"] as? String ?: "Personal"
         val targetDate = action.parameters["targetDate"] as? String ?: ""
@@ -160,7 +162,7 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun updateGoal(action: AiAction): AiActionResult {
+    private suspend fun updateGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
         val goals = repository.observeGoalsOnce()
         val goal = goals.find { it.id == goalId } ?: return AiActionResult(false, "Goal not found.")
@@ -181,7 +183,7 @@ class AiActionExecutor(
         )
     }
 
-    private suspend fun deleteGoal(action: AiAction): AiActionResult {
+    private suspend fun deleteGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
         val goals = repository.observeGoalsOnce()
         val goal = goals.find { it.id == goalId } ?: return AiActionResult(false, "Goal not found.")

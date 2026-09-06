@@ -1,23 +1,43 @@
 package com.example.nexora.ai
 
+import com.example.nexora.data.NexoraRepository
+
+/**
+ * Main entry point for Nexora AI capabilities.
+ * Now powered by the Nexora AI Brain orchestration layer.
+ */
 class NexoraAiEngine(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
     private val actionExecutor: AiActionExecutor
 ) {
+    private val brain = NexoraAiBrain(
+        contextBuilder = contextBuilder,
+        aiService = aiService,
+        actionExecutor = actionExecutor
+    )
+
+    /**
+     * Unified entry point for all AI requests.
+     */
+    suspend fun processRequest(request: AiRequest): AiResponse {
+        return brain.processRequest(request)
+    }
+
+    // Legacy method wrappers to maintain backward compatibility during migration
 
     suspend fun executeAction(action: AiAction): AiActionResult {
         return actionExecutor.execute(action)
     }
 
     suspend fun analyze(): List<AiRecommendation> {
-        val context = contextBuilder.build()
-        return aiService.generateRecommendations(context)
+        val response = brain.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
+        return response.recommendations
     }
 
     suspend fun getProactiveInsights(): List<AiRecommendation> {
-        val context = contextBuilder.build()
-        return aiService.generateProactiveInsights(context)
+        val response = brain.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
+        return response.recommendations
     }
 
     suspend fun getContext(): AiContext {
@@ -30,6 +50,7 @@ class NexoraAiEngine(
     }
 
     suspend fun createDailyPlan(): NexoraDailyPlan {
+        // Daily plan currently returns a specific model used by the UI
         val context = contextBuilder.build()
         return aiService.generateDailyPlan(context)
     }
