@@ -24,7 +24,8 @@ data class NexoraAiUiState(
     val chatMessages: List<NexoraChatMessage> = emptyList(),
     val isChatLoading: Boolean = false,
     val proposedAction: AiAction? = null,
-    val lastActionResult: AiActionResult? = null
+    val lastActionResult: AiActionResult? = null,
+    val conversationalState: AiConversationalState = AiConversationalState()
 )
 
 class NexoraAiViewModel(
@@ -148,6 +149,8 @@ class NexoraAiViewModel(
             isFromUser = true
         )
 
+        val currentState = _uiState.value.conversationalState
+        
         _uiState.value = _uiState.value.copy(
             chatMessages = _uiState.value.chatMessages + userMessage,
             isChatLoading = true,
@@ -156,6 +159,13 @@ class NexoraAiViewModel(
 
         viewModelScope.launch {
             try {
+                // 1. Handle follow-up if we have pending candidates
+                if (currentState.candidateTaskIds.isNotEmpty()) {
+                    handleAmbiguityFollowUp(text, currentState)
+                    return@launch
+                }
+
+                // 2. AI Reasoning & Text Response
                 val responseText = engine.ask(text)
                 
                 val aiMessage = NexoraChatMessage(
@@ -168,8 +178,10 @@ class NexoraAiViewModel(
                     isChatLoading = false
                 )
 
-                // Check if we should propose an action based on chat response
-                checkForProposedAction(responseText)
+                // 3. AI Structured Decision / Tool Calling
+                val structuredResult = engine.decide(text)
+                
+                processStructuredResult(structuredResult)
 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -180,59 +192,115 @@ class NexoraAiViewModel(
         }
     }
 
-    private fun checkForProposedAction(aiResponse: String) {
-        val lower = aiResponse.lowercase()
-        
-        // Simple mock of AI decision logic
-        when {
-            lower.contains("create a task") || lower.contains("add a task") -> {
-                val titleMatch = Regex("\"([^\"]*)\"").find(aiResponse)
-                val title = titleMatch?.groupValues?.get(1) ?: "New AI Task"
+    private fun processStructuredResult(result: AiModelStructuredResponse) {
+        when (result.decision.type) {
+            AiDecisionType.AMBIGUOUS -> {
+                _uiState.value = _uiState.value.copy(
+                    conversationalState = AiConversationalState(
+                        candidateTaskIds = result.candidateTaskIds,
+                        candidateGoalIds = result.candidateGoalIds
+                    )
+                )
+            }
+            AiDecisionType.NO_ACTION -> {
+                // Clear state if no action detected
+                _uiState.value = _uiState.value.copy(
+                    conversationalState = AiConversationalState()
+                )
+            }
+            else -> {
+                val action = if (result.actions.isNotEmpty()) {
+                    result.actions.first()
+                } else {
+                    decisionToAction(result.decision)
+                }
+                proposeAction(action)
                 
-                proposeAction(AiAction(
-                    type = AiActionType.CREATE_TASK,
-                    title = "Propose: Create Task",
-                    description = "Should I create the task \"$title\"?",
-                    parameters = mapOf("title" to title),
-                    requiresConfirmation = true
-                ))
+                // Clear conversational state as we found a definitive action
+                _uiState.value = _uiState.value.copy(
+                    conversationalState = AiConversationalState()
+                )
             }
-            
-            lower.contains("mark") && lower.contains("complete") -> {
-                // Propose completing the next best task as a guess
-                viewModelScope.launch {
-                    val context = engine.getContext()
-                    val nextTask = context.incompleteTasks.firstOrNull()
-                    if (nextTask != null) {
-                        proposeAction(AiAction(
-                            type = AiActionType.COMPLETE_TASK,
-                            title = "Propose: Complete Task",
-                            description = "Mark \"${nextTask.title}\" as complete?",
-                            taskId = nextTask.id,
-                            reason = "User expressed desire to complete a task.",
-                            requiresConfirmation = true
-                        ))
-                    }
-                }
-            }
+        }
+    }
 
-            lower.contains("delete task") -> {
-                // Propose deleting a task (requires confirmation)
-                viewModelScope.launch {
-                    val context = engine.getContext()
-                    val taskToDelete = context.incompleteTasks.firstOrNull()
-                    if (taskToDelete != null) {
-                        proposeAction(AiAction(
-                            type = AiActionType.DELETE_TASK,
-                            title = "Propose: Delete Task",
-                            description = "Delete \"${taskToDelete.title}\" permanently?",
-                            taskId = taskToDelete.id,
-                            priority = AiPriority.HIGH,
-                            requiresConfirmation = true
-                        ))
-                    }
-                }
+    private suspend fun handleAmbiguityFollowUp(text: String, state: AiConversationalState) {
+        val context = engine.getContext()
+        val candidates = context.tasks.filter { it.id in state.candidateTaskIds }
+        
+        val match = AiEntityResolver.resolveTask(text, candidates)
+        
+        when (match) {
+            is ResolutionResult.Success -> {
+                // Now we re-run the "ask" but with the specific task resolved?
+                // Or we just proceed with whatever the pending intent was.
+                // For simplicity, let's assume the user was trying to mark it complete or update it.
+                // We'll just re-run the decide with a more specific query.
+                val specificText = "Task ID ${match.entity.id} ${text}" // Crude but effective for local resolver
+                val result = engine.decide(specificText)
+                
+                val aiMessage = NexoraChatMessage(
+                    text = "I've resolved the task to \"${match.entity.title}\".",
+                    isFromUser = false
+                )
+
+                _uiState.value = _uiState.value.copy(
+                    chatMessages = _uiState.value.chatMessages + aiMessage,
+                    isChatLoading = false
+                )
+                
+                processStructuredResult(result)
             }
+            is ResolutionResult.Ambiguous -> {
+                val aiMessage = NexoraChatMessage(
+                    text = "I still found multiple matches among those candidates. Could you be more specific?",
+                    isFromUser = false
+                )
+                _uiState.value = _uiState.value.copy(
+                    chatMessages = _uiState.value.chatMessages + aiMessage,
+                    isChatLoading = false,
+                    conversationalState = state.copy(candidateTaskIds = match.candidates.map { it.id })
+                )
+            }
+            is ResolutionResult.NotFound -> {
+                val aiMessage = NexoraChatMessage(
+                    text = "I couldn't match that to any of the candidate tasks.",
+                    isFromUser = false
+                )
+                _uiState.value = _uiState.value.copy(
+                    chatMessages = _uiState.value.chatMessages + aiMessage,
+                    isChatLoading = false,
+                    conversationalState = AiConversationalState()
+                )
+            }
+        }
+    }
+
+    private fun decisionToAction(decision: AiDecision): AiAction {
+        return AiAction(
+            type = mapDecisionTypeToActionType(decision.type),
+            title = decision.title,
+            description = decision.reason,
+            taskId = decision.taskId,
+            goalId = decision.goalId,
+            priority = decision.priority,
+            requiresConfirmation = true
+        )
+    }
+
+    private fun mapDecisionTypeToActionType(type: AiDecisionType): AiActionType {
+        return when (type) {
+            AiDecisionType.START_TASK -> AiActionType.OPEN_TASK
+            AiDecisionType.COMPLETE_TASK -> AiActionType.COMPLETE_TASK
+            AiDecisionType.RESCHEDULE_TASK -> AiActionType.RESCHEDULE_TASK
+            AiDecisionType.CREATE_TASK -> AiActionType.CREATE_TASK
+            AiDecisionType.UPDATE_TASK -> AiActionType.UPDATE_TASK
+            AiDecisionType.DELETE_TASK -> AiActionType.DELETE_TASK
+            AiDecisionType.UPDATE_GOAL -> AiActionType.UPDATE_GOAL
+            AiDecisionType.DELETE_GOAL -> AiActionType.DELETE_GOAL
+            AiDecisionType.DAILY_PLAN -> AiActionType.CREATE_TASK // Or a specific planning action
+            AiDecisionType.SHOW_INSIGHT -> AiActionType.SHOW_INSIGHT
+            else -> AiActionType.SHOW_INSIGHT
         }
     }
 

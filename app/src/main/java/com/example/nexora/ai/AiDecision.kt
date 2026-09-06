@@ -6,10 +6,13 @@ enum class AiDecisionType {
     RESCHEDULE_TASK,
     CREATE_TASK,
     UPDATE_TASK,
+    DELETE_TASK,
     UPDATE_GOAL,
+    DELETE_GOAL,
     DAILY_PLAN,
     SHOW_INSIGHT,
     WARNING,
+    AMBIGUOUS,
     NO_ACTION
 }
 

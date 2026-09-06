@@ -59,4 +59,24 @@ class NexoraAiEngine(
             userMessage = userMessage
         )
     }
+
+    suspend fun decide(
+        query: String
+    ): AiModelStructuredResponse {
+        val context = contextBuilder.build()
+        
+        return if (aiService is LocalNexoraAiService) {
+            aiService.decide(context, query)
+        } else {
+            // Fallback for other implementations
+            AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.NO_ACTION,
+                    title = "Unsupported",
+                    reason = "This AI service does not support structured decisions yet."
+                ),
+                modelName = "unknown"
+            )
+        }
+    }
 }

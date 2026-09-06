@@ -48,6 +48,15 @@ object AiPromptBuilder {
             - Explain the reasoning behind important recommendations.
             - Never invent information that is not present in the context.
 
+            AVAILABLE TOOLS & ACTIONS:
+            - CREATE_TASK: title, category, duration, priority, goalTitle
+            - UPDATE_TASK: taskId, title, priority, duration
+            - COMPLETE_TASK: taskId
+            - DELETE_TASK: taskId (requires explicit confirmation)
+            - CREATE_GOAL: title, category, targetDate
+            - RESCHEDULE_TASK: taskId, newDate
+            - DECOMPOSE_GOAL: goalTitle
+
             CURRENT NEXORA STATE
 
             TASKS:
@@ -80,6 +89,7 @@ object AiPromptBuilder {
 
             Return recommendations that are specific,
             actionable, and based only on the available context.
+            If an action is requested, provide structured output mapping to the tools above.
         """.trimIndent()
     }
 }

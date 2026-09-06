@@ -67,8 +67,18 @@ class MainActivity : ComponentActivity() {
                     val contextBuilder =
                         AiContextBuilder(repository)
 
-                    val aiService =
-                        LocalNexoraAiService()
+                    // 1. Define Providers
+                    val localProvider = com.example.nexora.ai.LocalAiProvider()
+                    
+                    // 2. Manage Providers (Cloud config can be loaded securely here)
+                    val providerManager = com.example.nexora.ai.AiProviderManager(
+                        localProvider = localProvider
+                    )
+
+                    // 3. Orchestrate with Service
+                    val aiService = com.example.nexora.ai.LocalNexoraAiService(
+                        providerManager = providerManager
+                    )
 
                     NexoraAiEngine(
                         contextBuilder = contextBuilder,
