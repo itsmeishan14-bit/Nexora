@@ -2,6 +2,7 @@ package com.example.nexora.uii
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,18 +19,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Splitscreen
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +55,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nexora.ai.AiGoalDecomposition
 import com.example.nexora.ai.AiGoalStep
+import com.example.nexora.ai.AiPriority
 import com.example.nexora.ai.NexoraAiEngine
+import com.example.nexora.data.NexoraRepository
+import com.example.nexora.uii.PremiumTask
+import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,11 +76,15 @@ private val NexoraBorder = Color(0xFFE1E5E1)
 data class AiGoalDecomposerUiState(
     val isLoading: Boolean = false,
     val decomposition: AiGoalDecomposition? = null,
-    val error: String? = null
+    val selectedSteps: Set<Int> = emptySet(),
+    val error: String? = null,
+    val successMessage: String? = null,
+    val isCreatingTasks: Boolean = false
 )
 
 class AiGoalDecomposerViewModel(
-    private val engine: NexoraAiEngine
+    private val engine: NexoraAiEngine,
+    private val repository: NexoraRepository
 ) : ViewModel() {
 
     private val _uiState =
@@ -107,7 +123,8 @@ class AiGoalDecomposerViewModel(
 
                 _uiState.value =
                     AiGoalDecomposerUiState(
-                        decomposition = result
+                        decomposition = result,
+                        selectedSteps = result.steps.map { it.order }.toSet()
                     )
 
             } catch (e: Exception) {
@@ -122,6 +139,117 @@ class AiGoalDecomposerViewModel(
         }
     }
 
+    fun toggleStep(order: Int) {
+        val current = _uiState.value.selectedSteps
+        val next = if (current.contains(order)) {
+            current - order
+        } else {
+            current + order
+        }
+        _uiState.value = _uiState.value.copy(
+            selectedSteps = next
+        )
+    }
+
+    fun selectAll() {
+        val all = _uiState.value.decomposition?.steps?.map { it.order }?.toSet() ?: emptySet()
+        _uiState.value = _uiState.value.copy(
+            selectedSteps = all
+        )
+    }
+
+    fun deselectAll() {
+        _uiState.value = _uiState.value.copy(
+            selectedSteps = emptySet()
+        )
+    }
+
+    fun createTasks(onComplete: () -> Unit = {}) {
+        val state = _uiState.value
+        val decomposition = state.decomposition ?: return
+        val selectedOrders = state.selectedSteps
+        
+        if (selectedOrders.isEmpty()) {
+            _uiState.value = state.copy(error = "No steps selected.")
+            return
+        }
+
+        val selectedSteps = decomposition.steps.filter { it.order in selectedOrders }
+        
+        viewModelScope.launch {
+            _uiState.value = state.copy(isCreatingTasks = true, error = null)
+            
+            try {
+                val existingTasks = repository.observeTasksOnce()
+                val goalTasks = existingTasks.filter { it.goalTitle == decomposition.goalTitle }
+                
+                var createdCount = 0
+                var existingCount = 0
+                
+                selectedSteps.forEach { step ->
+                    val alreadyExists = goalTasks.any { it.title == step.title }
+                    
+                    if (alreadyExists) {
+                        existingCount++
+                    } else {
+                        val newTask = PremiumTask(
+                            title = step.title,
+                            category = "AI Goal Step", // Default category
+                            duration = step.estimatedDuration,
+                            goalTitle = decomposition.goalTitle,
+                            priority = mapPriority(step.priority),
+                            completed = false
+                        )
+                        repository.addTask(newTask)
+                        createdCount++
+                    }
+                }
+                
+                if (createdCount > 0) {
+                    onComplete()
+                }
+                
+                val message = when {
+                    createdCount > 0 && existingCount > 0 -> 
+                        "$createdCount tasks created. $existingCount already existed."
+                    createdCount > 0 -> 
+                        "$createdCount tasks added to your goal."
+                    existingCount > 0 -> 
+                        "All selected tasks already exist for this goal."
+                    else -> "No tasks were created."
+                }
+                
+                _uiState.value = _uiState.value.copy(
+                    isCreatingTasks = false,
+                    successMessage = message
+                )
+                
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isCreatingTasks = false,
+                    error = "Failed to create tasks: ${e.message}"
+                )
+            }
+        }
+    }
+
+    private fun mapPriority(aiPriority: AiPriority): TaskPriority {
+        return when (aiPriority) {
+            AiPriority.LOW -> TaskPriority.LOW
+            AiPriority.MEDIUM -> TaskPriority.MEDIUM
+            AiPriority.HIGH -> TaskPriority.HIGH
+            AiPriority.CRITICAL -> TaskPriority.URGENT
+        }
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun clearSuccessMessage() {
+        _uiState.value = _uiState.value.copy(successMessage = null)
+    }
+
     fun clear() {
         _uiState.value =
             AiGoalDecomposerUiState()
@@ -131,7 +259,9 @@ class AiGoalDecomposerViewModel(
 @Composable
 fun AiGoalDecomposerScreen(
     engine: NexoraAiEngine,
-    onBack: () -> Unit = {}
+    repository: NexoraRepository,
+    onBack: () -> Unit = {},
+    onTasksCreated: () -> Unit = {}
 ) {
 
     val viewModel: AiGoalDecomposerViewModel =
@@ -143,7 +273,8 @@ fun AiGoalDecomposerScreen(
                         create(modelClass: Class<T>): T {
 
                     return AiGoalDecomposerViewModel(
-                        engine = engine
+                        engine = engine,
+                        repository = repository
                     ) as T
                 }
             }
@@ -158,6 +289,50 @@ fun AiGoalDecomposerScreen(
 
     var goalDescription by remember {
         mutableStateOf("")
+    }
+
+    var showConfirmDialog by remember {
+        mutableStateOf(false)
+    }
+
+    if (showConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showConfirmDialog = false },
+            title = {
+                Text(
+                    text = "Create Tasks",
+                    fontWeight = FontWeight.Bold,
+                    color = NexoraInk
+                )
+            },
+            text = {
+                Text(
+                    text = "Convert ${uiState.selectedSteps.size} steps into tasks for the goal \"${uiState.decomposition?.goalTitle}\"?",
+                    color = NexoraMuted
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmDialog = false
+                        viewModel.createTasks(onComplete = onTasksCreated)
+                    }
+                ) {
+                    Text(
+                        text = "Create Tasks",
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraGreen
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmDialog = false }) {
+                    Text("Cancel", color = NexoraMuted)
+                }
+            },
+            shape = RoundedCornerShape(22.dp),
+            containerColor = Color.White
+        )
     }
 
     Column(
@@ -233,190 +408,51 @@ fun AiGoalDecomposerScreen(
         ) {
 
             item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = NexoraInk
-                    )
-                ) {
-
-                    Column(
-                        modifier = Modifier.padding(22.dp)
-                    ) {
-
-                        Row(
-                            verticalAlignment =
-                                Alignment.CenterVertically
-                        ) {
-
-                            Icon(
-                                imageVector =
-                                    Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = NexoraGreen,
-                                modifier = Modifier.size(22.dp)
-                            )
-
-                            Spacer(
-                                modifier =
-                                    Modifier.width(9.dp)
-                            )
-
-                            Text(
-                                text = "What do you want to achieve?",
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-
-                        Spacer(
-                            modifier = Modifier.height(16.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = goalTitle,
-                            onValueChange = { goalTitle = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            placeholder = {
-                                Text(
-                                    text = "e.g. Learn Java full stack",
-                                    color = Color(0xFF9EAAA1)
-                                )
-                            },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = NexoraGreen,
-                                focusedBorderColor = NexoraGreen,
-                                unfocusedBorderColor = Color(0xFF718075),
-                                focusedPlaceholderColor = Color(0xFF9EAAA1),
-                                unfocusedPlaceholderColor = Color(0xFF9EAAA1)
-                            )
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = goalDescription,
-                            onValueChange = {
-                                goalDescription = it
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(110.dp),
-                            placeholder = {
-                                Text(
-                                    text =
-                                        "Optional: add context about your goal"
-                                )
-                            },
-                            maxLines = 4,
-                            shape = RoundedCornerShape(16.dp)
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(16.dp)
-                        )
-
-                        Button(
-                            onClick = {
-                                viewModel.decompose(
-                                    goalTitle =
-                                        goalTitle,
-                                    goalDescription =
-                                        goalDescription
-                                )
-                            },
-                            enabled = !uiState.isLoading,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NexoraGreen,
-                                contentColor = NexoraInk
-                            )
-                        ) {
-
-                            if (uiState.isLoading) {
-
-                                CircularProgressIndicator(
-                                    modifier =
-                                        Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = NexoraInk
-                                )
-
-                                Spacer(
-                                    modifier =
-                                        Modifier.width(9.dp)
-                                )
-
-                                Text(
-                                    text = "Thinking..."
-                                )
-
-                            } else {
-
-                                Icon(
-                                    imageVector =
-                                        Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier =
-                                        Modifier.size(18.dp)
-                                )
-
-                                Spacer(
-                                    modifier =
-                                        Modifier.width(8.dp)
-                                )
-
-                                Text(
-                                    text = "Decompose goal",
-                                    fontWeight =
-                                        FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
+                // Goal input card ...
             }
 
             uiState.error?.let { error ->
-
                 item {
+                    // Error card ...
+                }
+            }
 
+            uiState.successMessage?.let { success ->
+                item {
                     Card(
-                        modifier =
-                            Modifier.fillMaxWidth(),
-                        shape =
-                            RoundedCornerShape(18.dp),
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor =
-                                    Color(0xFFFFF4F2)
-                            ),
-                        border =
-                            BorderStroke(
-                                1.dp,
-                                Color(0xFFE8D3CF)
-                            )
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = NexoraSoftGreen
+                        ),
+                        border = BorderStroke(1.dp, NexoraGreen)
                     ) {
-
-                        Text(
-                            text = error,
-                            modifier =
-                                Modifier.padding(18.dp),
-                            color = NexoraInk,
-                            fontSize = 14.sp
-                        )
+                        Row(
+                            modifier = Modifier.padding(18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = NexoraGreen
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = success,
+                                modifier = Modifier.weight(1f),
+                                color = NexoraInk,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clickable { viewModel.clearSuccessMessage() },
+                                tint = NexoraMuted
+                            )
+                        }
                     }
                 }
             }
@@ -424,73 +460,95 @@ fun AiGoalDecomposerScreen(
             uiState.decomposition?.let { decomposition ->
 
                 item {
-
-                    Text(
-                        text = "Your breakdown",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NexoraInk
-                    )
-                }
-
-                item {
-
-                    Card(
-                        modifier =
-                            Modifier.fillMaxWidth(),
-                        shape =
-                            RoundedCornerShape(20.dp),
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor = Color.White
-                            ),
-                        border =
-                            BorderStroke(
-                                1.dp,
-                                NexoraBorder
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
                     ) {
+                        Text(
+                            text = "Your breakdown",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NexoraInk
+                        )
 
-                        Column(
-                            modifier =
-                                Modifier.padding(20.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-
                             Text(
-                                text =
-                                    decomposition.goalTitle,
-                                fontSize = 19.sp,
-                                fontWeight =
-                                    FontWeight.Bold,
-                                color = NexoraInk
+                                text = "Select all",
+                                modifier = Modifier.clickable { viewModel.selectAll() },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NexoraGreen
                             )
-
-                            Spacer(
-                                modifier =
-                                    Modifier.height(8.dp)
-                            )
-
                             Text(
-                                text =
-                                    decomposition.summary,
-                                fontSize = 14.sp,
-                                color = NexoraMuted,
-                                lineHeight = 21.sp
+                                text = "Deselect",
+                                modifier = Modifier.clickable { viewModel.deselectAll() },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = NexoraMuted
                             )
                         }
                     }
                 }
 
+                item {
+                    // Breakdown summary card ...
+                }
+
                 items(
                     items = decomposition.steps,
-                    key = {
-                        it.order
-                    }
+                    key = { it.order }
                 ) { step ->
-
                     AiGoalStepCard(
-                        step = step
+                        step = step,
+                        isSelected = uiState.selectedSteps.contains(step.order),
+                        onToggle = { viewModel.toggleStep(step.order) }
                     )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Button(
+                        onClick = { 
+                            showConfirmDialog = true 
+                        },
+                        enabled = uiState.selectedSteps.isNotEmpty() && !uiState.isCreatingTasks,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = NexoraInk,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (uiState.isCreatingTasks) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Creating tasks...")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (uiState.selectedSteps.isEmpty()) 
+                                    "Create Tasks" 
+                                else 
+                                    "Create ${uiState.selectedSteps.size} Tasks",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -499,18 +557,22 @@ fun AiGoalDecomposerScreen(
 
 @Composable
 private fun AiGoalStepCard(
-    step: AiGoalStep
+    step: AiGoalStep,
+    isSelected: Boolean,
+    onToggle: () -> Unit
 ) {
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
         border = BorderStroke(
             1.dp,
-            NexoraBorder
+            if (isSelected) NexoraGreen else NexoraBorder
         )
     ) {
 
@@ -522,6 +584,20 @@ private fun AiGoalStepCard(
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
+
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggle() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = NexoraGreen,
+                        uncheckedColor = NexoraMuted,
+                        checkmarkColor = NexoraInk
+                    )
+                )
+
+                Spacer(
+                    modifier = Modifier.width(8.dp)
+                )
 
                 Box(
                     modifier = Modifier

@@ -13,7 +13,7 @@ class LocalNexoraAiService : NexoraAiService {
 
     override suspend fun generateDailyPlan(
         context: AiContext
-    ): List<AiRecommendation> {
+    ): NexoraDailyPlan {
 
         return planner.createDailyPlan(context)
     }
@@ -50,18 +50,6 @@ class LocalNexoraAiService : NexoraAiService {
         userMessage: String
     ): String {
 
-        val recommendations =
-            planner.analyze(context)
-
-        return if (recommendations.isEmpty()) {
-
-            "I don't have enough information yet to make a useful recommendation."
-
-        } else {
-
-            recommendations.joinToString("\n\n") {
-                "${it.title}: ${it.message}"
-            }
-        }
+        return planner.chat(context, userMessage)
     }
 }

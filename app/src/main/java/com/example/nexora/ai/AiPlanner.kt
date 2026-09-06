@@ -206,70 +206,111 @@ class AiPlanner {
 
     fun createDailyPlan(
         context: AiContext
-    ): List<AiRecommendation> {
+    ): NexoraDailyPlan {
 
         val incompleteTasks =
             context.incompleteTasks
-                .sortedByDescending { task ->
-                    taskScore(
-                        task = task,
-                        context = context
-                    )
+                .map { task ->
+                    val scored = improvedTaskScore(task, context)
+                    task to scored
                 }
+                .sortedByDescending { it.second.first }
 
         if (incompleteTasks.isEmpty()) {
-
-            return listOf(
-                AiRecommendation(
-                    type = AiRecommendationType.DAILY_PLAN,
-                    title = "You're clear for today",
-                    message =
-                        "There are no unfinished tasks in Nexora right now. " +
-                                "Use the time to review your goals or plan your next meaningful step.",
-                    priority = AiPriority.LOW
-                )
+            return NexoraDailyPlan(
+                date = java.time.LocalDate.now().toString(),
+                summary = "There are no unfinished tasks in Nexora right now. Use the time to review your goals or plan your next meaningful step."
             )
         }
 
-        val selectedTasks =
-            incompleteTasks.take(5)
+        // Realistic workload limit: 300 minutes (5 hours)
+        var totalMinutes = 0
+        val maxMinutes = 300
+        val selectedPlannedTasks = mutableListOf<PlannedTask>()
 
-        val planText =
-            buildString {
+        incompleteTasks.forEach { (task, scoreResult) ->
+            val duration = extractDurationMinutes(task.duration)
+            val reason = scoreResult.second
 
-                append("Today's focus:\n\n")
-
-                selectedTasks.forEachIndexed { index, task ->
-
-                    append("${index + 1}. ${task.title}")
-
-                    if (task.duration.isNotBlank()) {
-                        append(" • ${task.duration}")
-                    }
-
-                    if (task.goalTitle != null) {
-                        append(" • Goal: ${task.goalTitle}")
-                    }
-
-                    append("\n")
-                }
-
-                append(
-                    "\nNexora recommends focusing on these tasks " +
-                            "in this order rather than trying to complete " +
-                            "everything at once."
+            // Always take top 2 regardless of duration, then fit others
+            if (selectedPlannedTasks.size < 2 || (totalMinutes + duration <= maxMinutes)) {
+                selectedPlannedTasks.add(
+                    PlannedTask(
+                        task = task,
+                        reason = reason,
+                        recommendedOrder = selectedPlannedTasks.size + 1
+                    )
                 )
+                totalMinutes += if (duration > 0) duration else 30 // Default 30 if unknown
             }
+            
+            // Limit to 6 tasks to prevent overwhelming
+            if (selectedPlannedTasks.size >= 6) return@forEach
+        }
 
-        return listOf(
-            AiRecommendation(
-                type = AiRecommendationType.DAILY_PLAN,
-                title = "Your focused plan",
-                message = planText,
-                priority = AiPriority.HIGH,
-                actionLabel = "Begin with #1"
-            )
+        val summary = if (selectedPlannedTasks.size >= 4) {
+            "You have a productive day ahead. Focus on these ${selectedPlannedTasks.size} tasks to make meaningful progress toward your goals."
+        } else {
+            "Today's plan is focused and achievable. Completing these tasks will build great momentum."
+        }
+
+        return NexoraDailyPlan(
+            date = java.time.LocalDate.now().toString(),
+            tasks = selectedPlannedTasks,
+            totalDurationMinutes = totalMinutes,
+            summary = summary
         )
+    }
+
+    private fun improvedTaskScore(
+        task: PremiumTask,
+        context: AiContext
+    ): Pair<Int, String> {
+        var score = 0
+        val reasons = mutableListOf<String>()
+
+        // Priority
+        score += when (task.priority) {
+            TaskPriority.URGENT -> {
+                reasons.add("Urgent priority")
+                150
+            }
+            TaskPriority.HIGH -> {
+                reasons.add("High priority")
+                80
+            }
+            TaskPriority.MEDIUM -> 40
+            TaskPriority.LOW -> 10
+        }
+
+        // Goal importance
+        val linkedGoal = context.activeGoals.find { it.title == task.goalTitle }
+        if (linkedGoal != null) {
+            score += 40
+            reasons.add("Goal: ${linkedGoal.title}")
+
+            if (linkedGoal.progress < 0.3f) {
+                score += 20
+                reasons.add("Goal needs attention")
+            }
+            
+            if (linkedGoal.targetDate.isNotBlank()) {
+                score += 15
+            }
+        }
+
+        // Today's progress - if we already completed many tasks of a goal, maybe focus on another?
+        // Or if we worked on a goal today, keep going?
+        // For now, simple scoring.
+
+        // Duration
+        val duration = extractDurationMinutes(task.duration)
+        if (duration in 1..45) {
+            score += 10
+        }
+
+        val primaryReason = reasons.firstOrNull() ?: "Next best step"
+        return Pair(score, primaryReason)
     }
 
     // ================================================================
@@ -395,6 +436,70 @@ class AiPlanner {
                         priority = AiPriority.MEDIUM
                     )
                 )
+            }
+        }
+    }
+
+    // ================================================================
+    // CHAT
+    // ================================================================
+
+    fun chat(
+        context: AiContext,
+        userMessage: String
+    ): String {
+
+        val input = userMessage.lowercase().trim()
+
+        return when {
+
+            input.contains("plan") -> {
+                val plan = createDailyPlan(context)
+                if (plan.tasks.isEmpty()) {
+                    plan.summary
+                } else {
+                    val taskList = plan.tasks.joinToString("\n") { 
+                        "${it.recommendedOrder}. ${it.task.title} (${it.task.duration})" 
+                    }
+                    "${plan.summary}\n\n$taskList"
+                }
+            }
+
+            input.contains("next") || 
+            input.contains("work on") || 
+            input.contains("priority") -> {
+                val next = analyze(context).find { it.type == AiRecommendationType.NEXT_TASK }
+                next?.message ?: "I don't see any urgent tasks right now."
+            }
+
+            input.contains("goal") -> {
+                val goalAnalysis = analyzeGoals(context).firstOrNull()
+                goalAnalysis?.message ?: "You haven't set any active goals yet."
+            }
+
+            input.contains("overload") || 
+            input.contains("many tasks") || 
+            input.contains("behind") -> {
+                if (context.incompleteTasks.size >= 8) {
+                    "You're currently carrying ${context.incompleteTasks.size} tasks. Focus on finishing one high-priority item rather than starting new ones."
+                } else {
+                    "Your workload looks manageable with ${context.incompleteTasks.size} tasks."
+                }
+            }
+
+            input.contains("productivity") || 
+            input.contains("progress") -> {
+                val prod = analyzeProductivity(context).firstOrNull()
+                prod?.message ?: "Add some tasks and I'll analyze your progress."
+            }
+
+            input.contains("break down") || 
+            input.contains("decompose") -> {
+                "To break down a goal, please use the Goal Decomposer tool or tell me the specific goal title."
+            }
+
+            else -> {
+                "I'm Nexora, your productivity assistant. I can help you plan your day, prioritize tasks, or review your goals. Try asking 'What should I work on next?'"
             }
         }
     }

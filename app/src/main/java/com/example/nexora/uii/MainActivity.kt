@@ -25,6 +25,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.example.nexora.ai.AiContextBuilder
+import com.example.nexora.ai.AiRecommendation
+import com.example.nexora.ai.LocalNexoraAiService
+import com.example.nexora.ai.NexoraAiEngine
 import com.example.nexora.data.DailyProgressEntity
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
@@ -50,6 +54,24 @@ class MainActivity : ComponentActivity() {
 
                 val repository = remember {
                     NexoraRepository(database)
+                }
+
+                // ============================================================
+                // NEXORA AI
+                // ============================================================
+
+                val aiEngine = remember {
+
+                    val contextBuilder =
+                        AiContextBuilder(repository)
+
+                    val aiService =
+                        LocalNexoraAiService()
+
+                    NexoraAiEngine(
+                        contextBuilder = contextBuilder,
+                        aiService = aiService
+                    )
                 }
 
                 val scope = rememberCoroutineScope()
@@ -247,7 +269,8 @@ class MainActivity : ComponentActivity() {
                         if (
                             selectedScreen != "addTask" &&
                             selectedScreen != "addGoal" &&
-                            selectedScreen != "goalDetails"
+                            selectedScreen != "goalDetails" &&
+                            selectedScreen != "aiGoalDecomposer"
                         ) {
 
                             NavigationBar {
@@ -336,7 +359,7 @@ class MainActivity : ComponentActivity() {
                                     },
 
                                     label = {
-                                        Text("Insights")
+                                        Text("AI")
                                     }
                                 )
                             }
@@ -454,13 +477,10 @@ class MainActivity : ComponentActivity() {
 
                                         scope.launch {
 
-                                            // Delete from database FIRST.
                                             repository.deleteTask(
                                                 task
                                             )
 
-                                            // Delete the exact task
-                                            // from the UI using its ID.
                                             tasks.removeAll {
                                                 it.id == task.id
                                             }
@@ -627,12 +647,78 @@ class MainActivity : ComponentActivity() {
                             }
 
                             // ==================================================
-                            // INSIGHTS
+                            // AI
                             // ==================================================
 
                             "insights" -> {
 
-                                InsightScreen()
+                                AiScreen(
+
+                                    engine = aiEngine,
+
+                                    onOpenGoalDecomposer = {
+
+                                        selectedScreen =
+                                            "aiGoalDecomposer"
+                                    },
+
+                                    onRecommendationAction = { recommendation ->
+
+                                        recommendation.relatedGoalId?.let { goalId ->
+
+                                            val goal =
+                                                goals.find {
+                                                    it.id == goalId
+                                                }
+
+                                            if (goal != null) {
+
+                                                selectedGoal = goal
+                                                selectedScreen = "goalDetails"
+                                            }
+                                        }
+
+                                        recommendation.relatedTaskId?.let { _ ->
+
+                                            selectedScreen = "tasks"
+                                        }
+                                    },
+
+                                    onTaskAction = { taskId ->
+                                        selectedScreen = "tasks"
+                                    }
+                                )
+                            }
+
+                            // ==================================================
+                            // AI GOAL DECOMPOSER
+                            // ==================================================
+
+                            "aiGoalDecomposer" -> {
+
+                                AiGoalDecomposerScreen(
+
+                                    engine = aiEngine,
+
+                                    repository = repository,
+
+                                    onBack = {
+
+                                        selectedScreen =
+                                            "insights"
+                                    },
+
+                                    onTasksCreated = {
+                                        scope.launch {
+                                            val savedTasks = repository.observeTasks().first()
+                                            tasks.clear()
+                                            tasks.addAll(savedTasks)
+                                            
+                                            refreshGoalProgress()
+                                            updateTodayProgress()
+                                        }
+                                    }
+                                )
                             }
 
                             // ==================================================

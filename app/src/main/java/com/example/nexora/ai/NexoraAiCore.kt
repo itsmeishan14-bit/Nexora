@@ -15,7 +15,7 @@ class NexoraAiCore(
         )
     }
 
-    suspend fun createDailyPlan(): List<AiRecommendation> {
+    suspend fun createDailyPlan(): NexoraDailyPlan {
 
         val context =
             contextBuilder.build()

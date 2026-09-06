@@ -10,7 +10,7 @@ class NexoraAiEngine(
         return aiService.generateRecommendations(context)
     }
 
-    suspend fun createDailyPlan(): List<AiRecommendation> {
+    suspend fun createDailyPlan(): NexoraDailyPlan {
         val context = contextBuilder.build()
         return aiService.generateDailyPlan(context)
     }

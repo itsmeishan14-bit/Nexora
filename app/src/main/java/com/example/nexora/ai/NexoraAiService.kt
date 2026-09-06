@@ -8,7 +8,7 @@ interface NexoraAiService {
 
     suspend fun generateDailyPlan(
         context: AiContext
-    ): List<AiRecommendation>
+    ): NexoraDailyPlan
 
     suspend fun analyzeGoals(
         context: AiContext
