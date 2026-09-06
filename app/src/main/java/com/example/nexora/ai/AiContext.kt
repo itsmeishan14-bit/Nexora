@@ -11,7 +11,8 @@ data class AiContext(
     val focusMinutesToday: Int = 0,
     val goalsWorkedOnToday: Int = 0,
     val carriedTasks: Int = 0,
-    val memory: AiMemory = AiMemory()
+    val memory: AiMemory = AiMemory(),
+    val adaptiveProfile: AdaptiveProfile = AdaptiveProfile()
 ) {
     val incompleteTasks: List<PremiumTask>
         get() = tasks.filter { !it.completed }

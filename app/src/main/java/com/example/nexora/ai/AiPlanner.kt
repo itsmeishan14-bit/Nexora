@@ -117,24 +117,22 @@ class AiPlanner {
 
     fun getProactiveInsights(context: AiContext): List<AiRecommendation> {
         val insights = mutableListOf<AiRecommendation>()
+        val profile = context.adaptiveProfile
 
-        // 1. WORKLOAD INTELLIGENCE
+        // 1. ADAPTIVE WORKLOAD INTELLIGENCE
         val plannedToday = context.tasksPlannedToday
-        val avgCompleted = if (context.memory.analyzedDays > 0) {
-            // Heuristic capacity based on patterns
-            val accuracyPattern = context.memory.patterns.find { it.type == AiPatternType.COMPLETION_ACCURACY }
-            if (accuracyPattern != null) 3 else 5
-        } else 5
+        val capacity = profile.preferredDailyWorkload
 
-        if (plannedToday > avgCompleted * 1.5) {
+        if (plannedToday > capacity * 1.5) {
+            val confidence = mapAdaptiveConfidence(profile.confidence)
             insights.add(
                 AiRecommendation(
                     type = AiRecommendationType.WARNING,
-                    title = "Heavy Workload Detected",
-                    message = "You've planned $plannedToday tasks, which is significantly more than your typical completion rate.",
-                    evidence = "Planned: $plannedToday, Typical capacity: $avgCompleted. Reducing workload prevents burnout.",
+                    title = "High Workload Warning",
+                    message = "You've planned $plannedToday tasks, but you usually complete around $capacity tasks per day.",
+                    evidence = "Historical capacity: $capacity, Confidence: ${profile.confidence}",
                     priority = AiPriority.HIGH,
-                    confidence = AiConfidence.HIGH,
+                    confidence = confidence,
                     actionLabel = "Review Today's Plan"
                 )
             )
@@ -151,7 +149,7 @@ class AiPlanner {
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "Goal Neglected",
                     message = "\"${neglectedGoal.title}\" is falling behind and has no tasks planned today.",
-                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%. Even a small task can restart momentum.",
+                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%. Regular attention builds consistency.",
                     priority = AiPriority.MEDIUM,
                     confidence = AiConfidence.MEDIUM,
                     relatedGoalId = neglectedGoal.id,
@@ -160,7 +158,7 @@ class AiPlanner {
             )
         }
 
-        // 3. TASK INTELLIGENCE
+        // 3. TASK INTELLIGENCE - URGENT
         val urgentIgnored = context.incompleteTasks.find { 
             it.priority == TaskPriority.URGENT 
         }
@@ -171,7 +169,7 @@ class AiPlanner {
                     type = AiRecommendationType.WARNING,
                     title = "Urgent Task Pending",
                     message = "\"${urgentIgnored.title}\" is marked as urgent but remains incomplete.",
-                    evidence = "Priority: URGENT. High-priority items should be addressed early in the day.",
+                    evidence = "Priority: URGENT. Addressing these early reduces workload pressure.",
                     priority = AiPriority.CRITICAL,
                     confidence = AiConfidence.HIGH,
                     relatedTaskId = urgentIgnored.id,
@@ -181,16 +179,30 @@ class AiPlanner {
         }
 
         // 4. CARRY-OVER INTELLIGENCE
-        if (context.carriedTasks > 3) {
+        if (context.carriedTasks > profile.averageCarriedTasks * 1.5 && context.carriedTasks > 2) {
             insights.add(
                 AiRecommendation(
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "High Task Carry-over",
-                    message = "You've carried over ${context.carriedTasks} tasks from previous days. This often leads to cumulative overload.",
-                    evidence = "History shows ${context.carriedTasks} unfinished tasks from previous sessions.",
+                    title = "Unusual Carry-over",
+                    message = "You've carried forward ${context.carriedTasks} tasks, which is higher than your usual baseline of ${profile.averageCarriedTasks.toInt()}.",
+                    evidence = "Historical baseline: ${profile.averageCarriedTasks.toInt()}, Today: ${context.carriedTasks}.",
                     priority = AiPriority.MEDIUM,
-                    confidence = AiConfidence.HIGH,
+                    confidence = mapAdaptiveConfidence(profile.confidence),
                     actionLabel = "Review Workload"
+                )
+            )
+        }
+
+        // 5. MOMENTUM DETECTION
+        if (context.tasksCompletedToday > profile.averageTasksCompleted && context.tasksCompletedToday >= 3) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = "Peak Productivity",
+                    message = "You're exceeding your average daily completion rate today. Great job maintaining this momentum!",
+                    evidence = "Daily average: ${profile.averageTasksCompleted.toInt()}, Today: ${context.tasksCompletedToday}.",
+                    priority = AiPriority.LOW,
+                    confidence = mapAdaptiveConfidence(profile.confidence)
                 )
             )
         }
@@ -205,6 +217,7 @@ class AiPlanner {
     fun createDailyPlan(
         context: AiContext
     ): NexoraDailyPlan {
+        val profile = context.adaptiveProfile
 
         val incompleteTasks =
             context.incompleteTasks
@@ -221,12 +234,14 @@ class AiPlanner {
             )
         }
 
-        // Realistic workload limit: 300 minutes (5 hours)
+        // Realistic workload limit: Based on profile if available, else 300 minutes
         var totalMinutes = 0
-        val maxMinutes = 300
+        val maxMinutes = 360
+        val maxTasks = if (profile.confidence != AdaptiveConfidence.UNKNOWN) profile.preferredDailyWorkload else 6
+        
         val selectedPlannedTasks = mutableListOf<PlannedTask>()
 
-        incompleteTasks.forEach { (task, scoreResult) ->
+        for ((task, scoreResult) in incompleteTasks) {
             val duration = extractDurationMinutes(task.duration)
             val reason = scoreResult.second
 
@@ -242,11 +257,11 @@ class AiPlanner {
                 totalMinutes += if (duration > 0) duration else 30 
             }
             
-            if (selectedPlannedTasks.size >= 6) return@forEach
+            if (selectedPlannedTasks.size >= maxTasks) break
         }
 
-        val summary = if (selectedPlannedTasks.size >= 4) {
-            "You have a productive day ahead. Focus on these ${selectedPlannedTasks.size} tasks to make meaningful progress toward your goals."
+        val summary = if (selectedPlannedTasks.size >= maxTasks * 0.7) {
+            "You have a productive day ahead. This plan fits your typical workload and focuses on your highest priorities."
         } else {
             "Today's plan is focused and achievable. Completing these tasks will build great momentum."
         }
@@ -265,6 +280,7 @@ class AiPlanner {
     ): Pair<Int, String> {
         var score = 0
         val reasons = mutableListOf<String>()
+        val profile = context.adaptiveProfile
 
         // 1. Priority Base
         when (task.priority) {
@@ -296,8 +312,17 @@ class AiPlanner {
             }
         }
 
-        // 3. Efficiency boost for small tasks when list is long
+        // 3. Adaptive duration boost
         val duration = extractDurationMinutes(task.duration)
+        if (profile.preferredTaskSize == "Small" && duration <= 30) {
+            score += 20
+            reasons.add("Fits your preferred task size")
+        } else if (profile.preferredTaskSize == "Large" && duration > 60) {
+            score += 20
+            reasons.add("Fits your deep work preference")
+        }
+
+        // 4. Efficiency boost for small tasks when list is long
         if (context.incompleteTasks.size > 5 && duration in 1..30) {
             score += 15
             reasons.add("Quick win to reduce list size")
@@ -354,6 +379,7 @@ class AiPlanner {
     fun analyzeProductivity(
         context: AiContext
     ): List<AiRecommendation> {
+        val profile = context.adaptiveProfile
 
         if (context.tasksPlannedToday == 0) {
             return listOf(
@@ -369,6 +395,22 @@ class AiPlanner {
 
         val completionRate = context.tasksCompletedToday.toFloat() / context.tasksPlannedToday.toFloat()
         val evidence = "Completed: ${context.tasksCompletedToday}, Planned: ${context.tasksPlannedToday}."
+        
+        // Personalized insight if baseline exists
+        if (profile.confidence != AdaptiveConfidence.UNKNOWN && profile.completionRate > 0) {
+            if (completionRate < profile.completionRate * 0.8f) {
+                return listOf(
+                    AiRecommendation(
+                        type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                        title = "Productivity Below Average",
+                        message = "Your completion rate is currently ${(completionRate * 100).toInt()}%, which is below your baseline of ${(profile.completionRate * 100).toInt()}%.",
+                        evidence = evidence,
+                        priority = AiPriority.MEDIUM,
+                        confidence = mapAdaptiveConfidence(profile.confidence)
+                    )
+                )
+            }
+        }
 
         return when {
             completionRate >= 0.8f -> {
@@ -535,5 +577,14 @@ class AiPlanner {
 
     private fun buildNextTaskMessage(task: PremiumTask, context: AiContext, reason: String): String {
         return "Nexora recommends starting \"${task.title}\". $reason."
+    }
+
+    private fun mapAdaptiveConfidence(confidence: AdaptiveConfidence): AiConfidence {
+        return when (confidence) {
+            AdaptiveConfidence.HIGH -> AiConfidence.HIGH
+            AdaptiveConfidence.MODERATE -> AiConfidence.MEDIUM
+            AdaptiveConfidence.LOW -> AiConfidence.LOW
+            AdaptiveConfidence.UNKNOWN -> AiConfidence.LOW
+        }
     }
 }
