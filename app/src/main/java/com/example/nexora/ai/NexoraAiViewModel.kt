@@ -22,11 +22,14 @@ data class NexoraAiUiState(
     val memory: AiMemory = AiMemory(),
     val error: String? = null,
     val chatMessages: List<NexoraChatMessage> = emptyList(),
-    val isChatLoading: Boolean = false
+    val isChatLoading: Boolean = false,
+    val proposedAction: AiAction? = null,
+    val lastActionResult: AiActionResult? = null
 )
 
 class NexoraAiViewModel(
-    private val engine: NexoraAiEngine
+    private val engine: NexoraAiEngine,
+    private val actionExecutor: AiActionExecutor
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NexoraAiUiState())
@@ -164,6 +167,10 @@ class NexoraAiViewModel(
                     chatMessages = _uiState.value.chatMessages + aiMessage,
                     isChatLoading = false
                 )
+
+                // Check if we should propose an action based on chat response
+                checkForProposedAction(responseText)
+
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isChatLoading = false,
@@ -171,5 +178,102 @@ class NexoraAiViewModel(
                 )
             }
         }
+    }
+
+    private fun checkForProposedAction(aiResponse: String) {
+        val lower = aiResponse.lowercase()
+        
+        // Simple mock of AI decision logic
+        when {
+            lower.contains("create a task") || lower.contains("add a task") -> {
+                val titleMatch = Regex("\"([^\"]*)\"").find(aiResponse)
+                val title = titleMatch?.groupValues?.get(1) ?: "New AI Task"
+                
+                proposeAction(AiAction(
+                    type = AiActionType.CREATE_TASK,
+                    title = "Propose: Create Task",
+                    description = "Should I create the task \"$title\"?",
+                    parameters = mapOf("title" to title),
+                    requiresConfirmation = true
+                ))
+            }
+            
+            lower.contains("mark") && lower.contains("complete") -> {
+                // Propose completing the next best task as a guess
+                viewModelScope.launch {
+                    val context = engine.getContext()
+                    val nextTask = context.incompleteTasks.firstOrNull()
+                    if (nextTask != null) {
+                        proposeAction(AiAction(
+                            type = AiActionType.COMPLETE_TASK,
+                            title = "Propose: Complete Task",
+                            description = "Mark \"${nextTask.title}\" as complete?",
+                            taskId = nextTask.id,
+                            reason = "User expressed desire to complete a task.",
+                            requiresConfirmation = true
+                        ))
+                    }
+                }
+            }
+
+            lower.contains("delete task") -> {
+                // Propose deleting a task (requires confirmation)
+                viewModelScope.launch {
+                    val context = engine.getContext()
+                    val taskToDelete = context.incompleteTasks.firstOrNull()
+                    if (taskToDelete != null) {
+                        proposeAction(AiAction(
+                            type = AiActionType.DELETE_TASK,
+                            title = "Propose: Delete Task",
+                            description = "Delete \"${taskToDelete.title}\" permanently?",
+                            taskId = taskToDelete.id,
+                            priority = AiPriority.HIGH,
+                            requiresConfirmation = true
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    fun proposeAction(action: AiAction) {
+        _uiState.value = _uiState.value.copy(
+            proposedAction = action
+        )
+    }
+
+    fun confirmAction() {
+        val action = _uiState.value.proposedAction ?: return
+        
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                proposedAction = null
+            )
+            
+            val result = actionExecutor.execute(action)
+            
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                lastActionResult = result
+            )
+            
+            if (result.success) {
+                // Refresh data
+                analyze()
+            }
+        }
+    }
+
+    fun dismissAction() {
+        _uiState.value = _uiState.value.copy(
+            proposedAction = null
+        )
+    }
+
+    fun dismissResult() {
+        _uiState.value = _uiState.value.copy(
+            lastActionResult = null
+        )
     }
 }

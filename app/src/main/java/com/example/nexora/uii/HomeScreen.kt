@@ -34,8 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.nexora.ai.AiAction
 
 private val Background = Color(0xFFF7F8F4)
 private val Ink = Color(0xFF17231C)
@@ -50,7 +52,10 @@ fun HomeScreen(
     progressHistory: List<DailyProgress>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
-    topPattern: String? = null
+    topPattern: String? = null,
+    proposedAction: AiAction? = null,
+    onApproveAction: (AiAction) -> Unit = {},
+    onDismissAction: () -> Unit = {}
 ) {
 
     val completed = tasks.count { it.completed }
@@ -212,36 +217,120 @@ fun HomeScreen(
         }
 
         // --------------------------------
-        // TOP AI INSIGHT
+        // TOP AI INSIGHT / PROPOSED ACTION
         // --------------------------------
 
-        topPattern?.let { pattern ->
+        proposedAction?.let { action ->
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = SoftGreen
-                    ),
-                    border = BorderStroke(1.dp, Green.copy(alpha = 0.2f))
+                    shape = RoundedCornerShape(26.dp),
+                    colors = CardDefaults.cardColors(containerColor = Ink),
+                    border = BorderStroke(2.dp, Green)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = Green,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Green,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Nexora recommends",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Green,
+                                letterSpacing = 1.2.sp
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
                         Text(
-                            text = pattern,
-                            fontSize = 14.sp,
-                            color = Ink,
-                            fontWeight = FontWeight.Medium
+                            text = action.title,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
+                        
+                        Text(
+                            text = action.description,
+                            fontSize = 13.sp,
+                            color = Color(0xFFB8C1BA),
+                            lineHeight = 19.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onApproveAction(action) },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Green)
+                            ) {
+                                Text(
+                                    text = "Approve",
+                                    modifier = Modifier.padding(vertical = 10.dp).align(Alignment.CenterHorizontally),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Ink
+                                )
+                            }
+                            
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { onDismissAction() },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF354439))
+                            ) {
+                                Text(
+                                    text = "Dismiss",
+                                    modifier = Modifier.padding(vertical = 10.dp).align(Alignment.CenterHorizontally),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (proposedAction == null) {
+            topPattern?.let { pattern ->
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = SoftGreen
+                        ),
+                        border = BorderStroke(1.dp, Green.copy(alpha = 0.2f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Green,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = pattern,
+                                fontSize = 14.sp,
+                                color = Ink,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }

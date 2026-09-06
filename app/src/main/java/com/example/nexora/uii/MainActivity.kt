@@ -25,6 +25,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.example.nexora.ai.AiAction
+import com.example.nexora.ai.AiActionExecutor
 import com.example.nexora.ai.AiContextBuilder
 import com.example.nexora.ai.AiRecommendation
 import com.example.nexora.ai.LocalNexoraAiService
@@ -74,6 +76,10 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                val actionExecutor = remember {
+                    AiActionExecutor(repository)
+                }
+
                 val scope = rememberCoroutineScope()
 
                 // ============================================================
@@ -114,6 +120,10 @@ class MainActivity : ComponentActivity() {
 
                 var topAiInsight by remember {
                     mutableStateOf<String?>(null)
+                }
+
+                var homeProposedAction by remember {
+                    mutableStateOf<AiAction?>(null)
                 }
 
                 // ============================================================
@@ -161,6 +171,18 @@ class MainActivity : ComponentActivity() {
 
                     // Fetch top AI insight
                     topAiInsight = aiEngine.getTopInsight()
+                    
+                    // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
+                    val context = aiEngine.getContext()
+                    if (context.incompleteTasks.size >= 8) {
+                        homeProposedAction = AiAction(
+                            type = com.example.nexora.ai.AiActionType.RESCHEDULE_TASK,
+                            title = "High Workload Detected",
+                            description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
+                            reason = "Too many tasks today reduces focus.",
+                            requiresConfirmation = true
+                        )
+                    }
                 }
 
                 // ============================================================
@@ -397,6 +419,25 @@ class MainActivity : ComponentActivity() {
                                         progressHistory,
 
                                     topPattern = topAiInsight,
+                                    
+                                    proposedAction = homeProposedAction,
+                                    
+                                    onApproveAction = { action ->
+                                        scope.launch {
+                                            actionExecutor.execute(action)
+                                            homeProposedAction = null
+                                            
+                                            // Refresh data
+                                            val savedTasks = repository.observeTasks().first()
+                                            tasks.clear()
+                                            tasks.addAll(savedTasks)
+                                            updateTodayProgress()
+                                        }
+                                    },
+                                    
+                                    onDismissAction = {
+                                        homeProposedAction = null
+                                    },
 
                                     onAddTask = {
 
@@ -664,6 +705,8 @@ class MainActivity : ComponentActivity() {
                                 AiScreen(
 
                                     engine = aiEngine,
+                                    
+                                    repository = repository,
 
                                     onOpenGoalDecomposer = {
 

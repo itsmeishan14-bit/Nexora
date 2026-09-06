@@ -61,6 +61,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.nexora.ai.AiAction
+import com.example.nexora.ai.AiActionExecutor
+import com.example.nexora.ai.AiActionResult
+import com.example.nexora.ai.AiActionType
+import com.example.nexora.ai.AiPriority
 import com.example.nexora.ai.AiRecommendation
 import com.example.nexora.ai.AiRecommendationType
 import com.example.nexora.ai.NexoraAiEngine
@@ -82,6 +87,7 @@ private val NexoraBorder = Color(0xFFE1E5E1)
 @Composable
 fun AiScreen(
     engine: NexoraAiEngine,
+    repository: com.example.nexora.data.NexoraRepository,
     onOpenGoalDecomposer: () -> Unit,
     onRecommendationAction: (AiRecommendation) -> Unit,
     onTaskAction: (Long) -> Unit = {}
@@ -96,7 +102,8 @@ fun AiScreen(
             ): T {
 
                 return NexoraAiViewModel(
-                    engine = engine
+                    engine = engine,
+                    actionExecutor = AiActionExecutor(repository)
                 ) as T
             }
         }
@@ -167,6 +174,25 @@ fun AiScreen(
                             color = NexoraMuted
                         )
                     }
+                }
+            }
+
+            uiState.lastActionResult?.let { result ->
+                item {
+                    ActionResultCard(
+                        result = result,
+                        onDismiss = { viewModel.dismissResult() }
+                    )
+                }
+            }
+
+            uiState.proposedAction?.let { action ->
+                item {
+                    ProposedActionCard(
+                        action = action,
+                        onConfirm = { viewModel.confirmAction() },
+                        onDismiss = { viewModel.dismissAction() }
+                    )
                 }
             }
 
@@ -393,7 +419,14 @@ fun AiScreen(
                 ) { recommendation ->
                     AiRecommendationCard(
                         recommendation = recommendation,
-                        onAction = onRecommendationAction
+                        onAction = { rec ->
+                            val action = recommendationToAction(rec)
+                            if (action != null) {
+                                viewModel.proposeAction(action)
+                            } else {
+                                onRecommendationAction(rec)
+                            }
+                        }
                     )
                 }
             }
@@ -513,6 +546,146 @@ fun AiScreen(
             onSend = { viewModel.sendMessage(it) },
             enabled = !uiState.isChatLoading
         )
+    }
+}
+
+private fun recommendationToAction(recommendation: AiRecommendation): AiAction? {
+    return when (recommendation.type) {
+        AiRecommendationType.NEXT_TASK -> {
+            recommendation.relatedTaskId?.let { taskId ->
+                AiAction(
+                    type = AiActionType.COMPLETE_TASK,
+                    title = "Complete Task",
+                    description = "Mark this task as finished?",
+                    reason = recommendation.message,
+                    taskId = taskId
+                )
+            }
+        }
+        AiRecommendationType.WARNING -> {
+            if (recommendation.title.contains("workload")) {
+                 AiAction(
+                    type = AiActionType.RESCHEDULE_TASK,
+                    title = "Reschedule Low Priority Tasks",
+                    description = "Move 3 low-priority tasks to tomorrow to reduce overload?",
+                    reason = recommendation.message
+                )
+            } else null
+        }
+        else -> null
+    }
+}
+
+@Composable
+fun ProposedActionCard(
+    action: AiAction,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = NexoraInk),
+        border = BorderStroke(2.dp, NexoraGreen)
+    ) {
+        Column(modifier = Modifier.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = NexoraGreen,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "AI Proposed Action",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = action.title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = NexoraGreen
+            )
+            
+            Text(
+                text = action.description,
+                fontSize = 14.sp,
+                color = Color(0xFFB8C1BA),
+                lineHeight = 20.sp
+            )
+            
+            action.reason?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Reason: $it",
+                    fontSize = 12.sp,
+                    color = Color(0xFF747B75),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = NexoraGreen, contentColor = NexoraInk),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Approve", fontWeight = FontWeight.Bold)
+                }
+                
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF354439), contentColor = Color.White),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActionResultCard(
+    result: AiActionResult,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (result.success) NexoraSoftGreen else Color(0xFFFFF4F2)
+        ),
+        border = BorderStroke(1.dp, if (result.success) NexoraGreen else Color(0xFFE8D3CF))
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp).clickable { onDismiss() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (result.success) Icons.Default.TaskAlt else Icons.Default.Warning,
+                contentDescription = null,
+                tint = if (result.success) NexoraGreen else Color(0xFF9A5B50)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = result.message,
+                fontSize = 14.sp,
+                color = NexoraInk,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
