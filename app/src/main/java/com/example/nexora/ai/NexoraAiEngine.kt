@@ -10,6 +10,15 @@ class NexoraAiEngine(
         return aiService.generateRecommendations(context)
     }
 
+    suspend fun getContext(): AiContext {
+        return contextBuilder.build()
+    }
+
+    suspend fun getTopInsight(): String? {
+        val context = contextBuilder.build()
+        return context.memory.patterns.firstOrNull()?.description
+    }
+
     suspend fun createDailyPlan(): NexoraDailyPlan {
         val context = contextBuilder.build()
         return aiService.generateDailyPlan(context)

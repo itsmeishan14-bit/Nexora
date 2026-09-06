@@ -180,6 +180,12 @@ class NexoraRepository(
         return dailyProgressDao.getByDate(date)
     }
 
+    suspend fun getHistoricalProgress(
+        limit: Int
+    ): List<DailyProgressEntity> {
+        return dailyProgressDao.getHistory(limit)
+    }
+
     suspend fun saveDailyProgress(
         progress: DailyProgressEntity
     ) {

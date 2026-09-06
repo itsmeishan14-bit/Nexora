@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,7 +49,8 @@ fun HomeScreen(
     tasks: SnapshotStateList<PremiumTask>,
     progressHistory: List<DailyProgress>,
     onAddTask: () -> Unit,
-    onToggleTask: (PremiumTask) -> Unit
+    onToggleTask: (PremiumTask) -> Unit,
+    topPattern: String? = null
 ) {
 
     val completed = tasks.count { it.completed }
@@ -204,6 +207,42 @@ fun HomeScreen(
                         color = Green,
                         trackColor = Color(0xFF3B453F)
                     )
+                }
+            }
+        }
+
+        // --------------------------------
+        // TOP AI INSIGHT
+        // --------------------------------
+
+        topPattern?.let { pattern ->
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = SoftGreen
+                    ),
+                    border = BorderStroke(1.dp, Green.copy(alpha = 0.2f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Green,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = pattern,
+                            fontSize = 14.sp,
+                            color = Ink,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

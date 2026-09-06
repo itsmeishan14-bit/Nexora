@@ -18,6 +18,9 @@ interface DailyProgressDao {
     @Query("SELECT * FROM daily_progress WHERE date = :date LIMIT 1")
     suspend fun getByDate(date: String): DailyProgressEntity?
 
+    @Query("SELECT * FROM daily_progress ORDER BY date DESC LIMIT :limit")
+    suspend fun getHistory(limit: Int): List<DailyProgressEntity>
+
     @Query("DELETE FROM daily_progress")
     suspend fun deleteAll()
 }

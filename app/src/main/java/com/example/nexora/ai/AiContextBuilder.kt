@@ -20,6 +20,11 @@ class AiContextBuilder(
         val todayProgress =
             repository.getDailyProgress(today)
 
+        val history = repository.getHistoricalProgress(30)
+        
+        val planner = AiPlanner()
+        val memory = planner.detectPatterns(history)
+
         return AiContext(
             tasks = tasks,
             goals = goals,
@@ -27,7 +32,8 @@ class AiContextBuilder(
             tasksPlannedToday = todayProgress?.tasksPlanned ?: 0,
             focusMinutesToday = todayProgress?.focusMinutes ?: 0,
             goalsWorkedOnToday = todayProgress?.goalsWorkedOn ?: 0,
-            carriedTasks = todayProgress?.carriedTasks ?: 0
+            carriedTasks = todayProgress?.carriedTasks ?: 0,
+            memory = memory
         )
     }
 }

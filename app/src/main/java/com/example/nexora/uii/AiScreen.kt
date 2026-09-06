@@ -68,6 +68,8 @@ import com.example.nexora.ai.NexoraAiViewModel
 import com.example.nexora.ai.NexoraChatMessage
 import com.example.nexora.ai.NexoraDailyPlan
 import com.example.nexora.ai.PlannedTask
+import com.example.nexora.ai.AiProductivityPattern
+import com.example.nexora.ai.AiPatternType
 import com.example.nexora.uii.TaskPriority
 
 private val NexoraBackground = Color(0xFFF7F8F4)
@@ -344,6 +346,29 @@ fun AiScreen(
                         plannedTask = plannedTask,
                         onClick = { onTaskAction(plannedTask.task.id) }
                     )
+                }
+            }
+
+            // ====================================================
+            // PRODUCTIVITY PATTERNS
+            // ====================================================
+
+            if (uiState.memory.patterns.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Productivity Intelligence",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraInk,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                items(
+                    items = uiState.memory.patterns,
+                    key = { "pattern_${it.type}_${it.title}" }
+                ) { pattern ->
+                    AiPatternCard(pattern)
                 }
             }
 
@@ -685,6 +710,66 @@ fun PlannedTaskCard(
                 tint = if (plannedTask.task.priority == com.example.nexora.uii.TaskPriority.URGENT) Color(0xFFE57373) else NexoraBorder,
                 modifier = Modifier.size(20.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun AiPatternCard(pattern: AiProductivityPattern) {
+    val icon = when (pattern.type) {
+        AiPatternType.WORKLOAD_CONSISTENCY -> Icons.Default.Warning
+        AiPatternType.FOCUS_TREND -> Icons.Default.AutoAwesome
+        AiPatternType.COMPLETION_ACCURACY -> Icons.Default.Lightbulb
+        else -> Icons.Default.AutoAwesome
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, NexoraBorder)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NexoraSoftGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = NexoraGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = pattern.title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NexoraInk
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = pattern.description,
+                fontSize = 14.sp,
+                color = NexoraMuted,
+                lineHeight = 20.sp
+            )
+            
+            pattern.recommendation?.let { rec ->
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = rec,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = NexoraGreen
+                )
+            }
         }
     }
 }

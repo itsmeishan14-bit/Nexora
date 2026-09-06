@@ -19,6 +19,7 @@ data class NexoraAiUiState(
     val isLoading: Boolean = false,
     val recommendations: List<AiRecommendation> = emptyList(),
     val dailyPlan: NexoraDailyPlan? = null,
+    val memory: AiMemory = AiMemory(),
     val error: String? = null,
     val chatMessages: List<NexoraChatMessage> = emptyList(),
     val isChatLoading: Boolean = false
@@ -41,11 +42,13 @@ class NexoraAiViewModel(
             )
 
             try {
+                val context = engine.getContext()
                 val recommendations = engine.analyze()
 
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    recommendations = recommendations
+                    recommendations = recommendations,
+                    memory = context.memory
                 )
             } catch (e: Exception) {
                 _uiState.value = NexoraAiUiState(

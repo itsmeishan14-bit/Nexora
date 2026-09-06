@@ -112,6 +112,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<NexoraGoal?>(null)
                 }
 
+                var topAiInsight by remember {
+                    mutableStateOf<String?>(null)
+                }
+
                 // ============================================================
                 // LOAD DATA FROM ROOM
                 // ============================================================
@@ -154,6 +158,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     )
+
+                    // Fetch top AI insight
+                    topAiInsight = aiEngine.getTopInsight()
                 }
 
                 // ============================================================
@@ -388,6 +395,8 @@ class MainActivity : ComponentActivity() {
 
                                     progressHistory =
                                         progressHistory,
+
+                                    topPattern = topAiInsight,
 
                                     onAddTask = {
 

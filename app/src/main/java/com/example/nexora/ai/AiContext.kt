@@ -10,7 +10,8 @@ data class AiContext(
     val tasksPlannedToday: Int = 0,
     val focusMinutesToday: Int = 0,
     val goalsWorkedOnToday: Int = 0,
-    val carriedTasks: Int = 0
+    val carriedTasks: Int = 0,
+    val memory: AiMemory = AiMemory()
 ) {
     val incompleteTasks: List<PremiumTask>
         get() = tasks.filter { !it.completed }
