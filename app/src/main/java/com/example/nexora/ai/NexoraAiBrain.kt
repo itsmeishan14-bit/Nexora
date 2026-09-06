@@ -19,9 +19,10 @@ class NexoraAiBrain(
     private val planner = AiPlanner()
     private val learningLoop = AiLearningLoop(repository)
     private val memoryRetriever = AiMemoryRetriever(repository)
+    private val decisionGate = AiDecisionGate(repository)
     
     // The Agent system is a capability of the Brain
-    private val agent = NexoraAiAgent(toolRegistry)
+    private val agent = NexoraAiAgent(toolRegistry, decisionGate)
 
     /**
      * Process a unified AI request.

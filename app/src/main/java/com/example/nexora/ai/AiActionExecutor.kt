@@ -25,7 +25,7 @@ open class AiActionExecutor(
 
         // 2. Execution Layer
         val result = try {
-            when (action.type) {
+            val executionResult = when (action.type) {
                 AiActionType.CREATE_TASK -> createTask(repo, action)
                 AiActionType.COMPLETE_TASK -> completeTask(repo, action)
                 AiActionType.UPDATE_TASK -> updateTask(repo, action)
@@ -39,6 +39,13 @@ open class AiActionExecutor(
                 AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
                 AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
             }
+
+            // 3. Verification Layer
+            if (executionResult.success) {
+                verifyAction(repo, action, executionResult)
+            } else {
+                executionResult
+            }
         } catch (e: Exception) {
             AiActionResult(
                 success = false,
@@ -47,10 +54,41 @@ open class AiActionExecutor(
             )
         }
         
-        // 3. Learning Loop: Record action outcome
+        // 4. Learning Loop: Record action outcome
         recordActionOutcome(action, result)
         
         return result
+    }
+
+    private suspend fun verifyAction(
+        repository: NexoraRepository,
+        action: AiAction,
+        executionResult: AiActionResult
+    ): AiActionResult {
+        return when (action.type) {
+            AiActionType.CREATE_TASK -> {
+                val taskId = executionResult.affectedTaskId ?: return executionResult
+                val task = repository.observeTasksOnce().find { it.id == taskId }
+                if (task != null) executionResult else AiActionResult(false, "Verification failed: Task not found in DB after creation.")
+            }
+            AiActionType.COMPLETE_TASK -> {
+                val taskId = action.taskId ?: return executionResult
+                val task = repository.observeTasksOnce().find { it.id == taskId }
+                if (task?.completed == true) executionResult else AiActionResult(false, "Verification failed: Task still marked incomplete.")
+            }
+            AiActionType.DELETE_TASK -> {
+                val taskId = action.taskId ?: return executionResult
+                val task = repository.observeTasksOnce().find { it.id == taskId }
+                if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists after deletion.")
+            }
+            AiActionType.UPDATE_GOAL -> {
+                val goalId = action.goalId ?: return executionResult
+                val goal = repository.observeGoalsOnce().find { it.id == goalId }
+                // Basic existence check, could check specific fields if needed
+                if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found after update.")
+            }
+            else -> executionResult
+        }
     }
 
     private suspend fun recordActionOutcome(action: AiAction, result: AiActionResult) {

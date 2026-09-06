@@ -28,7 +28,10 @@ object AiEntityResolver {
         val bestMatches = candidates.filter { it.second == maxScore }
 
         return when {
-            bestMatches.size == 1 -> ResolutionResult.Success(bestMatches.first().first)
+            bestMatches.size == 1 -> {
+                val status = if (maxScore == 100) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
+                ResolutionResult.Success(bestMatches.first().first, status)
+            }
             bestMatches.size > 1 -> ResolutionResult.Ambiguous(bestMatches.map { it.first })
             else -> ResolutionResult.NotFound()
         }
@@ -51,7 +54,10 @@ object AiEntityResolver {
         val bestMatches = candidates.filter { it.second == maxScore }
 
         return when {
-            bestMatches.size == 1 -> ResolutionResult.Success(bestMatches.first().first)
+            bestMatches.size == 1 -> {
+                val status = if (maxScore == 100) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
+                ResolutionResult.Success(bestMatches.first().first, status)
+            }
             bestMatches.size > 1 -> ResolutionResult.Ambiguous(bestMatches.map { it.first })
             else -> ResolutionResult.NotFound()
         }
@@ -91,7 +97,7 @@ object AiEntityResolver {
  * Result of an entity resolution attempt.
  */
 sealed class ResolutionResult<T> {
-    data class Success<T>(val entity: T) : ResolutionResult<T>()
+    data class Success<T>(val entity: T, val status: EntityResolutionStatus = EntityResolutionStatus.EXACT_MATCH) : ResolutionResult<T>()
     data class Ambiguous<T>(val candidates: List<T>) : ResolutionResult<T>()
     class NotFound<T> : ResolutionResult<T>()
 }

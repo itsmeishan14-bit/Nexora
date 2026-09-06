@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
  */
 class NexoraAiAgent(
     private val toolRegistry: AiToolRegistry,
+    private val decisionGate: AiDecisionGate? = null,
     private val maxSteps: Int = 5
 ) {
 
@@ -33,6 +34,25 @@ class NexoraAiAgent(
                     "Tool Error",
                     "I don't know how to use the tool: ${nextStep.toolName}"
                 )
+            }
+
+            // Decision Gate Check for non-safe tools
+            if (tool.riskLevel != ToolRiskLevel.SAFE && decisionGate != null) {
+                val action = AiAction(
+                    type = mapToolToType(tool.name),
+                    title = nextStep.reason,
+                    description = nextStep.reason,
+                    parameters = nextStep.parameters,
+                    requiresConfirmation = nextStep.requiresConfirmation
+                )
+                val gateResult = decisionGate.evaluateAction(action, AiConfidence.MEDIUM, 0.5f)
+                if (!gateResult.success) {
+                    return AiResponse(
+                        AiResponseType.CLARIFICATION_NEEDED,
+                        "Safety Check",
+                        gateResult.message
+                    )
+                }
             }
             
             val stepResult = tool.execute(nextStep.parameters)
@@ -158,6 +178,19 @@ class NexoraAiAgent(
         }
 
         return AgentReasoning(isComplete = true)
+    }
+
+    private fun mapToolToType(toolName: String): AiActionType {
+        return when (toolName) {
+            "createTask" -> AiActionType.CREATE_TASK
+            "completeTask" -> AiActionType.COMPLETE_TASK
+            "updateTask" -> AiActionType.UPDATE_TASK
+            "deleteTask" -> AiActionType.DELETE_TASK
+            "createGoal" -> AiActionType.CREATE_GOAL
+            "updateGoal" -> AiActionType.UPDATE_GOAL
+            "deleteGoal" -> AiActionType.DELETE_GOAL
+            else -> AiActionType.SHOW_INSIGHT
+        }
     }
 
     private fun isGoalComplete(reasoning: AgentReasoning): Boolean = reasoning.isComplete

@@ -11,5 +11,6 @@ data class AiGoalStep(
 data class AiGoalDecomposition(
     val goalTitle: String,
     val summary: String,
-    val steps: List<AiGoalStep>
+    val steps: List<AiGoalStep>,
+    val confidence: AiConfidence = AiConfidence.MEDIUM
 )

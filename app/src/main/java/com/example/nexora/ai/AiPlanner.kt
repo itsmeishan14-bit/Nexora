@@ -67,13 +67,14 @@ class AiPlanner {
         val summary = if (goalDescription.isNotBlank()) {
             "Nexora used your description and $category category to create a specialized sequence for \"$cleanTitle\"."
         } else {
-            "Nexora analyzed your $category goal and generated a sequence of actionable steps to ensure steady progress."
+            "Nexora analyzed your $category goal and generated a sequence of actionable steps."
         }
 
         return AiGoalDecomposition(
             goalTitle = cleanTitle,
             summary = summary,
-            steps = steps
+            steps = steps,
+            confidence = if (category == "Personal") AiConfidence.LOW else AiConfidence.HIGH
         )
     }
 
@@ -413,6 +414,7 @@ class AiPlanner {
                     title = "No active goals yet",
                     message = "Create a goal and connect tasks to it so Nexora can help guide your progress.",
                     priority = AiPriority.LOW,
+                    confidence = AiConfidence.LOW,
                     actionLabel = "Create a goal"
                 )
             )
@@ -422,15 +424,28 @@ class AiPlanner {
         
         val lowestProgressGoal = context.activeGoals.minByOrNull { it.progress }
         if (lowestProgressGoal != null) {
+            val personal = context.personalContext
+            val health = personal.goalHealth.find { it.goalId == lowestProgressGoal.id }
+            
+            // Hallucination Prevention: Check if goal actually has tasks before recommending focus
+            val taskCount = context.tasks.count { it.goalTitle == lowestProgressGoal.title }
+            
+            val message = if (taskCount == 0) {
+                "\"${lowestProgressGoal.title}\" has no linked tasks. Add some sub-tasks to start making progress."
+            } else {
+                "\"${lowestProgressGoal.title}\" has only ${(lowestProgressGoal.progress * 100).toInt()}% progress. Choose one concrete task that moves this goal forward."
+            }
+
             recommendations.add(
                 AiRecommendation(
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "Goal needs attention",
-                    message = "\"${lowestProgressGoal.title}\" has only ${(lowestProgressGoal.progress * 100).toInt()}% progress. Choose one concrete task that moves this goal forward.",
+                    message = message,
                     priority = AiPriority.MEDIUM,
+                    confidence = if (health != null) AiConfidence.HIGH else AiConfidence.MEDIUM,
                     relatedGoalId = lowestProgressGoal.id,
-                    evidence = "This is your active goal with the lowest completion percentage.",
-                    actionLabel = "Take the next step"
+                    evidence = "Goal identified via progress tracking. Linked tasks: $taskCount.",
+                    actionLabel = if (taskCount == 0) "Add Tasks" else "Take the next step"
                 )
             )
         }
