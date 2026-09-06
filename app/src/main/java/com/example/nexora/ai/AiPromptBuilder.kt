@@ -72,10 +72,14 @@ object AiPromptBuilder {
             Goals worked on: ${context.goalsWorkedOnToday}
             Carried tasks: ${context.carriedTasks}
 
-            PROACTIVE INSIGHTS:
+            LEARNED MEMORIES & PATTERNS:
             ${
-                if (context.memory.patterns.isEmpty()) "No patterns detected yet."
-                else context.memory.patterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
+                if (context.memory.items.isEmpty() && context.memory.legacyPatterns.isEmpty()) "No learned patterns detected yet."
+                else {
+                    val items = context.memory.items.joinToString("\n") { "- ${it.title}: ${it.content}" }
+                    val patterns = context.memory.legacyPatterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
+                    "$items\n$patterns".trim()
+                }
             }
 
             AI OBJECTIVE:

@@ -13,9 +13,10 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
         DailyProgressEntity::class,
         AiRecommendationHistoryEntity::class,
         AiOutcomeEntity::class,
-        AiEvaluationEntity::class
+        AiEvaluationEntity::class,
+        AiMemoryEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class NexoraDatabase : RoomDatabase() {
@@ -27,6 +28,8 @@ abstract class NexoraDatabase : RoomDatabase() {
     abstract fun dailyProgressDao(): DailyProgressDao
 
     abstract fun aiLearningDao(): AiLearningDao
+
+    abstract fun aiMemoryDao(): AiMemoryDao
 
     companion object {
 
@@ -45,6 +48,7 @@ abstract class NexoraDatabase : RoomDatabase() {
                         .setDriver(
                             BundledSQLiteDriver()
                         )
+                        .fallbackToDestructiveMigration(true)
                         .build()
 
                 INSTANCE = instance

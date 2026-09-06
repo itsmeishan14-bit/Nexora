@@ -18,7 +18,7 @@ class AiArchitectureTest {
         val context = AiContext(
             tasks = emptyList(),
             goals = emptyList(),
-            memory = AiMemory(patterns = emptyList(), analyzedDays = 0)
+            memory = AiMemory(legacyPatterns = emptyList(), analyzedDays = 0)
         )
 
         val recommendations = planner.analyze(context)

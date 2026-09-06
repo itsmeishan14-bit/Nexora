@@ -181,11 +181,14 @@ class LocalAiIntentResolver {
     }
 
     private fun showProductivity(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
-        val textResponse = if (context.memory.patterns.isEmpty() || context.memory.patterns.any { it.type == AiPatternType.INSUFFICIENT_DATA }) {
+        val hasData = context.memory.items.isNotEmpty() || (context.memory.legacyPatterns.isNotEmpty() && context.memory.legacyPatterns.none { it.type == AiPatternType.INSUFFICIENT_DATA })
+        
+        val textResponse = if (!hasData) {
             "I'm still learning your productivity style. Keep using Nexora and I'll soon be able to show your consistency patterns."
         } else {
-            val patternList = context.memory.patterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
-            "Here is what I've learned about your productivity recently:\n\n$patternList"
+            val itemList = context.memory.items.joinToString("\n") { "- ${it.title}: ${it.content}" }
+            val patternList = context.memory.legacyPatterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
+            "Here is what I've learned about your productivity recently:\n\n$itemList\n$patternList".trim()
         }
 
         return AiModelStructuredResponse(

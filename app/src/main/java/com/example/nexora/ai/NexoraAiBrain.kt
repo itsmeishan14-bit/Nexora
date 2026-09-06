@@ -18,6 +18,7 @@ class NexoraAiBrain(
 ) {
     private val planner = AiPlanner()
     private val learningLoop = AiLearningLoop(repository)
+    private val memoryRetriever = AiMemoryRetriever(repository)
     
     // The Agent system is a capability of the Brain
     private val agent = NexoraAiAgent(toolRegistry)
@@ -30,21 +31,22 @@ class NexoraAiBrain(
         learningLoop.evaluateOutcomes()
         
         val context = contextBuilder.build()
+        val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         
         // Decide if we should use the multi-step Agent
         if (shouldUseAgent(request)) {
-            val response = agent.execute(request, context)
+            val response = agent.execute(request, context, relevantMemory)
             logResponseRecommendations(response)
             return response
         }
 
         return when (request.type) {
-            AiRequestType.CHAT -> handleChat(request, context)
-            AiRequestType.NEXT_TASK -> handleNextTask(context)
-            AiRequestType.DAILY_PLAN -> handleDailyPlan(context)
-            AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context)
-            AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context)
-            AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context)
+            AiRequestType.CHAT -> handleChat(request, context, relevantMemory)
+            AiRequestType.NEXT_TASK -> handleNextTask(context, relevantMemory)
+            AiRequestType.DAILY_PLAN -> handleDailyPlan(context, relevantMemory)
+            AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context, relevantMemory)
+            AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context, relevantMemory)
+            AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context, relevantMemory)
             AiRequestType.GOAL_DECOMPOSITION -> handleGoalDecomposition(request, context)
             
             AiRequestType.CREATE_TASK -> executeDirectAction(AiActionType.CREATE_TASK, request.parameters)
@@ -52,7 +54,7 @@ class NexoraAiBrain(
             AiRequestType.COMPLETE_TASK -> executeDirectAction(AiActionType.COMPLETE_TASK, emptyMap(), request.taskId)
             AiRequestType.UPDATE_GOAL -> executeDirectAction(AiActionType.UPDATE_GOAL, request.parameters, goalId = request.goalId)
             
-            AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context)
+            AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context, relevantMemory)
         }
     }
 
@@ -66,10 +68,22 @@ class NexoraAiBrain(
                msg.contains("add") || msg.contains("create")
     }
 
-    private suspend fun handleChat(request: AiRequest, context: AiContext): AiResponse {
+    private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
-        // 1. Understand Intent
+        // 1. Check if user is asking about memory/productivity specifically
+        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior"))
+        if (isMemoryQuery && relevantMemory.isNotEmpty()) {
+            val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+            return AiResponse(
+                responseType = AiResponseType.INFORMATION,
+                title = "Productivity Memory",
+                message = "Here is what I remember about your productivity patterns:\n\n$memorySummary",
+                confidence = AiConfidence.HIGH
+            )
+        }
+
+        // 2. Understand Intent
         val structuredResult = intentResolver.resolve(message, context)
         
         // 2. Map Structured Response to Unified Response
@@ -120,13 +134,13 @@ class NexoraAiBrain(
         }
     }
 
-    private suspend fun handleNextTask(context: AiContext): AiResponse {
+    private suspend fun handleNextTask(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val recommendations = planner.analyze(context)
         val nextTaskRec = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
         val response = if (nextTaskRec != null) {
             val task = context.tasks.find { it.id == nextTaskRec.relatedTaskId }
-            val reasoning = buildTaskReasoning(task, context)
+            val reasoning = buildTaskReasoning(task, context, relevantMemory)
             
             AiResponse(
                 responseType = AiResponseType.RECOMMENDATION,
@@ -148,7 +162,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleDailyPlan(context: AiContext): AiResponse {
+    private suspend fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val plan = planner.createDailyPlan(context)
         val proposedActions = plan.tasks.map { 
             AiAction(
@@ -159,10 +173,14 @@ class NexoraAiBrain(
             )
         }
 
+        // Add memory insights to the message if relevant
+        val memoryInsight = relevantMemory.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN }?.content
+        val finalMessage = if (memoryInsight != null) "${plan.summary}\n\nNote: $memoryInsight" else plan.summary
+
         val response = AiResponse(
             responseType = AiResponseType.PLAN,
             title = "Daily Plan",
-            message = plan.summary,
+            message = finalMessage,
             confidence = AiConfidence.HIGH,
             proposedActions = proposedActions
         )
@@ -171,7 +189,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleGoalAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleGoalAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val recs = planner.analyzeGoals(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.NO_ACTION, "Goal Status", "Your goals are currently on track.")
         
@@ -187,7 +205,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleProductivityAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleProductivityAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val recs = planner.analyzeProductivity(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.INFORMATION, "Productivity", "Keep working on your tasks to build your productivity history.")
         
@@ -202,7 +220,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleProactiveAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleProactiveAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val insights = planner.getProactiveInsights(context)
         val critical = insights.find { it.priority == AiPriority.CRITICAL } ?: insights.firstOrNull()
         
@@ -258,7 +276,7 @@ class NexoraAiBrain(
         )
     }
 
-    private suspend fun handleGeneralAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleGeneralAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val insights = planner.getProactiveInsights(context)
         val next = planner.analyze(context).find { it.type == AiRecommendationType.NEXT_TASK }
         
@@ -297,13 +315,13 @@ class NexoraAiBrain(
 
     // Reasoning Engine Helpers
 
-    private fun buildTaskReasoning(task: PremiumTask?, context: AiContext): List<ReasoningFactor> {
+    private fun buildTaskReasoning(task: PremiumTask?, context: AiContext, relevantMemory: List<AiMemoryItem>): List<ReasoningFactor> {
         if (task == null) return emptyList()
         val factors = mutableListOf<ReasoningFactor>()
 
         // 1. Priority
         factors.add(ReasoningFactor("Priority", 
-            if (task.priority == TaskPriority.URGENT) ReasoningImpact.CRITICAL else ReasoningImpact.POSITIVE,
+            if (task.priority == com.example.nexora.uii.TaskPriority.URGENT) ReasoningImpact.CRITICAL else ReasoningImpact.POSITIVE,
             "Task is marked as ${task.priority}."
         ))
 
@@ -326,6 +344,13 @@ class NexoraAiBrain(
                 factors.add(ReasoningFactor("Workload Fit", ReasoningImpact.POSITIVE, "Fits your pattern of completing smaller tasks."))
             } else if (profile.preferredTaskSize == "Large" && duration > 60) {
                 factors.add(ReasoningFactor("Workload Fit", ReasoningImpact.POSITIVE, "Matches your deep work preference."))
+            }
+        }
+        
+        // 4. Memory-based reasoning
+        relevantMemory.forEach { memory ->
+            if (memory.category == AiMemoryCategory.TASK_PATTERN && memory.relatedTaskId == task.id) {
+                factors.add(ReasoningFactor("Historical Behavior", ReasoningImpact.NEUTRAL, memory.content))
             }
         }
 

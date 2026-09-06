@@ -48,7 +48,7 @@ class NexoraAiEngine(
 
     suspend fun getTopInsight(): String? {
         val context = contextBuilder.build()
-        return context.memory.patterns.firstOrNull()?.description
+        return context.memory.items.firstOrNull()?.content ?: context.memory.legacyPatterns.firstOrNull()?.description
     }
 
     suspend fun createDailyPlan(): NexoraDailyPlan {

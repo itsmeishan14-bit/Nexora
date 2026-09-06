@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.nexora.ai.AiMemoryItem
 import com.example.nexora.ai.AiAction
 import com.example.nexora.ai.AiActionExecutor
 import com.example.nexora.ai.AiActionResult
@@ -407,10 +408,10 @@ fun AiScreen(
             }
 
             // ====================================================
-            // PRODUCTIVITY PATTERNS
+            // PRODUCTIVITY INTELLIGENCE & MEMORY
             // ====================================================
 
-            if (uiState.memory.patterns.isNotEmpty()) {
+            if (uiState.memory.items.isNotEmpty() || uiState.memory.legacyPatterns.isNotEmpty()) {
                 item {
                     Text(
                         text = "Productivity Intelligence",
@@ -422,7 +423,14 @@ fun AiScreen(
                 }
 
                 items(
-                    items = uiState.memory.patterns,
+                    items = uiState.memory.items,
+                    key = { "mem_${it.id}" }
+                ) { memoryItem ->
+                    AiMemoryCard(memoryItem)
+                }
+
+                items(
+                    items = uiState.memory.legacyPatterns,
                     key = { "pattern_${it.type}_${it.title}" }
                 ) { pattern ->
                     AiPatternCard(pattern)
@@ -1012,6 +1020,65 @@ fun PlannedTaskCard(
                 tint = if (plannedTask.task.priority == com.example.nexora.uii.TaskPriority.URGENT) Color(0xFFE57373) else NexoraBorder,
                 modifier = Modifier.size(20.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun AiMemoryCard(item: AiMemoryItem) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, NexoraBorder)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NexoraSoftGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = NexoraGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = item.title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NexoraInk
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = item.content,
+                fontSize = 14.sp,
+                color = NexoraMuted,
+                lineHeight = 20.sp
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    color = NexoraSoftGreen.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = item.category.name.replace("_", " "),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraGreen
+                    )
+                }
+            }
         }
     }
 }

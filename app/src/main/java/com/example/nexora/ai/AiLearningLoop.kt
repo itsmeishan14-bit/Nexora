@@ -24,6 +24,53 @@ class AiLearningLoop(
 
         // 2. Evaluate Daily Plans
         evaluateRecentDailyPlans()
+
+        // 3. Generate Structured Memories
+        generateMemories()
+    }
+
+    private suspend fun generateMemories() {
+        val evaluations = repository.getRecentEvaluations(10)
+        val allMemory = repository.getAllMemory()
+
+        // Workload Memory
+        val tooLargeCount = evaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
+        if (tooLargeCount >= 3) {
+            val existing = allMemory.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN && it.title == "Workload Capacity" }
+            val content = "Recent history shows daily plans often exceed your completed workload. A limit of 3-4 priority tasks seems most effective."
+            
+            if (existing == null) {
+                repository.saveMemory(AiMemoryItem(
+                    category = AiMemoryCategory.WORKLOAD_PATTERN,
+                    title = "Workload Capacity",
+                    content = content,
+                    confidence = AiMemoryConfidence.HIGH,
+                    importance = AiMemoryImportance.HIGH
+                ))
+            } else if (existing.content != content) {
+                repository.saveMemory(existing.copy(content = content, lastUsedAt = System.currentTimeMillis()))
+            }
+        }
+        
+        // Task Pattern Memory - repeated carry-over
+        val outcomes = repository.getRecentOutcomes(20)
+        val carriedForward = outcomes.filter { it.type == AiOutcomeType.NOT_COMPLETED }
+        
+        carriedForward.groupBy { it.relatedTaskId }.forEach { (taskId, carryEvents) ->
+            if (carryEvents.size >= 2 && taskId != null) {
+                val existing = allMemory.find { it.relatedTaskId == taskId && it.category == AiMemoryCategory.TASK_PATTERN }
+                if (existing == null) {
+                    repository.saveMemory(AiMemoryItem(
+                        category = AiMemoryCategory.TASK_PATTERN,
+                        title = "Recurring Carry-over",
+                        content = "This task has been carried forward multiple times. Consider decomposing it into smaller steps.",
+                        relatedTaskId = taskId,
+                        confidence = AiMemoryConfidence.MEDIUM,
+                        importance = AiMemoryImportance.MEDIUM
+                    ))
+                }
+            }
+        }
     }
 
     private suspend fun detectTaskOutcome(rec: AiRecommendationHistory, tasks: List<PremiumTask>) {

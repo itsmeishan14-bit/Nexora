@@ -13,13 +13,13 @@ class NexoraAiAgent(
     /**
      * Executes a user request using an iterative planning and execution loop.
      */
-    suspend fun execute(request: AiRequest, context: AiContext): AiResponse {
+    suspend fun execute(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem> = emptyList()): AiResponse {
         var currentContext = context
         var stepsTaken = 0
         val plan = mutableListOf<AiAgentStep>()
         
         // Initial reasoning - "What do I need to do?"
-        var currentReasoning = reason(request, currentContext, plan)
+        var currentReasoning = reason(request, currentContext, plan, relevantMemory)
         
         while (stepsTaken < maxSteps && !isGoalComplete(currentReasoning)) {
             val nextStep = currentReasoning.nextStep ?: break
@@ -51,19 +51,26 @@ class NexoraAiAgent(
             stepsTaken++
             
             // 3. Re-reasoning
-            currentReasoning = reason(request, currentContext, plan)
+            currentReasoning = reason(request, currentContext, plan, relevantMemory)
         }
 
         return finalizeResponse(currentReasoning, plan)
     }
 
-    private fun reason(request: AiRequest, context: AiContext, plan: List<AiAgentStep>): AgentReasoning {
+    private fun reason(request: AiRequest, context: AiContext, plan: List<AiAgentStep>, relevantMemory: List<AiMemoryItem>): AgentReasoning {
         val lastStep = plan.lastOrNull()
         
         // Simple deterministic reasoning logic for the agent
         // In a real LLM implementation, this would be a prompt to the model.
         
         return when {
+            // Case: Request about memory/history
+            request.userMessage?.lowercase()?.contains("remember") == true || 
+            request.userMessage?.lowercase()?.contains("history") == true ||
+            request.userMessage?.lowercase()?.contains("know") == true -> {
+                handleMemoryReasoning(request, context, plan, relevantMemory)
+            }
+
             // Case: Task completion request
             request.userMessage?.lowercase()?.contains("complete") == true -> {
                 handleCompleteTaskReasoning(request, context, plan)
@@ -78,6 +85,15 @@ class NexoraAiAgent(
             // Default fallback: No clear multi-step intent recognized for agent loop
             else -> AgentReasoning(isComplete = true, finalMessage = "I'm not sure how to break this into steps yet.")
         }
+    }
+
+    private fun handleMemoryReasoning(request: AiRequest, context: AiContext, plan: List<AiAgentStep>, relevantMemory: List<AiMemoryItem>): AgentReasoning {
+        if (relevantMemory.isEmpty()) {
+            return AgentReasoning(isComplete = true, finalMessage = "I don't have enough history to provide specific insights on that yet.")
+        }
+
+        val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+        return AgentReasoning(isComplete = true, finalMessage = "Here is what I remember about your productivity:\n\n$memorySummary")
     }
 
     private fun handleCompleteTaskReasoning(request: AiRequest, context: AiContext, plan: List<AiAgentStep>): AgentReasoning {

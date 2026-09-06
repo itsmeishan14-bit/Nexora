@@ -1,11 +1,15 @@
 package com.example.nexora.data
 
+import com.example.nexora.ai.AiConfidence
 import com.example.nexora.ai.AiEvaluation
+import com.example.nexora.ai.AiMemoryCategory
+import com.example.nexora.ai.AiMemoryConfidence
+import com.example.nexora.ai.AiMemoryImportance
+import com.example.nexora.ai.AiMemoryItem
 import com.example.nexora.ai.AiOutcome
 import com.example.nexora.ai.AiOutcomeType
 import com.example.nexora.ai.AiRecommendationHistory
 import com.example.nexora.ai.AiRecommendationType
-import com.example.nexora.ai.AiConfidence
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
@@ -318,5 +322,63 @@ open class NexoraRepository(
                 confidence = AiConfidence.valueOf(entity.confidence)
             )
         }
+    }
+
+    // ─────────────────────────────────────
+    // AI MEMORY
+    // ─────────────────────────────────────
+
+    private val aiMemoryDao = database?.aiMemoryDao()
+
+    open suspend fun saveMemory(item: AiMemoryItem) {
+        val dao = aiMemoryDao ?: return
+        dao.insertMemory(
+            AiMemoryEntity(
+                id = item.id,
+                category = item.category.name,
+                title = item.title,
+                content = item.content,
+                confidence = item.confidence.name,
+                importance = item.importance.name,
+                relatedTaskId = item.relatedTaskId,
+                relatedGoalId = item.relatedGoalId,
+                createdAt = item.createdAt,
+                lastUsedAt = item.lastUsedAt,
+                expiration = item.expiration,
+                metadata = item.metadata.entries.joinToString(";") { "${it.key}=${it.value}" }
+            )
+        )
+    }
+
+    open suspend fun getAllMemory(): List<AiMemoryItem> {
+        val dao = aiMemoryDao ?: return emptyList()
+        return dao.getAllMemory().map { entity ->
+            AiMemoryItem(
+                id = entity.id,
+                category = AiMemoryCategory.valueOf(entity.category),
+                title = entity.title,
+                content = entity.content,
+                confidence = AiMemoryConfidence.valueOf(entity.confidence),
+                importance = AiMemoryImportance.valueOf(entity.importance),
+                relatedTaskId = entity.relatedTaskId,
+                relatedGoalId = entity.relatedGoalId,
+                createdAt = entity.createdAt,
+                lastUsedAt = entity.lastUsedAt,
+                expiration = entity.expiration,
+                metadata = if (entity.metadata.isBlank()) emptyMap() else 
+                    entity.metadata.split(";").associate { 
+                        val parts = it.split("=")
+                        parts[0] to (parts.getOrNull(1) ?: "")
+                    }
+            )
+        }
+    }
+
+    open suspend fun deleteMemory(id: String) {
+        aiMemoryDao?.deleteMemoryById(id)
+    }
+
+    open suspend fun clearAllMemory() {
+        aiMemoryDao?.deleteAllMemory()
     }
 }
