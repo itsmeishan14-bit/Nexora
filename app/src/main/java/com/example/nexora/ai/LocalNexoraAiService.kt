@@ -34,11 +34,13 @@ class LocalNexoraAiService(
 
     override suspend fun decomposeGoal(
         goalTitle: String,
-        goalDescription: String
+        goalDescription: String,
+        category: String
     ): AiGoalDecomposition {
         return planner.decomposeGoal(
             goalTitle = goalTitle,
-            goalDescription = goalDescription
+            goalDescription = goalDescription,
+            category = category
         )
     }
 

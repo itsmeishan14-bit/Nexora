@@ -46,11 +46,13 @@ class NexoraAiEngine(
 
     suspend fun decomposeGoal(
         goalTitle: String,
-        goalDescription: String = ""
+        goalDescription: String = "",
+        category: String = "Personal"
     ): AiGoalDecomposition {
         return aiService.decomposeGoal(
             goalTitle = goalTitle,
-            goalDescription = goalDescription
+            goalDescription = goalDescription,
+            category = category
         )
     }
 

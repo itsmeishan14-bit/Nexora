@@ -20,7 +20,8 @@ interface NexoraAiService {
 
     suspend fun decomposeGoal(
         goalTitle: String,
-        goalDescription: String = ""
+        goalDescription: String = "",
+        category: String = "Personal"
     ): AiGoalDecomposition
 
     suspend fun askNexora(

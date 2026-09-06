@@ -2,11 +2,19 @@ package com.example.nexora.ai
 
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
+import com.example.nexora.uii.NexoraGoal
+import java.time.LocalDate
 
 class AiPlanner {
+
+    /**
+     * Decomposes a goal into actionable steps based on category and title.
+     * Works entirely offline using deterministic templates.
+     */
     fun decomposeGoal(
         goalTitle: String,
-        goalDescription: String = ""
+        goalDescription: String = "",
+        category: String = "Personal"
     ): AiGoalDecomposition {
 
         val cleanTitle = goalTitle.trim()
@@ -20,57 +28,60 @@ class AiPlanner {
         }
 
         val steps = mutableListOf<AiGoalStep>()
+        
+        // Strategy selection based on category
+        val normalizedCategory = category.lowercase()
+        when {
+            normalizedCategory.contains("learn") || normalizedCategory.contains("study") -> {
+                steps.add(AiGoalStep("Gather resources", "Identify books, courses, or documentation for $cleanTitle.", AiPriority.HIGH, "45 min", 1))
+                steps.add(AiGoalStep("Foundational concepts", "Master the core principles of $cleanTitle.", AiPriority.HIGH, "90 min", 2))
+                steps.add(AiGoalStep("Practical application", "Build a small project or complete exercises.", AiPriority.MEDIUM, "120 min", 3))
+                steps.add(AiGoalStep("Review & internalize", "Test your knowledge and identify gaps.", AiPriority.MEDIUM, "60 min", 4))
+            }
+            normalizedCategory.contains("soft") || normalizedCategory.contains("dev") || normalizedCategory.contains("code") || normalizedCategory.contains("project") -> {
+                steps.add(AiGoalStep("Architecture & design", "Outline the structure and components for $cleanTitle.", AiPriority.HIGH, "60 min", 1))
+                steps.add(AiGoalStep("Environment setup", "Configure tools and dependencies.", AiPriority.MEDIUM, "30 min", 2))
+                steps.add(AiGoalStep("Core implementation", "Develop the primary functionality.", AiPriority.HIGH, "180 min", 3))
+                steps.add(AiGoalStep("Testing & refinement", "Fix bugs and optimize the solution.", AiPriority.MEDIUM, "90 min", 4))
+            }
+            normalizedCategory.contains("fit") || normalizedCategory.contains("health") -> {
+                steps.add(AiGoalStep("Initial assessment", "Record your starting point and specific targets.", AiPriority.HIGH, "20 min", 1))
+                steps.add(AiGoalStep("Consistent routine", "Schedule and complete your first week of activity.", AiPriority.HIGH, "45 min", 2))
+                steps.add(AiGoalStep("Nutritional alignment", "Adjust habits to support $cleanTitle.", AiPriority.MEDIUM, "30 min", 3))
+                steps.add(AiGoalStep("Progress evaluation", "Measure results and adjust intensity.", AiPriority.MEDIUM, "15 min", 4))
+            }
+            normalizedCategory.contains("work") || normalizedCategory.contains("career") -> {
+                steps.add(AiGoalStep("Stakeholder alignment", "Clarify expectations and deliverables for $cleanTitle.", AiPriority.HIGH, "45 min", 1))
+                steps.add(AiGoalStep("Execution phase", "Produce the primary output.", AiPriority.HIGH, "120 min", 2))
+                steps.add(AiGoalStep("Feedback loop", "Present work and gather input.", AiPriority.MEDIUM, "60 min", 3))
+                steps.add(AiGoalStep("Final delivery", "Address feedback and complete the work.", AiPriority.HIGH, "60 min", 4))
+            }
+            else -> {
+                steps.add(AiGoalStep("Initial planning", "Break $cleanTitle into smaller chunks.", AiPriority.HIGH, "30 min", 1))
+                steps.add(AiGoalStep("Execution phase", "Focus on the most important sub-task.", AiPriority.HIGH, "90 min", 2))
+                steps.add(AiGoalStep("Milestone check", "Verify if you're on track.", AiPriority.MEDIUM, "20 min", 3))
+                steps.add(AiGoalStep("Next steps", "Define what follows after this.", AiPriority.MEDIUM, "30 min", 4))
+            }
+        }
 
-        steps.add(
-            AiGoalStep(
-                title = "Define the first milestone",
-                description = "Clarify what meaningful progress toward \"$cleanTitle\" looks like.",
-                priority = AiPriority.HIGH,
-                estimatedDuration = "20 min",
-                order = 1
-            )
-        )
-
-        steps.add(
-            AiGoalStep(
-                title = "Build the foundation",
-                description = "Learn or complete the fundamental work required for \"$cleanTitle\".",
-                priority = AiPriority.HIGH,
-                estimatedDuration = "60 min",
-                order = 2
-            )
-        )
-
-        steps.add(
-            AiGoalStep(
-                title = "Complete a practical step",
-                description = "Turn the goal into a concrete piece of work you can finish.",
-                priority = AiPriority.MEDIUM,
-                estimatedDuration = "60 min",
-                order = 3
-            )
-        )
-
-        steps.add(
-            AiGoalStep(
-                title = "Review your progress",
-                description = "Evaluate what is complete and identify the next useful step.",
-                priority = AiPriority.MEDIUM,
-                estimatedDuration = "20 min",
-                order = 4
-            )
-        )
+        val summary = if (goalDescription.isNotBlank()) {
+            "Nexora used your description and $category category to create a specialized sequence for \"$cleanTitle\"."
+        } else {
+            "Nexora analyzed your $category goal and generated a sequence of actionable steps to ensure steady progress."
+        }
 
         return AiGoalDecomposition(
             goalTitle = cleanTitle,
-            summary =
-                if (goalDescription.isBlank()) {
-                    "Nexora has broken your goal into a sequence of practical steps."
-                } else {
-                    "Nexora used your goal and description to create a practical starting sequence."
-                },
+            summary = summary,
             steps = steps
         )
+    }
+
+    /**
+     * Legacy signature for compatibility.
+     */
+    fun decomposeGoal(goalTitle: String, goalDescription: String = ""): AiGoalDecomposition {
+        return decomposeGoal(goalTitle, goalDescription, "Personal")
     }
 
     fun analyze(context: AiContext): List<AiRecommendation> {
@@ -87,14 +98,16 @@ class AiPlanner {
         // NEXT BEST TASK
         val nextTask: PremiumTask? = chooseNextTask(context)
         if (nextTask != null) {
+            val scoreResult = improvedTaskScore(nextTask, context)
             recommendations.add(
                 AiRecommendation(
                     type = AiRecommendationType.NEXT_TASK,
                     title = "Start with this",
-                    message = buildNextTaskMessage(nextTask, context),
+                    message = buildNextTaskMessage(nextTask, context, scoreResult.second),
                     priority = taskPriorityToAiPriority(nextTask.priority),
                     relatedTaskId = nextTask.id,
-                    actionLabel = "Start task"
+                    actionLabel = "Start task",
+                    evidence = "Nexora scored this task as ${scoreResult.first} based on priority and goal alignment."
                 )
             )
         }
@@ -107,17 +120,11 @@ class AiPlanner {
 
         // 1. WORKLOAD INTELLIGENCE
         val plannedToday = context.tasksPlannedToday
-        val avgCompleted = context.memory.analyzedDays.let { days ->
-            if (days > 0) {
-                // If we have history, calculate a simple avg from memory patterns if available 
-                // or just use logic based on memory patterns
-                val pattern = context.memory.patterns.find { it.type == AiPatternType.COMPLETION_ACCURACY }
-                if (pattern != null) {
-                    // Extract number from description if possible, or use a heuristic
-                    3 // Heuristic for now if we don't have exact avg in memory
-                } else 5
-            } else 5
-        }
+        val avgCompleted = if (context.memory.analyzedDays > 0) {
+            // Heuristic capacity based on patterns
+            val accuracyPattern = context.memory.patterns.find { it.type == AiPatternType.COMPLETION_ACCURACY }
+            if (accuracyPattern != null) 3 else 5
+        } else 5
 
         if (plannedToday > avgCompleted * 1.5) {
             insights.add(
@@ -125,7 +132,7 @@ class AiPlanner {
                     type = AiRecommendationType.WARNING,
                     title = "Heavy Workload Detected",
                     message = "You've planned $plannedToday tasks, which is significantly more than your typical completion rate.",
-                    evidence = "Planned: $plannedToday, Typical capacity: $avgCompleted",
+                    evidence = "Planned: $plannedToday, Typical capacity: $avgCompleted. Reducing workload prevents burnout.",
                     priority = AiPriority.HIGH,
                     confidence = AiConfidence.HIGH,
                     actionLabel = "Review Today's Plan"
@@ -135,7 +142,6 @@ class AiPlanner {
 
         // 2. GOAL INTELLIGENCE
         val neglectedGoal = context.activeGoals.find { goal ->
-            // Neglected if progress < 50% and no tasks planned today for it
             goal.progress < 0.5f && context.tasks.none { it.goalTitle == goal.title && !it.completed }
         }
 
@@ -145,7 +151,7 @@ class AiPlanner {
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "Goal Neglected",
                     message = "\"${neglectedGoal.title}\" is falling behind and has no tasks planned today.",
-                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%, Tasks today: 0",
+                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%. Even a small task can restart momentum.",
                     priority = AiPriority.MEDIUM,
                     confidence = AiConfidence.MEDIUM,
                     relatedGoalId = neglectedGoal.id,
@@ -165,7 +171,7 @@ class AiPlanner {
                     type = AiRecommendationType.WARNING,
                     title = "Urgent Task Pending",
                     message = "\"${urgentIgnored.title}\" is marked as urgent but remains incomplete.",
-                    evidence = "Priority: URGENT, Status: Incomplete",
+                    evidence = "Priority: URGENT. High-priority items should be addressed early in the day.",
                     priority = AiPriority.CRITICAL,
                     confidence = AiConfidence.HIGH,
                     relatedTaskId = urgentIgnored.id,
@@ -174,46 +180,17 @@ class AiPlanner {
             )
         }
 
-        // 4. PRODUCTIVITY TRENDS
-        val focusDip = context.memory.patterns.find { it.title == "Focus Dip" }
-        if (focusDip != null) {
-            insights.add(
-                AiRecommendation(
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Focus Time Dropping",
-                    message = focusDip.description,
-                    evidence = "Focus trend identified in your productivity history.",
-                    priority = AiPriority.MEDIUM,
-                    confidence = AiConfidence.MEDIUM
-                )
-            )
-        }
-
-        // 5. CARRY-OVER INTELLIGENCE
+        // 4. CARRY-OVER INTELLIGENCE
         if (context.carriedTasks > 3) {
             insights.add(
                 AiRecommendation(
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "High Task Carry-over",
                     message = "You've carried over ${context.carriedTasks} tasks from previous days. This often leads to cumulative overload.",
-                    evidence = "Carried tasks: ${context.carriedTasks}",
+                    evidence = "History shows ${context.carriedTasks} unfinished tasks from previous sessions.",
                     priority = AiPriority.MEDIUM,
                     confidence = AiConfidence.HIGH,
                     actionLabel = "Review Workload"
-                )
-            )
-        }
-
-        // 6. PROGRESS MOMENTUM
-        if (context.tasksCompletedToday >= 5 && context.tasksCompletedToday >= context.tasksPlannedToday * 0.8) {
-             insights.add(
-                AiRecommendation(
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Excellent Momentum",
-                    message = "You're on a roll today! You've completed most of your planned work. Protect this energy.",
-                    evidence = "Completed: ${context.tasksCompletedToday}, Plan: ${context.tasksPlannedToday}",
-                    priority = AiPriority.LOW,
-                    confidence = AiConfidence.HIGH
                 )
             )
         }
@@ -239,7 +216,7 @@ class AiPlanner {
 
         if (incompleteTasks.isEmpty()) {
             return NexoraDailyPlan(
-                date = java.time.LocalDate.now().toString(),
+                date = LocalDate.now().toString(),
                 summary = "There are no unfinished tasks in Nexora right now. Use the time to review your goals or plan your next meaningful step."
             )
         }
@@ -262,10 +239,9 @@ class AiPlanner {
                         recommendedOrder = selectedPlannedTasks.size + 1
                     )
                 )
-                totalMinutes += if (duration > 0) duration else 30 // Default 30 if unknown
+                totalMinutes += if (duration > 0) duration else 30 
             }
             
-            // Limit to 6 tasks to prevent overwhelming
             if (selectedPlannedTasks.size >= 6) return@forEach
         }
 
@@ -276,7 +252,7 @@ class AiPlanner {
         }
 
         return NexoraDailyPlan(
-            date = java.time.LocalDate.now().toString(),
+            date = LocalDate.now().toString(),
             tasks = selectedPlannedTasks,
             totalDurationMinutes = totalMinutes,
             summary = summary
@@ -290,47 +266,44 @@ class AiPlanner {
         var score = 0
         val reasons = mutableListOf<String>()
 
-        // Priority
-        score += when (task.priority) {
+        // 1. Priority Base
+        when (task.priority) {
             TaskPriority.URGENT -> {
+                score += 150
                 reasons.add("Urgent priority")
-                150
             }
             TaskPriority.HIGH -> {
+                score += 80
                 reasons.add("High priority")
-                80
             }
-            TaskPriority.MEDIUM -> 40
-            TaskPriority.LOW -> 10
+            TaskPriority.MEDIUM -> score += 40
+            TaskPriority.LOW -> score += 10
         }
 
-        // Goal importance
+        // 2. Goal Alignment
         val linkedGoal = context.activeGoals.find { it.title == task.goalTitle }
         if (linkedGoal != null) {
-            score += 40
-            reasons.add("Goal: ${linkedGoal.title}")
+            score += 50
+            reasons.add("Linked to active goal '${linkedGoal.title}'")
 
+            // Progress-based boost
             if (linkedGoal.progress < 0.3f) {
+                score += 30
+                reasons.add("Goal needs early momentum")
+            } else if (linkedGoal.progress > 0.8f) {
                 score += 20
-                reasons.add("Goal needs attention")
-            }
-            
-            if (linkedGoal.targetDate.isNotBlank()) {
-                score += 15
+                reasons.add("Goal is near completion")
             }
         }
 
-        // Today's progress - if we already completed many tasks of a goal, maybe focus on another?
-        // Or if we worked on a goal today, keep going?
-        // For now, simple scoring.
-
-        // Duration
+        // 3. Efficiency boost for small tasks when list is long
         val duration = extractDurationMinutes(task.duration)
-        if (duration in 1..45) {
-            score += 10
+        if (context.incompleteTasks.size > 5 && duration in 1..30) {
+            score += 15
+            reasons.add("Quick win to reduce list size")
         }
 
-        val primaryReason = reasons.firstOrNull() ?: "Next best step"
+        val primaryReason = reasons.lastOrNull() ?: "Consistent progress step"
         return Pair(score, primaryReason)
     }
 
@@ -343,42 +316,35 @@ class AiPlanner {
     ): List<AiRecommendation> {
 
         if (context.activeGoals.isEmpty()) {
-
             return listOf(
                 AiRecommendation(
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "No active goals yet",
-                    message =
-                        "Create a goal and connect tasks to it so Nexora " +
-                                "can help guide your progress.",
+                    message = "Create a goal and connect tasks to it so Nexora can help guide your progress.",
                     priority = AiPriority.LOW,
                     actionLabel = "Create a goal"
                 )
             )
         }
 
-        val lowestProgressGoal =
-            context.activeGoals.minByOrNull { goal ->
-                goal.progress
-            }
-
-        if (lowestProgressGoal == null) {
-            return emptyList()
+        val recommendations = mutableListOf<AiRecommendation>()
+        
+        val lowestProgressGoal = context.activeGoals.minByOrNull { it.progress }
+        if (lowestProgressGoal != null) {
+            recommendations.add(
+                AiRecommendation(
+                    type = AiRecommendationType.GOAL_ACTION,
+                    title = "Goal needs attention",
+                    message = "\"${lowestProgressGoal.title}\" has only ${(lowestProgressGoal.progress * 100).toInt()}% progress. Choose one concrete task that moves this goal forward.",
+                    priority = AiPriority.MEDIUM,
+                    relatedGoalId = lowestProgressGoal.id,
+                    evidence = "This is your active goal with the lowest completion percentage.",
+                    actionLabel = "Take the next step"
+                )
+            )
         }
 
-        return listOf(
-            AiRecommendation(
-                type = AiRecommendationType.GOAL_ACTION,
-                title = "Goal needs attention",
-                message =
-                    "\"${lowestProgressGoal.title}\" has " +
-                            "${(lowestProgressGoal.progress * 100).toInt()}% progress. " +
-                            "Choose one concrete task that moves this goal forward.",
-                priority = AiPriority.MEDIUM,
-                relatedGoalId = lowestProgressGoal.id,
-                actionLabel = "Take the next step"
-            )
-        )
+        return recommendations
     }
 
     // ================================================================
@@ -390,70 +356,50 @@ class AiPlanner {
     ): List<AiRecommendation> {
 
         if (context.tasksPlannedToday == 0) {
-
             return listOf(
                 AiRecommendation(
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "Nothing planned yet",
-                    message =
-                        "Add a few meaningful tasks and Nexora can start " +
-                                "learning how your daily workload behaves.",
+                    message = "Add a few meaningful tasks and Nexora can start learning how your daily workload behaves.",
                     priority = AiPriority.LOW,
                     actionLabel = "Plan your day"
                 )
             )
         }
 
-        val completionRate =
-            context.tasksCompletedToday.toFloat() /
-                    context.tasksPlannedToday.toFloat()
+        val completionRate = context.tasksCompletedToday.toFloat() / context.tasksPlannedToday.toFloat()
+        val evidence = "Completed: ${context.tasksCompletedToday}, Planned: ${context.tasksPlannedToday}."
 
         return when {
-
             completionRate >= 0.8f -> {
-
                 listOf(
                     AiRecommendation(
-                        type =
-                            AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                        type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "You're building momentum",
-                        message =
-                            "You've completed ${context.tasksCompletedToday} " +
-                                    "of ${context.tasksPlannedToday} planned tasks today. " +
-                                    "Keep your next step focused.",
+                        message = "You've completed ${context.tasksCompletedToday} tasks today. You're maintaining a high standard of focus.",
+                        evidence = evidence,
                         priority = AiPriority.LOW
                     )
                 )
             }
-
             completionRate >= 0.5f -> {
-
                 listOf(
                     AiRecommendation(
-                        type =
-                            AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                        type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "Solid progress",
-                        message =
-                            "You've completed ${context.tasksCompletedToday} " +
-                                    "of ${context.tasksPlannedToday} planned tasks. " +
-                                    "Finish the most important remaining task before adding more.",
+                        message = "You're halfway through your plan. Finish the most important remaining task before adding more.",
+                        evidence = evidence,
                         priority = AiPriority.MEDIUM
                     )
                 )
             }
-
             else -> {
-
                 listOf(
                     AiRecommendation(
-                        type =
-                            AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                        type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "Focus before adding more",
-                        message =
-                            "Your current completion rate is " +
-                                    "${(completionRate * 100).toInt()}%. " +
-                                    "Nexora recommends reducing context switching " +
-                                    "and finishing one important task.",
+                        message = "Your current completion rate is lower than usual. Try focusing on one task until completion.",
+                        evidence = evidence,
                         priority = AiPriority.MEDIUM
                     )
                 )
@@ -485,7 +431,6 @@ class AiPlanner {
 
         val patterns = mutableListOf<AiProductivityPattern>()
 
-        // 1. Completion Accuracy / Workload Pattern
         val avgPlanned = history.map { it.tasksPlanned }.average()
         val avgCompleted = history.map { it.tasksCompleted }.average()
         
@@ -502,7 +447,6 @@ class AiPlanner {
             )
         }
 
-        // 2. Carry-over tendency
         val carryOverDays = history.count { it.carriedTasks > 0 }
         if (carryOverDays >= history.size * 0.7) {
             patterns.add(
@@ -516,7 +460,6 @@ class AiPlanner {
             )
         }
 
-        // 3. Focus Trend
         val firstHalfFocus = history.takeLast(history.size / 2).map { it.focusMinutes }.average()
         val secondHalfFocus = history.take(history.size / 2).map { it.focusMinutes }.average()
         
@@ -549,150 +492,48 @@ class AiPlanner {
     }
 
     // ================================================================
-    // TASK SELECTION
+    // TASK SELECTION & MESSAGES
     // ================================================================
 
-    private fun chooseNextTask(
-        context: AiContext
-    ): PremiumTask? {
-
-        return context.incompleteTasks
-            .maxByOrNull { task ->
-                taskScore(
-                    task = task,
-                    context = context
-                )
-            }
+    private fun chooseNextTask(context: AiContext): PremiumTask? {
+        return context.incompleteTasks.maxByOrNull { taskScore(it, context) }
     }
 
-    // ================================================================
-    // TASK SCORING
-    // ================================================================
-
-    private fun taskScore(
-        task: PremiumTask,
-        context: AiContext
-    ): Int {
-
+    private fun taskScore(task: PremiumTask, context: AiContext): Int {
         var score = 0
-
         score += when (task.priority) {
-
             TaskPriority.URGENT -> 100
-
             TaskPriority.HIGH -> 70
-
             TaskPriority.MEDIUM -> 40
-
             TaskPriority.LOW -> 20
         }
-
-        if (
-            task.goalTitle != null &&
-            context.activeGoals.any { goal ->
-                goal.title == task.goalTitle
-            }
-        ) {
+        if (task.goalTitle != null && context.activeGoals.any { it.title == task.goalTitle }) {
             score += 30
         }
-
-        val durationMinutes =
-            extractDurationMinutes(task.duration)
-
-        if (
-            context.incompleteTasks.size >= 6 &&
-            durationMinutes in 1..30
-        ) {
+        val durationMinutes = extractDurationMinutes(task.duration)
+        if (context.incompleteTasks.size >= 6 && durationMinutes in 1..30) {
             score += 15
         }
-
-        if (task.completed) {
-            score -= 1000
-        }
-
+        if (task.completed) score -= 1000
         return score
     }
 
-    // ================================================================
-    // DURATION PARSER
-    // ================================================================
-
-    private fun extractDurationMinutes(
-        duration: String
-    ): Int {
-
-        val value =
-            duration
-                .lowercase()
-                .trim()
-
-        val number =
-            Regex("\\d+")
-                .find(value)
-                ?.value
-                ?.toIntOrNull()
-                ?: return 0
-
-        return when {
-
-            value.contains("hour") ||
-                    value.contains("hr") -> number * 60
-
-            else -> number
-        }
+    private fun extractDurationMinutes(duration: String): Int {
+        val value = duration.lowercase().trim()
+        val number = Regex("\\d+").find(value)?.value?.toIntOrNull() ?: return 0
+        return if (value.contains("hour") || value.contains("hr")) number * 60 else number
     }
 
-    // ================================================================
-    // AI PRIORITY
-    // ================================================================
-
-    private fun taskPriorityToAiPriority(
-        priority: TaskPriority
-    ): AiPriority {
-
+    private fun taskPriorityToAiPriority(priority: TaskPriority): AiPriority {
         return when (priority) {
-
-            TaskPriority.URGENT ->
-                AiPriority.CRITICAL
-
-            TaskPriority.HIGH ->
-                AiPriority.HIGH
-
-            TaskPriority.MEDIUM ->
-                AiPriority.MEDIUM
-
-            TaskPriority.LOW ->
-                AiPriority.LOW
+            TaskPriority.URGENT -> AiPriority.CRITICAL
+            TaskPriority.HIGH -> AiPriority.HIGH
+            TaskPriority.MEDIUM -> AiPriority.MEDIUM
+            TaskPriority.LOW -> AiPriority.LOW
         }
     }
 
-    // ================================================================
-    // NEXT TASK MESSAGE
-    // ================================================================
-
-    private fun buildNextTaskMessage(
-        task: PremiumTask,
-        context: AiContext
-    ): String {
-
-        return when {
-
-            task.priority == TaskPriority.URGENT ->
-                "\"${task.title}\" should be your first priority because " +
-                        "you marked it as urgent."
-
-            task.priority == TaskPriority.HIGH &&
-                    task.goalTitle != null ->
-                "\"${task.title}\" is high priority and contributes to " +
-                        "your goal \"${task.goalTitle}\"."
-
-            task.goalTitle != null ->
-                "\"${task.title}\" is connected to \"${task.goalTitle}\". " +
-                        "Completing it will create meaningful progress toward that goal."
-
-            else ->
-                "\"${task.title}\" is currently the strongest next step " +
-                        "based on your task priorities."
-        }
+    private fun buildNextTaskMessage(task: PremiumTask, context: AiContext, reason: String): String {
+        return "Nexora recommends starting \"${task.title}\". $reason."
     }
 }

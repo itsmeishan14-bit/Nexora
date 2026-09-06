@@ -16,9 +16,12 @@ object NexoraAiProvider {
 
         val aiService = LocalNexoraAiService()
 
+        val actionExecutor = AiActionExecutor(repository)
+
         return NexoraAiEngine(
             contextBuilder = contextBuilder,
-            aiService = aiService
+            aiService = aiService,
+            actionExecutor = actionExecutor
         )
     }
 }
