@@ -72,14 +72,31 @@ class NexoraAiBrain(
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Check if user is asking about memory/productivity specifically
-        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior"))
-        if (isMemoryQuery && relevantMemory.isNotEmpty()) {
-            val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation"))
+        if (isMemoryQuery) {
+            val personal = context.personalContext
+            val statusSummary = buildString {
+                append("Here is your current Nexora status:\n\n")
+                append("- Workload: ${personal.workload.state} (${personal.workload.taskCount} tasks)\n")
+                append("- Day State: ${personal.dayState}\n")
+                append("- Productivity Trend: ${personal.productivityTrend}\n")
+                
+                val atRisk = personal.goalHealth.filter { it.state == GoalHealthState.AT_RISK }
+                if (atRisk.isNotEmpty()) {
+                    append("- Goal Risks: ${atRisk.joinToString { it.goalTitle }}\n")
+                }
+                
+                if (relevantMemory.isNotEmpty()) {
+                    val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+                    append("\nHistorical Patterns:\n$memorySummary")
+                }
+            }
+
             return AiResponse(
                 responseType = AiResponseType.INFORMATION,
-                title = "Productivity Memory",
-                message = "Here is what I remember about your productivity patterns:\n\n$memorySummary",
-                confidence = AiConfidence.HIGH
+                title = "Nexora Context Analysis",
+                message = statusSummary,
+                confidence = personal.confidence
             )
         }
 
@@ -221,7 +238,37 @@ class NexoraAiBrain(
     }
 
     private suspend fun handleProactiveAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
-        val insights = planner.getProactiveInsights(context)
+        val insights = planner.getProactiveInsights(context).toMutableList()
+        
+        // Add dynamic context insights
+        context.personalContext.risks.forEach { risk ->
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.WARNING,
+                    title = risk.message,
+                    message = risk.evidence,
+                    priority = risk.severity,
+                    relatedTaskId = risk.relatedTaskId,
+                    relatedGoalId = risk.relatedGoalId,
+                    actionLabel = "Review Risk"
+                )
+            )
+        }
+        
+        context.personalContext.opportunities.forEach { opp ->
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = opp.title,
+                    message = opp.message,
+                    priority = AiPriority.LOW,
+                    relatedTaskId = opp.relatedTaskId,
+                    relatedGoalId = opp.relatedGoalId,
+                    actionLabel = "Seize Opportunity"
+                )
+            )
+        }
+
         val critical = insights.find { it.priority == AiPriority.CRITICAL } ?: insights.firstOrNull()
         
         val response = if (critical != null) {
@@ -277,11 +324,30 @@ class NexoraAiBrain(
     }
 
     private suspend fun handleGeneralAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
-        val insights = planner.getProactiveInsights(context)
+        val insights = planner.getProactiveInsights(context).toMutableList()
+        
+        // Add dynamic context insights
+        context.personalContext.risks.forEach { risk ->
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.WARNING,
+                    title = risk.message,
+                    message = risk.evidence,
+                    priority = risk.severity,
+                    relatedTaskId = risk.relatedTaskId,
+                    relatedGoalId = risk.relatedGoalId
+                )
+            )
+        }
+
         val next = planner.analyze(context).find { it.type == AiRecommendationType.NEXT_TASK }
         
         val summary = mutableListOf<String>()
         if (next != null) summary.add("Top priority: ${next.title}")
+        
+        val personal = context.personalContext
+        summary.add("Workload: ${personal.workload.state}. Goal Health: ${personal.goalHealth.count { it.state == GoalHealthState.HEALTHY }} healthy.")
+
         if (insights.isNotEmpty()) summary.add("Detected ${insights.size} items requiring attention.")
         
         val response = AiResponse(

@@ -88,12 +88,28 @@ class NexoraAiAgent(
     }
 
     private fun handleMemoryReasoning(request: AiRequest, context: AiContext, plan: List<AiAgentStep>, relevantMemory: List<AiMemoryItem>): AgentReasoning {
-        if (relevantMemory.isEmpty()) {
-            return AgentReasoning(isComplete = true, finalMessage = "I don't have enough history to provide specific insights on that yet.")
+        val personal = context.personalContext
+        
+        val report = buildString {
+            append("Here is an overview of your current productivity status and history:\n\n")
+            
+            append("CURRENT CONTEXT:\n")
+            append("- Workload: ${personal.workload.state} (${personal.workload.taskCount} tasks left)\n")
+            append("- Day Progress: ${personal.dayState}\n")
+            append("- Trend: ${personal.productivityTrend}\n")
+            
+            val atRisk = personal.goalHealth.filter { it.state == GoalHealthState.AT_RISK }
+            if (atRisk.isNotEmpty()) {
+                append("- Goal Risks: Found ${atRisk.size} goals needing immediate attention.\n")
+            }
+            
+            if (relevantMemory.isNotEmpty()) {
+                append("\nHISTORICAL PATTERNS:\n")
+                relevantMemory.forEach { append("- ${it.title}: ${it.content}\n") }
+            }
         }
 
-        val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
-        return AgentReasoning(isComplete = true, finalMessage = "Here is what I remember about your productivity:\n\n$memorySummary")
+        return AgentReasoning(isComplete = true, finalMessage = report)
     }
 
     private fun handleCompleteTaskReasoning(request: AiRequest, context: AiContext, plan: List<AiAgentStep>): AgentReasoning {

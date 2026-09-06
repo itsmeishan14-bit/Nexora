@@ -233,6 +233,7 @@ class AiPlanner {
         context: AiContext
     ): NexoraDailyPlan {
         val profile = context.adaptiveProfile
+        val personal = context.personalContext
 
         val incompleteTasks =
             context.incompleteTasks
@@ -258,10 +259,17 @@ class AiPlanner {
         val tooAmbitiousCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
         val realisticCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC }
         
-        val adaptiveMaxTasks = when {
+        var adaptiveMaxTasks = when {
             tooAmbitiousCount >= 2 -> Math.max(3, profile.preferredDailyWorkload - 1)
             realisticCount >= 3 -> profile.preferredDailyWorkload + 1
             else -> profile.preferredDailyWorkload
+        }
+        
+        // Dynamic Context Adjustment: if already overloaded, reduce max tasks
+        if (personal.workload.state == WorkloadState.VERY_HIGH) {
+            adaptiveMaxTasks = Math.max(2, adaptiveMaxTasks - 2)
+        } else if (personal.workload.state == WorkloadState.HIGH) {
+            adaptiveMaxTasks = Math.max(3, adaptiveMaxTasks - 1)
         }
         
         val maxTasks = if (profile.confidence != AdaptiveConfidence.UNKNOWN) adaptiveMaxTasks else 6
@@ -287,10 +295,21 @@ class AiPlanner {
             if (selectedPlannedTasks.size >= maxTasks) break
         }
 
-        val summary = if (selectedPlannedTasks.size >= maxTasks * 0.7) {
-            "You have a productive day ahead. This plan fits your typical workload and focuses on your highest priorities."
-        } else {
-            "Today's plan is focused and achievable. Completing these tasks will build great momentum."
+        val summary = buildString {
+            if (selectedPlannedTasks.size >= maxTasks * 0.7) {
+                append("You have a productive day ahead. This plan fits your typical workload and focuses on your highest priorities.")
+            } else {
+                append("Today's plan is focused and achievable. Completing these tasks will build great momentum.")
+            }
+            
+            if (personal.workload.state == WorkloadState.VERY_HIGH) {
+                append(" I've kept the plan light because your total workload is currently very high.")
+            }
+            
+            val atRisk = personal.goalHealth.find { it.state == GoalHealthState.AT_RISK }
+            if (atRisk != null) {
+                append(" I've prioritized tasks for \"${atRisk.goalTitle}\" as it needs attention.")
+            }
         }
 
         return NexoraDailyPlan(
@@ -329,6 +348,17 @@ class AiPlanner {
             score += 50
             reasons.add("Linked to active goal '${linkedGoal.title}'")
 
+            // Dynamic Context: Neglected Goal Boost
+            val personal = context.personalContext
+            val health = personal.goalHealth.find { it.goalId == linkedGoal.id }
+            if (health?.state == GoalHealthState.AT_RISK) {
+                score += 60
+                reasons.add("This goal is at risk and needs attention")
+            } else if (health?.state == GoalHealthState.NEEDS_ATTENTION) {
+                score += 30
+                reasons.add("Goal needs more activity")
+            }
+
             // Progress-based boost
             if (linkedGoal.progress < 0.3f) {
                 score += 30
@@ -349,10 +379,11 @@ class AiPlanner {
             reasons.add("Fits your deep work preference")
         }
 
-        // 4. Efficiency boost for small tasks when list is long
-        if (context.incompleteTasks.size > 5 && duration in 1..30) {
-            score += 15
-            reasons.add("Quick win to reduce list size")
+        // 4. Efficiency boost for small tasks when list is long or workload is high
+        val personal = context.personalContext
+        if ((context.incompleteTasks.size > 5 || personal.workload.state == WorkloadState.VERY_HIGH) && duration in 1..30) {
+            score += 25
+            reasons.add("Quick win to reduce pressure")
         }
 
         // 5. Learning Loop: Success-based reinforcement

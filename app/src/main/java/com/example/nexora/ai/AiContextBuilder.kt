@@ -29,6 +29,16 @@ open class AiContextBuilder(
         val memory = planner.detectPatterns(history)
         val adaptiveProfile = calculateAdaptiveProfile(history, tasks)
 
+        val personalContextBuilder = AiPersonalContextBuilder()
+        val personalContext = personalContextBuilder.build(
+            tasks = tasks,
+            goals = goals,
+            todayProgress = todayProgress,
+            history = history,
+            adaptiveProfile = adaptiveProfile,
+            memory = memory
+        )
+
         return AiContext(
             tasks = tasks,
             goals = goals,
@@ -40,7 +50,8 @@ open class AiContextBuilder(
             memory = memory,
             adaptiveProfile = adaptiveProfile,
             recentOutcomes = recentOutcomes,
-            recentEvaluations = recentEvaluations
+            recentEvaluations = recentEvaluations,
+            personalContext = personalContext
         )
     }
 
