@@ -29,6 +29,7 @@ import com.example.nexora.ai.AiAction
 import com.example.nexora.ai.AiActionExecutor
 import com.example.nexora.ai.AiContextBuilder
 import com.example.nexora.ai.AiRecommendation
+import com.example.nexora.ai.AiRecommendationType
 import com.example.nexora.ai.LocalNexoraAiService
 import com.example.nexora.ai.NexoraAiEngine
 import com.example.nexora.data.DailyProgressEntity
@@ -132,6 +133,10 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<String?>(null)
                 }
 
+                var homeProactiveInsight by remember {
+                    mutableStateOf<AiRecommendation?>(null)
+                }
+
                 var homeProposedAction by remember {
                     mutableStateOf<AiAction?>(null)
                 }
@@ -181,6 +186,9 @@ class MainActivity : ComponentActivity() {
 
                     // Fetch top AI insight
                     topAiInsight = aiEngine.getTopInsight()
+
+                    val proactive = aiEngine.getProactiveInsights()
+                    homeProactiveInsight = proactive.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
                     
                     // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
                     val context = aiEngine.getContext()
@@ -254,6 +262,10 @@ class MainActivity : ComponentActivity() {
                                 carriedTasks = 0
                             )
                         )
+
+                        // Refresh proactive insight
+                        val proactive = aiEngine.getProactiveInsights()
+                        homeProactiveInsight = proactive.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
                     }
                 }
 
@@ -429,6 +441,8 @@ class MainActivity : ComponentActivity() {
                                         progressHistory,
 
                                     topPattern = topAiInsight,
+                                    
+                                    proactiveInsight = homeProactiveInsight,
                                     
                                     proposedAction = homeProposedAction,
                                     

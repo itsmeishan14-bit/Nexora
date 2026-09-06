@@ -16,6 +16,12 @@ enum class AiPriority {
     CRITICAL
 }
 
+enum class AiConfidence {
+    LOW,
+    MEDIUM,
+    HIGH
+}
+
 data class AiRecommendation(
     val type: AiRecommendationType,
     val title: String,
@@ -23,5 +29,7 @@ data class AiRecommendation(
     val priority: AiPriority = AiPriority.MEDIUM,
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,
-    val actionLabel: String? = null
+    val actionLabel: String? = null,
+    val evidence: String? = null,
+    val confidence: AiConfidence = AiConfidence.MEDIUM
 )

@@ -72,6 +72,12 @@ object AiPromptBuilder {
             Goals worked on: ${context.goalsWorkedOnToday}
             Carried tasks: ${context.carriedTasks}
 
+            PROACTIVE INSIGHTS:
+            ${
+                if (context.memory.patterns.isEmpty()) "No patterns detected yet."
+                else context.memory.patterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
+            }
+
             AI OBJECTIVE:
 
             Analyze the current state of Nexora and determine

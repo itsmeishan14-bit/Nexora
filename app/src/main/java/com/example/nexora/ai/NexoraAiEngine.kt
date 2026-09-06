@@ -10,6 +10,11 @@ class NexoraAiEngine(
         return aiService.generateRecommendations(context)
     }
 
+    suspend fun getProactiveInsights(): List<AiRecommendation> {
+        val context = contextBuilder.build()
+        return aiService.generateProactiveInsights(context)
+    }
+
     suspend fun getContext(): AiContext {
         return contextBuilder.build()
     }
@@ -38,11 +43,7 @@ class NexoraAiEngine(
         goalTitle: String,
         goalDescription: String = ""
     ): AiGoalDecomposition {
-
-        val context = contextBuilder.build()
-
         return aiService.decomposeGoal(
-            context = context,
             goalTitle = goalTitle,
             goalDescription = goalDescription
         )

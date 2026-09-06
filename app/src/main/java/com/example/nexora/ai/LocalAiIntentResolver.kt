@@ -26,8 +26,50 @@ class LocalAiIntentResolver {
             input.contains("plan") && input.contains("day") -> planDay(context)
             input.contains("next") && (input.contains("work") || input.contains("task")) -> nextTask(context)
             input.contains("break down") || input.contains("decompose") -> decomposeGoal(query, context)
+            
+            // PROACTIVE queries
+            input.contains("notice") || input.contains("what's up") || input.contains("status") -> analyzeProactive(context)
 
             else -> noAction()
+        }
+    }
+
+    private fun analyzeProactive(context: AiContext): AiModelStructuredResponse {
+        val insights = AiPlanner().getProactiveInsights(context)
+        val best = insights.maxByOrNull { it.priority }
+        
+        return if (best != null) {
+            AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = mapRecTypeToDecisionType(best.type),
+                    title = best.title,
+                    reason = best.message,
+                    taskId = best.relatedTaskId,
+                    goalId = best.relatedGoalId,
+                    priority = best.priority
+                ),
+                modelName = "local-heuristic"
+            )
+        } else {
+            AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "All Clear",
+                    reason = "Nexora hasn't noticed anything unusual. You're doing great."
+                ),
+                modelName = "local-heuristic"
+            )
+        }
+    }
+
+    private fun mapRecTypeToDecisionType(type: AiRecommendationType): AiDecisionType {
+        return when (type) {
+            AiRecommendationType.NEXT_TASK -> AiDecisionType.START_TASK
+            AiRecommendationType.DAILY_PLAN -> AiDecisionType.DAILY_PLAN
+            AiRecommendationType.GOAL_ACTION -> AiDecisionType.UPDATE_GOAL
+            AiRecommendationType.PRODUCTIVITY_INSIGHT -> AiDecisionType.SHOW_INSIGHT
+            AiRecommendationType.WARNING -> AiDecisionType.WARNING
+            else -> AiDecisionType.NO_ACTION
         }
     }
 

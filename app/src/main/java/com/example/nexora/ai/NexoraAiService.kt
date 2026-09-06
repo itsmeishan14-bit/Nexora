@@ -19,7 +19,6 @@ interface NexoraAiService {
     ): List<AiRecommendation>
 
     suspend fun decomposeGoal(
-        context: AiContext,
         goalTitle: String,
         goalDescription: String = ""
     ): AiGoalDecomposition
@@ -28,4 +27,8 @@ interface NexoraAiService {
         context: AiContext,
         userMessage: String
     ): String
+
+    suspend fun generateProactiveInsights(
+        context: AiContext
+    ): List<AiRecommendation>
 }

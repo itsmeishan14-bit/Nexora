@@ -376,6 +376,39 @@ fun AiScreen(
             }
 
             // ====================================================
+            // PROACTIVE INSIGHTS
+            // ====================================================
+
+            if (uiState.proactiveInsights.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Nexora Intelligence",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraInk,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                items(
+                    items = uiState.proactiveInsights,
+                    key = { "proactive_${it.title}_${it.type}" }
+                ) { insight ->
+                    ProactiveInsightCard(
+                        insight = insight,
+                        onAction = { rec ->
+                            val action = recommendationToAction(rec)
+                            if (action != null) {
+                                viewModel.proposeAction(action)
+                            } else {
+                                onRecommendationAction(rec)
+                            }
+                        }
+                    )
+                }
+            }
+
+            // ====================================================
             // PRODUCTIVITY PATTERNS
             // ====================================================
 
@@ -573,6 +606,104 @@ private fun recommendationToAction(recommendation: AiRecommendation): AiAction? 
             } else null
         }
         else -> null
+    }
+}
+
+@Composable
+fun ProactiveInsightCard(
+    insight: AiRecommendation,
+    onAction: (AiRecommendation) -> Unit
+) {
+    val icon = when (insight.type) {
+        AiRecommendationType.WARNING -> Icons.Default.Warning
+        AiRecommendationType.GOAL_ACTION -> Icons.Default.Lightbulb
+        AiRecommendationType.PRODUCTIVITY_INSIGHT -> Icons.Default.AutoAwesome
+        else -> Icons.Default.Lightbulb
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, NexoraBorder)
+    ) {
+        Column(modifier = Modifier.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(NexoraSoftGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = NexoraGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(14.dp))
+                
+                Column {
+                    Text(
+                        text = insight.title,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraInk
+                    )
+                    
+                    val priorityColor = when (insight.priority) {
+                        com.example.nexora.ai.AiPriority.CRITICAL -> Color(0xFFE57373)
+                        com.example.nexora.ai.AiPriority.HIGH -> Color(0xFFF0AD4E)
+                        else -> NexoraGreen
+                    }
+                    
+                    Text(
+                        text = insight.priority.name,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = priorityColor,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            Text(
+                text = insight.message,
+                fontSize = 14.sp,
+                color = NexoraInk,
+                lineHeight = 21.sp
+            )
+            
+            insight.evidence?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Evidence: $it",
+                    fontSize = 12.sp,
+                    color = NexoraMuted,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            
+            if (insight.actionLabel != null) {
+                Spacer(modifier = Modifier.height(18.dp))
+                Button(
+                    onClick = { onAction(insight) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NexoraInk,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(insight.actionLabel, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
     }
 }
 

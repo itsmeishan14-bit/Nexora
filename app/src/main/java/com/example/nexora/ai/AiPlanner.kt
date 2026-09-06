@@ -5,7 +5,6 @@ import com.example.nexora.uii.TaskPriority
 
 class AiPlanner {
     fun decomposeGoal(
-        context: AiContext,
         goalTitle: String,
         goalDescription: String = ""
     ): AiGoalDecomposition {
@@ -75,129 +74,151 @@ class AiPlanner {
     }
 
     fun analyze(context: AiContext): List<AiRecommendation> {
+        val proactive = getProactiveInsights(context)
+        val basic = getBasicRecommendations(context)
+        
+        return (proactive + basic).distinctBy { it.title + it.type }
+            .sortedByDescending { it.priority }
+    }
 
+    private fun getBasicRecommendations(context: AiContext): List<AiRecommendation> {
         val recommendations = mutableListOf<AiRecommendation>()
-
-        // ------------------------------------------------------------
+        
         // NEXT BEST TASK
-        // ------------------------------------------------------------
-
         val nextTask: PremiumTask? = chooseNextTask(context)
-
         if (nextTask != null) {
-
             recommendations.add(
                 AiRecommendation(
                     type = AiRecommendationType.NEXT_TASK,
                     title = "Start with this",
-                    message = buildNextTaskMessage(
-                        task = nextTask,
-                        context = context
-                    ),
-                    priority = taskPriorityToAiPriority(
-                        nextTask.priority
-                    ),
+                    message = buildNextTaskMessage(nextTask, context),
+                    priority = taskPriorityToAiPriority(nextTask.priority),
                     relatedTaskId = nextTask.id,
                     actionLabel = "Start task"
                 )
             )
         }
+        
+        return recommendations
+    }
 
-        // ------------------------------------------------------------
-        // GOAL ATTENTION
-        // ------------------------------------------------------------
+    fun getProactiveInsights(context: AiContext): List<AiRecommendation> {
+        val insights = mutableListOf<AiRecommendation>()
 
-        val goal = context.activeGoals
-            .minByOrNull { goal ->
-                goal.progress
-            }
-
-        if (goal != null) {
-
-            recommendations.add(
-                AiRecommendation(
-                    type = AiRecommendationType.GOAL_ACTION,
-                    title = "Move this goal forward",
-                    message =
-                        "\"${goal.title}\" is currently at " +
-                                "${(goal.progress * 100).toInt()}%. " +
-                                "Consider completing a task connected to this goal today.",
-                    priority = AiPriority.MEDIUM,
-                    relatedGoalId = goal.id,
-                    actionLabel = "Work on goal"
-                )
-            )
+        // 1. WORKLOAD INTELLIGENCE
+        val plannedToday = context.tasksPlannedToday
+        val avgCompleted = context.memory.analyzedDays.let { days ->
+            if (days > 0) {
+                // If we have history, calculate a simple avg from memory patterns if available 
+                // or just use logic based on memory patterns
+                val pattern = context.memory.patterns.find { it.type == AiPatternType.COMPLETION_ACCURACY }
+                if (pattern != null) {
+                    // Extract number from description if possible, or use a heuristic
+                    3 // Heuristic for now if we don't have exact avg in memory
+                } else 5
+            } else 5
         }
 
-        // ------------------------------------------------------------
-        // OVERLOAD WARNING
-        // ------------------------------------------------------------
-
-        if (context.incompleteTasks.size >= 8) {
-
-            recommendations.add(
+        if (plannedToday > avgCompleted * 1.5) {
+            insights.add(
                 AiRecommendation(
                     type = AiRecommendationType.WARNING,
-                    title = "Your workload is getting heavy",
-                    message =
-                        "You currently have ${context.incompleteTasks.size} " +
-                                "unfinished tasks. Focus on the highest-impact " +
-                                "work instead of trying to complete everything.",
+                    title = "Heavy Workload Detected",
+                    message = "You've planned $plannedToday tasks, which is significantly more than your typical completion rate.",
+                    evidence = "Planned: $plannedToday, Typical capacity: $avgCompleted",
                     priority = AiPriority.HIGH,
-                    actionLabel = "Prioritize tasks"
+                    confidence = AiConfidence.HIGH,
+                    actionLabel = "Review Today's Plan"
                 )
             )
         }
 
-        // ------------------------------------------------------------
-        // PRODUCTIVITY INSIGHT
-        // ------------------------------------------------------------
-
-        if (context.tasksPlannedToday > 0) {
-
-            val completionRate =
-                context.tasksCompletedToday.toFloat() /
-                        context.tasksPlannedToday.toFloat()
-
-            when {
-
-                completionRate >= 0.8f -> {
-
-                    recommendations.add(
-                        AiRecommendation(
-                            type =
-                                AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                            title = "Strong progress",
-                            message =
-                                "You've completed " +
-                                        "${context.tasksCompletedToday} of " +
-                                        "${context.tasksPlannedToday} planned tasks today. " +
-                                        "Protect this momentum by choosing your next task carefully.",
-                            priority = AiPriority.LOW
-                        )
-                    )
-                }
-
-                completionRate <= 0.3f &&
-                        context.tasksPlannedToday >= 3 -> {
-
-                    recommendations.add(
-                        AiRecommendation(
-                            type =
-                                AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                            title = "Reduce the pressure",
-                            message =
-                                "Your completion rate is currently low. " +
-                                        "Rather than adding more work, focus on " +
-                                        "one meaningful task and build momentum.",
-                            priority = AiPriority.MEDIUM
-                        )
-                    )
-                }
-            }
+        // 2. GOAL INTELLIGENCE
+        val neglectedGoal = context.activeGoals.find { goal ->
+            // Neglected if progress < 50% and no tasks planned today for it
+            goal.progress < 0.5f && context.tasks.none { it.goalTitle == goal.title && !it.completed }
         }
 
-        return recommendations
+        if (neglectedGoal != null) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.GOAL_ACTION,
+                    title = "Goal Neglected",
+                    message = "\"${neglectedGoal.title}\" is falling behind and has no tasks planned today.",
+                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%, Tasks today: 0",
+                    priority = AiPriority.MEDIUM,
+                    confidence = AiConfidence.MEDIUM,
+                    relatedGoalId = neglectedGoal.id,
+                    actionLabel = "Work on Goal"
+                )
+            )
+        }
+
+        // 3. TASK INTELLIGENCE
+        val urgentIgnored = context.incompleteTasks.find { 
+            it.priority == TaskPriority.URGENT 
+        }
+        
+        if (urgentIgnored != null) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.WARNING,
+                    title = "Urgent Task Pending",
+                    message = "\"${urgentIgnored.title}\" is marked as urgent but remains incomplete.",
+                    evidence = "Priority: URGENT, Status: Incomplete",
+                    priority = AiPriority.CRITICAL,
+                    confidence = AiConfidence.HIGH,
+                    relatedTaskId = urgentIgnored.id,
+                    actionLabel = "View Task"
+                )
+            )
+        }
+
+        // 4. PRODUCTIVITY TRENDS
+        val focusDip = context.memory.patterns.find { it.title == "Focus Dip" }
+        if (focusDip != null) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = "Focus Time Dropping",
+                    message = focusDip.description,
+                    evidence = "Focus trend identified in your productivity history.",
+                    priority = AiPriority.MEDIUM,
+                    confidence = AiConfidence.MEDIUM
+                )
+            )
+        }
+
+        // 5. CARRY-OVER INTELLIGENCE
+        if (context.carriedTasks > 3) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = "High Task Carry-over",
+                    message = "You've carried over ${context.carriedTasks} tasks from previous days. This often leads to cumulative overload.",
+                    evidence = "Carried tasks: ${context.carriedTasks}",
+                    priority = AiPriority.MEDIUM,
+                    confidence = AiConfidence.HIGH,
+                    actionLabel = "Review Workload"
+                )
+            )
+        }
+
+        // 6. PROGRESS MOMENTUM
+        if (context.tasksCompletedToday >= 5 && context.tasksCompletedToday >= context.tasksPlannedToday * 0.8) {
+             insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = "Excellent Momentum",
+                    message = "You're on a roll today! You've completed most of your planned work. Protect this energy.",
+                    evidence = "Completed: ${context.tasksCompletedToday}, Plan: ${context.tasksPlannedToday}",
+                    priority = AiPriority.LOW,
+                    confidence = AiConfidence.HIGH
+                )
+            )
+        }
+
+        return insights.sortedByDescending { it.priority }
     }
 
     // ================================================================
@@ -562,6 +583,18 @@ class AiPlanner {
             input.contains("goal") -> {
                 val goalAnalysis = analyzeGoals(context).firstOrNull()
                 goalAnalysis?.message ?: "You haven't set any active goals yet."
+            }
+
+            input.contains("notice") || 
+            input.contains("what's up") ||
+            input.contains("status") -> {
+                val insights = getProactiveInsights(context)
+                if (insights.isEmpty()) {
+                    "Nexora hasn't noticed anything unusual. You're on track with your current plan."
+                } else {
+                    val summary = insights.joinToString("\n") { "- ${it.title}: ${it.message}" }
+                    "Nexora has noticed several things that might need your attention:\n\n$summary"
+                }
             }
 
             input.contains("overload") || 

@@ -38,6 +38,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.AiAction
+import com.example.nexora.ai.AiRecommendation
+import com.example.nexora.ai.AiRecommendationType
 
 private val Background = Color(0xFFF7F8F4)
 private val Ink = Color(0xFF17231C)
@@ -53,6 +55,7 @@ fun HomeScreen(
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     topPattern: String? = null,
+    proactiveInsight: AiRecommendation? = null,
     proposedAction: AiAction? = null,
     onApproveAction: (AiAction) -> Unit = {},
     onDismissAction: () -> Unit = {}
@@ -303,6 +306,62 @@ fun HomeScreen(
         }
 
         if (proposedAction == null) {
+            proactiveInsight?.let { insight ->
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(26.dp),
+                        colors = CardDefaults.cardColors(containerColor = SoftGreen),
+                        border = BorderStroke(1.dp, Green.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Green,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Nexora Intelligence",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Green,
+                                    letterSpacing = 1.2.sp
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            Text(
+                                text = insight.title,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Ink
+                            )
+                            
+                            Text(
+                                text = insight.message,
+                                fontSize = 13.sp,
+                                color = Muted,
+                                lineHeight = 19.sp
+                            )
+
+                            if (insight.actionLabel != null) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = insight.actionLabel,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Green
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             topPattern?.let { pattern ->
                 item {
                     Card(

@@ -33,12 +33,10 @@ class LocalNexoraAiService(
     }
 
     override suspend fun decomposeGoal(
-        context: AiContext,
         goalTitle: String,
         goalDescription: String
     ): AiGoalDecomposition {
         return planner.decomposeGoal(
-            context = context,
             goalTitle = goalTitle,
             goalDescription = goalDescription
         )
@@ -53,6 +51,12 @@ class LocalNexoraAiService(
         
         val response = providerManager.generateResponse(prompt, context)
         return response.text
+    }
+
+    override suspend fun generateProactiveInsights(
+        context: AiContext
+    ): List<AiRecommendation> {
+        return planner.getProactiveInsights(context)
     }
     
     suspend fun decide(
