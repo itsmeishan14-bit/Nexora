@@ -80,15 +80,14 @@ class MainActivity : ComponentActivity() {
                     val aiService = com.example.nexora.ai.LocalNexoraAiService(
                         providerManager = providerManager
                     )
+                    
+                    val actionExecutor = AiActionExecutor(repository)
 
                     NexoraAiEngine(
                         contextBuilder = contextBuilder,
-                        aiService = aiService
+                        aiService = aiService,
+                        actionExecutor = actionExecutor
                     )
-                }
-
-                val actionExecutor = remember {
-                    AiActionExecutor(repository)
                 }
 
                 val scope = rememberCoroutineScope()
@@ -448,7 +447,7 @@ class MainActivity : ComponentActivity() {
                                     
                                     onApproveAction = { action ->
                                         scope.launch {
-                                            actionExecutor.execute(action)
+                                            aiEngine.executeAction(action)
                                             homeProposedAction = null
                                             
                                             // Refresh data
@@ -729,8 +728,6 @@ class MainActivity : ComponentActivity() {
                                 AiScreen(
 
                                     engine = aiEngine,
-                                    
-                                    repository = repository,
 
                                     onOpenGoalDecomposer = {
 
@@ -775,8 +772,6 @@ class MainActivity : ComponentActivity() {
                                 AiGoalDecomposerScreen(
 
                                     engine = aiEngine,
-
-                                    repository = repository,
 
                                     onBack = {
 

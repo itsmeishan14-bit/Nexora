@@ -20,6 +20,8 @@ data class AiDecision(
     val type: AiDecisionType,
     val title: String,
     val reason: String,
+    val evidence: String? = null,
+    val confidence: AiConfidence = AiConfidence.MEDIUM,
     val taskId: Long? = null,
     val goalId: Long? = null,
     val taskTitle: String? = null,

@@ -14,11 +14,11 @@ class LocalAiProvider(
         prompt: String,
         context: AiContext
     ): AiModelResponse {
-        // Extract user message from prompt if possible
         val userMessage = prompt.split("\n\nUser Message: ").lastOrNull() ?: prompt
-        val text = planner.chat(context, userMessage)
+        val result = intentResolver.resolve(userMessage, context)
+        
         return AiModelResponse(
-            text = text,
+            text = result.textResponse ?: "I'm not sure how to respond to that.",
             modelName = "nexora-local-v1"
         )
     }
@@ -58,7 +58,7 @@ class LocalAiProvider(
             )
         }
 
-        return AiModelStructuredResponse(
+        return result.copy(
             decision = decision,
             modelName = "nexora-local-v1"
         )

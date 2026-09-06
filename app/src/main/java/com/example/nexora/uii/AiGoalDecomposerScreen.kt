@@ -83,8 +83,7 @@ data class AiGoalDecomposerUiState(
 )
 
 class AiGoalDecomposerViewModel(
-    private val engine: NexoraAiEngine,
-    private val repository: NexoraRepository
+    private val engine: NexoraAiEngine
 ) : ViewModel() {
 
     private val _uiState =
@@ -180,27 +179,25 @@ class AiGoalDecomposerViewModel(
             _uiState.value = state.copy(isCreatingTasks = true, error = null)
             
             try {
-                val existingTasks = repository.observeTasksOnce()
-                val goalTasks = existingTasks.filter { it.goalTitle == decomposition.goalTitle }
-                
                 var createdCount = 0
-                var existingCount = 0
                 
                 selectedSteps.forEach { step ->
-                    val alreadyExists = goalTasks.any { it.title == step.title }
+                    val action = com.example.nexora.ai.AiAction(
+                        type = com.example.nexora.ai.AiActionType.CREATE_TASK,
+                        title = "Create Task from Step",
+                        description = "Create task \"${step.title}\" for goal \"${decomposition.goalTitle}\"",
+                        parameters = mapOf(
+                            "title" to step.title,
+                            "category" to "AI Goal Step",
+                            "duration" to step.estimatedDuration,
+                            "goalTitle" to decomposition.goalTitle,
+                            "priority" to mapPriority(step.priority).name
+                        ),
+                        requiresConfirmation = false
+                    )
                     
-                    if (alreadyExists) {
-                        existingCount++
-                    } else {
-                        val newTask = PremiumTask(
-                            title = step.title,
-                            category = "AI Goal Step", // Default category
-                            duration = step.estimatedDuration,
-                            goalTitle = decomposition.goalTitle,
-                            priority = mapPriority(step.priority),
-                            completed = false
-                        )
-                        repository.addTask(newTask)
+                    val result = engine.executeAction(action)
+                    if (result.success) {
                         createdCount++
                     }
                 }
@@ -209,15 +206,7 @@ class AiGoalDecomposerViewModel(
                     onComplete()
                 }
                 
-                val message = when {
-                    createdCount > 0 && existingCount > 0 -> 
-                        "$createdCount tasks created. $existingCount already existed."
-                    createdCount > 0 -> 
-                        "$createdCount tasks added to your goal."
-                    existingCount > 0 -> 
-                        "All selected tasks already exist for this goal."
-                    else -> "No tasks were created."
-                }
+                val message = "$createdCount tasks added to your goal."
                 
                 _uiState.value = _uiState.value.copy(
                     isCreatingTasks = false,
@@ -259,7 +248,6 @@ class AiGoalDecomposerViewModel(
 @Composable
 fun AiGoalDecomposerScreen(
     engine: NexoraAiEngine,
-    repository: NexoraRepository,
     onBack: () -> Unit = {},
     onTasksCreated: () -> Unit = {}
 ) {
@@ -273,8 +261,7 @@ fun AiGoalDecomposerScreen(
                         create(modelClass: Class<T>): T {
 
                     return AiGoalDecomposerViewModel(
-                        engine = engine,
-                        repository = repository
+                        engine = engine
                     ) as T
                 }
             }

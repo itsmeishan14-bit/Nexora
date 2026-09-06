@@ -30,8 +30,7 @@ data class NexoraAiUiState(
 )
 
 class NexoraAiViewModel(
-    private val engine: NexoraAiEngine,
-    private val actionExecutor: AiActionExecutor
+    private val engine: NexoraAiEngine
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NexoraAiUiState())
@@ -62,7 +61,7 @@ class NexoraAiViewModel(
                     memory = context.memory
                 )
             } catch (e: Exception) {
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Unable to analyze your data."
                 )
@@ -105,12 +104,12 @@ class NexoraAiViewModel(
             try {
                 val recommendations = engine.analyzeGoals()
 
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     recommendations = recommendations
                 )
             } catch (e: Exception) {
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Unable to analyze your goals."
                 )
@@ -128,12 +127,12 @@ class NexoraAiViewModel(
             try {
                 val recommendations = engine.analyzeProductivity()
 
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     recommendations = recommendations
                 )
             } catch (e: Exception) {
-                _uiState.value = NexoraAiUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: "Unable to analyze productivity."
                 )
@@ -172,11 +171,11 @@ class NexoraAiViewModel(
                     return@launch
                 }
 
-                // 2. AI Reasoning & Text Response
-                val responseText = engine.ask(text)
+                // 2. AI Reasoning, Text Response & Decision in one pass
+                val result = engine.ask(text)
                 
                 val aiMessage = NexoraChatMessage(
-                    text = responseText,
+                    text = result.textResponse ?: "I'm not sure how to respond.",
                     isFromUser = false
                 )
 
@@ -185,10 +184,7 @@ class NexoraAiViewModel(
                     isChatLoading = false
                 )
 
-                // 3. AI Structured Decision / Tool Calling
-                val structuredResult = engine.decide(text)
-                
-                processStructuredResult(structuredResult)
+                processStructuredResult(result)
 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -221,7 +217,11 @@ class NexoraAiViewModel(
                 } else {
                     decisionToAction(result.decision)
                 }
-                proposeAction(action)
+                
+                // If it's just showing an insight with no actual action, don't propose
+                if (action.type != AiActionType.SHOW_INSIGHT || result.decision.type == AiDecisionType.WARNING) {
+                    proposeAction(action)
+                }
                 
                 // Clear conversational state as we found a definitive action
                 _uiState.value = _uiState.value.copy(
@@ -239,15 +239,11 @@ class NexoraAiViewModel(
         
         when (match) {
             is ResolutionResult.Success -> {
-                // Now we re-run the "ask" but with the specific task resolved?
-                // Or we just proceed with whatever the pending intent was.
-                // For simplicity, let's assume the user was trying to mark it complete or update it.
-                // We'll just re-run the decide with a more specific query.
-                val specificText = "Task ID ${match.entity.id} ${text}" // Crude but effective for local resolver
-                val result = engine.decide(specificText)
+                val specificText = "Task ID ${match.entity.id} ${text}"
+                val result = engine.ask(specificText)
                 
                 val aiMessage = NexoraChatMessage(
-                    text = "I've resolved the task to \"${match.entity.title}\".",
+                    text = "I've resolved the task to \"${match.entity.title}\". " + (result.textResponse ?: ""),
                     isFromUser = false
                 )
 
@@ -288,6 +284,7 @@ class NexoraAiViewModel(
             type = mapDecisionTypeToActionType(decision.type),
             title = decision.title,
             description = decision.reason,
+            reason = decision.evidence,
             taskId = decision.taskId,
             goalId = decision.goalId,
             priority = decision.priority,
@@ -326,7 +323,7 @@ class NexoraAiViewModel(
                 proposedAction = null
             )
             
-            val result = actionExecutor.execute(action)
+            val result = engine.executeAction(action)
             
             _uiState.value = _uiState.value.copy(
                 isLoading = false,

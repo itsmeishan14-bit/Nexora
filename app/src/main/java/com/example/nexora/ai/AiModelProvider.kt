@@ -41,6 +41,7 @@ data class AiModelResponse(
 data class AiModelStructuredResponse(
     val decision: AiDecision,
     val actions: List<AiAction> = emptyList(),
+    val textResponse: String? = null,
     val modelName: String,
     val usage: AiModelUsage? = null,
     val candidateTaskIds: List<Long> = emptyList(),

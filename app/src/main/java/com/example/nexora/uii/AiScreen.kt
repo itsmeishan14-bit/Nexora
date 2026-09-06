@@ -87,7 +87,6 @@ private val NexoraBorder = Color(0xFFE1E5E1)
 @Composable
 fun AiScreen(
     engine: NexoraAiEngine,
-    repository: com.example.nexora.data.NexoraRepository,
     onOpenGoalDecomposer: () -> Unit,
     onRecommendationAction: (AiRecommendation) -> Unit,
     onTaskAction: (Long) -> Unit = {}
@@ -102,8 +101,7 @@ fun AiScreen(
             ): T {
 
                 return NexoraAiViewModel(
-                    engine = engine,
-                    actionExecutor = AiActionExecutor(repository)
+                    engine = engine
                 ) as T
             }
         }

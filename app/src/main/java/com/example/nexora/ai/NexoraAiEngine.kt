@@ -2,8 +2,13 @@ package com.example.nexora.ai
 
 class NexoraAiEngine(
     private val contextBuilder: AiContextBuilder,
-    private val aiService: NexoraAiService
+    private val aiService: NexoraAiService,
+    private val actionExecutor: AiActionExecutor
 ) {
+
+    suspend fun executeAction(action: AiAction): AiActionResult {
+        return actionExecutor.execute(action)
+    }
 
     suspend fun analyze(): List<AiRecommendation> {
         val context = contextBuilder.build()
@@ -51,33 +56,11 @@ class NexoraAiEngine(
 
     suspend fun ask(
         userMessage: String
-    ): String {
-
+    ): AiModelStructuredResponse {
         val context = contextBuilder.build()
-
         return aiService.askNexora(
             context = context,
             userMessage = userMessage
         )
-    }
-
-    suspend fun decide(
-        query: String
-    ): AiModelStructuredResponse {
-        val context = contextBuilder.build()
-        
-        return if (aiService is LocalNexoraAiService) {
-            aiService.decide(context, query)
-        } else {
-            // Fallback for other implementations
-            AiModelStructuredResponse(
-                decision = AiDecision(
-                    type = AiDecisionType.NO_ACTION,
-                    title = "Unsupported",
-                    reason = "This AI service does not support structured decisions yet."
-                ),
-                modelName = "unknown"
-            )
-        }
     }
 }

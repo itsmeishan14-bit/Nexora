@@ -26,7 +26,7 @@ interface NexoraAiService {
     suspend fun askNexora(
         context: AiContext,
         userMessage: String
-    ): String
+    ): AiModelStructuredResponse
 
     suspend fun generateProactiveInsights(
         context: AiContext

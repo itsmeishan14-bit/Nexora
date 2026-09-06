@@ -45,27 +45,16 @@ class LocalNexoraAiService(
     override suspend fun askNexora(
         context: AiContext,
         userMessage: String
-    ): String {
+    ): AiModelStructuredResponse {
         val prompt = AiPromptBuilder.buildContextPrompt(context) + 
                      "\n\nUser Message: $userMessage"
         
-        val response = providerManager.generateResponse(prompt, context)
-        return response.text
+        return providerManager.generateStructuredResponse(prompt, context)
     }
 
     override suspend fun generateProactiveInsights(
         context: AiContext
     ): List<AiRecommendation> {
         return planner.getProactiveInsights(context)
-    }
-    
-    suspend fun decide(
-        context: AiContext,
-        query: String
-    ): AiModelStructuredResponse {
-        val prompt = AiPromptBuilder.buildContextPrompt(context) + 
-                     "\n\nDecision Query: $query"
-        
-        return providerManager.generateStructuredResponse(prompt, context)
     }
 }

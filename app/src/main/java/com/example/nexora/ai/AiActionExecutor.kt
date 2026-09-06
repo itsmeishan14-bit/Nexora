@@ -8,7 +8,20 @@ import com.example.nexora.uii.NexoraGoal
 class AiActionExecutor(
     private val repository: NexoraRepository
 ) {
+    private val validator = NexoraAiValidator(repository)
+
     suspend fun execute(action: AiAction): AiActionResult {
+        // 1. Validation Layer
+        val validationResult = validator.validate(action)
+        if (validationResult is ValidationResult.Invalid) {
+            return AiActionResult(
+                success = false,
+                message = "Validation failed: ${validationResult.message}",
+                error = "Validation error"
+            )
+        }
+
+        // 2. Execution Layer
         return try {
             when (action.type) {
                 AiActionType.CREATE_TASK -> createTask(action)

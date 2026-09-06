@@ -6,6 +6,7 @@ class LocalAiIntentResolver {
 
     fun resolve(query: String, context: AiContext): AiModelStructuredResponse {
         val input = query.lowercase().trim()
+        val planner = AiPlanner()
 
         return when {
             // READ intents
@@ -23,31 +24,47 @@ class LocalAiIntentResolver {
             input.contains("move") && input.contains("tomorrow") -> rescheduleTask(query, context)
             
             // PLANNING intents
-            input.contains("plan") && input.contains("day") -> planDay(context)
-            input.contains("next") && (input.contains("work") || input.contains("task")) -> nextTask(context)
+            input.contains("plan") && input.contains("day") -> planDay(context, planner)
+            input.contains("next") && (input.contains("work") || input.contains("task")) -> nextTask(context, planner)
             input.contains("break down") || input.contains("decompose") -> decomposeGoal(query, context)
             
             // PROACTIVE queries
-            input.contains("notice") || input.contains("what's up") || input.contains("status") -> analyzeProactive(context)
+            input.contains("notice") || input.contains("what's up") || input.contains("status") || 
+            input.contains("behind") || input.contains("attention") || input.contains("issue") ||
+            input.contains("overload") || input.contains("too many") -> analyzeProactive(context, planner)
 
-            else -> noAction()
+            // PRODUCTIVITY
+            input.contains("productivity") || input.contains("pattern") || input.contains("consistent") ||
+            input.contains("momentum") || input.contains("habit") -> showProductivity(context, planner)
+
+            else -> noAction(query, context, planner)
         }
     }
 
-    private fun analyzeProactive(context: AiContext): AiModelStructuredResponse {
-        val insights = AiPlanner().getProactiveInsights(context)
+    private fun analyzeProactive(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val insights = planner.getProactiveInsights(context)
         val best = insights.maxByOrNull { it.priority }
         
+        val textResponse = if (insights.isEmpty()) {
+            "Nexora hasn't noticed anything unusual. You're on track with your current plan."
+        } else {
+            val summary = insights.joinToString("\n") { "- ${it.title}: ${it.message}" }
+            "Nexora has noticed several things that might need your attention:\n\n$summary"
+        }
+
         return if (best != null) {
             AiModelStructuredResponse(
                 decision = AiDecision(
                     type = mapRecTypeToDecisionType(best.type),
                     title = best.title,
                     reason = best.message,
+                    evidence = best.evidence,
+                    confidence = best.confidence,
                     taskId = best.relatedTaskId,
                     goalId = best.relatedGoalId,
                     priority = best.priority
                 ),
+                textResponse = textResponse,
                 modelName = "local-heuristic"
             )
         } else {
@@ -57,6 +74,7 @@ class LocalAiIntentResolver {
                     title = "All Clear",
                     reason = "Nexora hasn't noticed anything unusual. You're doing great."
                 ),
+                textResponse = textResponse,
                 modelName = "local-heuristic"
             )
         }
@@ -74,23 +92,27 @@ class LocalAiIntentResolver {
     }
 
     private fun listTasks(context: AiContext): AiModelStructuredResponse {
+        val textResponse = "You have ${context.incompleteTasks.size} incomplete tasks."
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.SHOW_INSIGHT,
                 title = "List Tasks",
-                reason = "You have ${context.incompleteTasks.size} incomplete tasks."
+                reason = textResponse
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
 
     private fun listGoals(context: AiContext): AiModelStructuredResponse {
+        val textResponse = "You have ${context.activeGoals.size} active goals."
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.SHOW_INSIGHT,
                 title = "List Goals",
-                reason = "You have ${context.activeGoals.size} active goals."
+                reason = textResponse
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
@@ -100,19 +122,40 @@ class LocalAiIntentResolver {
             (context.tasksCompletedToday.toFloat() / context.tasksPlannedToday * 100).toInt()
         } else 0
         
+        val textResponse = "You've completed $progress% of your planned tasks today."
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.SHOW_INSIGHT,
                 title = "Today's Progress",
-                reason = "You've completed $progress% of your planned tasks today."
+                reason = textResponse
             ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun showProductivity(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val textResponse = if (context.memory.patterns.isEmpty()) {
+            "I don't have enough history to detect specific patterns yet. Keep using Nexora and I'll analyze your consistency over time."
+        } else {
+            val patternList = context.memory.patterns.joinToString("\n") { "- ${it.title}: ${it.description}" }
+            "Here is what I've learned about your productivity recently:\n\n$patternList"
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.SHOW_INSIGHT,
+                title = "Productivity Analysis",
+                reason = "Reviewing your patterns."
+            ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
 
     private fun createTask(query: String, context: AiContext): AiModelStructuredResponse {
         val titleMatch = Regex("\"([^\"]*)\"").find(query)
-        val title = titleMatch?.groupValues?.get(1) ?: query.replace(Regex("(?i)(create|add|task|a)"), "").trim()
+        val title = titleMatch?.groupValues?.get(1) ?: query.replace(Regex("(?i)\\b(create|add|task|a)\\b"), "").trim()
         
         val duration = if (query.contains("minute")) {
             Regex("\\d+").find(query)?.value?.let { "$it minutes" } ?: "30 minutes"
@@ -124,6 +167,8 @@ class LocalAiIntentResolver {
             query.contains("low") -> AiPriority.LOW
             else -> AiPriority.MEDIUM
         }
+
+        val textResponse = "I'll create a task for \"$title\"."
 
         return AiModelStructuredResponse(
             decision = AiDecision(
@@ -146,6 +191,7 @@ class LocalAiIntentResolver {
                     )
                 )
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
@@ -156,7 +202,7 @@ class LocalAiIntentResolver {
             val id = taskIdMatch.groupValues[1].toLong()
             context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            val taskQuery = query.replace(Regex("(?i)(make|change|priority|to|high|low|medium|urgent|task)"), "").trim()
+            val taskQuery = query.replace(Regex("(?i)\\b(make|change|priority|to|high|low|medium|urgent|task)\\b"), "").trim()
             AiEntityResolver.resolveTask(taskQuery, context.tasks)
         }
         
@@ -186,6 +232,7 @@ class LocalAiIntentResolver {
                             parameters = mapOf("priority" to mapAiPriorityToTaskPriority(priority).name)
                         )
                     ),
+                    textResponse = "Updating priority for \"${result.entity.title}\" to $priority.",
                     modelName = "local-heuristic"
                 )
             }
@@ -200,7 +247,7 @@ class LocalAiIntentResolver {
             val id = taskIdMatch.groupValues[1].toLong()
             context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            val taskQuery = query.replace(Regex("(?i)(complete|mark|done|as|task)"), "").trim()
+            val taskQuery = query.replace(Regex("(?i)\\b(complete|mark|done|as|task)\\b"), "").trim()
             AiEntityResolver.resolveTask(taskQuery, context.tasks)
         }
         
@@ -221,6 +268,7 @@ class LocalAiIntentResolver {
                             taskId = result.entity.id
                         )
                     ),
+                    textResponse = "Marking \"${result.entity.title}\" as complete.",
                     modelName = "local-heuristic"
                 )
             }
@@ -235,7 +283,7 @@ class LocalAiIntentResolver {
             val id = taskIdMatch.groupValues[1].toLong()
             context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            val taskQuery = query.replace(Regex("(?i)(delete|task)"), "").trim()
+            val taskQuery = query.replace(Regex("(?i)\\b(delete|task)\\b"), "").trim()
             AiEntityResolver.resolveTask(taskQuery, context.tasks)
         }
         
@@ -257,6 +305,7 @@ class LocalAiIntentResolver {
                             priority = AiPriority.HIGH
                         )
                     ),
+                    textResponse = "I'll delete the task \"${result.entity.title}\".",
                     modelName = "local-heuristic"
                 )
             }
@@ -271,7 +320,7 @@ class LocalAiIntentResolver {
             val id = taskIdMatch.groupValues[1].toLong()
             context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            val taskQuery = query.replace(Regex("(?i)(move|to|tomorrow|task)"), "").trim()
+            val taskQuery = query.replace(Regex("(?i)\\b(move|to|tomorrow|task)\\b"), "").trim()
             AiEntityResolver.resolveTask(taskQuery, context.tasks)
         }
         
@@ -292,6 +341,7 @@ class LocalAiIntentResolver {
                             taskId = result.entity.id
                         )
                     ),
+                    textResponse = "Moving \"${result.entity.title}\" to tomorrow.",
                     modelName = "local-heuristic"
                 )
             }
@@ -299,24 +349,40 @@ class LocalAiIntentResolver {
         }
     }
 
-    private fun planDay(context: AiContext): AiModelStructuredResponse {
+    private fun planDay(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val plan = planner.createDailyPlan(context)
+        val textResponse = if (plan.tasks.isEmpty()) {
+            plan.summary
+        } else {
+            val taskList = plan.tasks.joinToString("\n") { 
+                "${it.recommendedOrder}. ${it.task.title} (${it.task.duration})" 
+            }
+            "${plan.summary}\n\n$taskList"
+        }
+
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.DAILY_PLAN,
                 title = "Daily Plan",
                 reason = "Generating your daily plan..."
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
 
-    private fun nextTask(context: AiContext): AiModelStructuredResponse {
+    private fun nextTask(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val next = planner.analyze(context).find { it.type == AiRecommendationType.NEXT_TASK }
+        val textResponse = next?.message ?: "I don't see any urgent tasks right now."
+        
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.START_TASK,
                 title = "Next Task",
-                reason = "Finding your next best step..."
+                reason = "Finding your next best step...",
+                taskId = next?.relatedTaskId
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
@@ -327,7 +393,7 @@ class LocalAiIntentResolver {
             val id = goalIdMatch.groupValues[1].toLong()
             context.goals.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            val goalQuery = query.replace(Regex("(?i)(break down|decompose|goal)"), "").trim()
+            val goalQuery = query.replace(Regex("(?i)\\b(break down|decompose|goal)\\b"), "").trim()
             AiEntityResolver.resolveGoal(goalQuery, context.goals)
         }
         
@@ -349,6 +415,7 @@ class LocalAiIntentResolver {
                             requiresConfirmation = false
                         )
                     ),
+                    textResponse = "I'll break down the goal \"${result.entity.title}\" for you.",
                     modelName = "local-heuristic"
                 )
             }
@@ -356,13 +423,16 @@ class LocalAiIntentResolver {
         }
     }
 
-    private fun noAction(): AiModelStructuredResponse {
+    private fun noAction(query: String, context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val textResponse = "I'm Nexora, your productivity assistant. I can help you plan your day, prioritize tasks, or review your goals. Try asking 'What should I work on next?'"
+
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.NO_ACTION,
                 title = "No Action",
                 reason = ""
             ),
+            textResponse = textResponse,
             modelName = "local-heuristic"
         )
     }
