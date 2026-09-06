@@ -1,25 +1,34 @@
 package com.example.nexora.data
 
+import com.example.nexora.ai.AiEvaluation
+import com.example.nexora.ai.AiOutcome
+import com.example.nexora.ai.AiOutcomeType
+import com.example.nexora.ai.AiRecommendationHistory
+import com.example.nexora.ai.AiRecommendationType
+import com.example.nexora.ai.AiConfidence
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
-class NexoraRepository(
-    private val database: NexoraDatabase
+open class NexoraRepository(
+    private val database: NexoraDatabase?
 ) {
 
-    private val taskDao = database.taskDao()
-    private val goalDao = database.goalDao()
-    private val dailyProgressDao = database.dailyProgressDao()
+    private val taskDao = database?.taskDao()
+    private val goalDao = database?.goalDao()
+    private val dailyProgressDao = database?.dailyProgressDao()
+    private val aiLearningDao = database?.aiLearningDao()
 
     // ─────────────────────────────────────
     // TASKS
     // ─────────────────────────────────────
 
-    fun observeTasks(): Flow<List<PremiumTask>> {
-        return taskDao.observeAll().map { entities ->
+    open fun observeTasks(): Flow<List<PremiumTask>> {
+        val dao = taskDao ?: return flowOf(emptyList())
+        return dao.observeAll().map { entities ->
             entities.map { entity ->
                 PremiumTask(
                     id = entity.id,
@@ -38,8 +47,9 @@ class NexoraRepository(
         }
     }
 
-    suspend fun observeTasksOnce(): List<PremiumTask> {
-        return taskDao.observeAllOnce().map { entity ->
+    open suspend fun observeTasksOnce(): List<PremiumTask> {
+        val dao = taskDao ?: return emptyList()
+        return dao.observeAllOnce().map { entity ->
             PremiumTask(
                 id = entity.id,
                 title = entity.title,
@@ -56,8 +66,9 @@ class NexoraRepository(
         }
     }
 
-    suspend fun addTask(task: PremiumTask): PremiumTask {
-        val id = taskDao.insert(
+    open suspend fun addTask(task: PremiumTask): PremiumTask {
+        val dao = taskDao ?: return task
+        val id = dao.insert(
             TaskEntity(
                 title = task.title,
                 category = task.category,
@@ -71,8 +82,9 @@ class NexoraRepository(
         return task.copy(id = id)
     }
 
-    suspend fun updateTask(task: PremiumTask) {
-        taskDao.update(
+    open suspend fun updateTask(task: PremiumTask) {
+        val dao = taskDao ?: return
+        dao.update(
             TaskEntity(
                 id = task.id,
                 title = task.title,
@@ -85,8 +97,9 @@ class NexoraRepository(
         )
     }
 
-    suspend fun deleteTask(task: PremiumTask) {
-        taskDao.delete(
+    open suspend fun deleteTask(task: PremiumTask) {
+        val dao = taskDao ?: return
+        dao.delete(
             TaskEntity(
                 id = task.id,
                 title = task.title,
@@ -103,8 +116,9 @@ class NexoraRepository(
     // GOALS
     // ─────────────────────────────────────
 
-    fun observeGoals(): Flow<List<NexoraGoal>> {
-        return goalDao.observeAll().map { entities ->
+    open fun observeGoals(): Flow<List<NexoraGoal>> {
+        val dao = goalDao ?: return flowOf(emptyList())
+        return dao.observeAll().map { entities ->
             entities.map { entity ->
                 NexoraGoal(
                     id = entity.id,
@@ -117,8 +131,9 @@ class NexoraRepository(
         }
     }
 
-    suspend fun observeGoalsOnce(): List<NexoraGoal> {
-        return goalDao.observeAllOnce().map { entity ->
+    open suspend fun observeGoalsOnce(): List<NexoraGoal> {
+        val dao = goalDao ?: return emptyList()
+        return dao.observeAllOnce().map { entity ->
             NexoraGoal(
                 id = entity.id,
                 title = entity.title,
@@ -129,8 +144,9 @@ class NexoraRepository(
         }
     }
 
-    suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
-        val id = goalDao.insert(
+    open suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
+        val dao = goalDao ?: return goal
+        val id = dao.insert(
             GoalEntity(
                 title = goal.title,
                 category = goal.category,
@@ -142,8 +158,9 @@ class NexoraRepository(
         return goal.copy(id = id)
     }
 
-    suspend fun updateGoal(goal: NexoraGoal) {
-        goalDao.update(
+    open suspend fun updateGoal(goal: NexoraGoal) {
+        val dao = goalDao ?: return
+        dao.update(
             GoalEntity(
                 id = goal.id,
                 title = goal.title,
@@ -154,8 +171,9 @@ class NexoraRepository(
         )
     }
 
-    suspend fun deleteGoal(goal: NexoraGoal) {
-        goalDao.delete(
+    open suspend fun deleteGoal(goal: NexoraGoal) {
+        val dao = goalDao ?: return
+        dao.delete(
             GoalEntity(
                 id = goal.id,
                 title = goal.title,
@@ -170,25 +188,135 @@ class NexoraRepository(
     // DAILY PROGRESS
     // ─────────────────────────────────────
 
-    fun observeDailyProgress(): Flow<List<DailyProgressEntity>> {
-        return dailyProgressDao.observeAll()
+    open fun observeDailyProgress(): Flow<List<DailyProgressEntity>> {
+        val dao = dailyProgressDao ?: return flowOf(emptyList())
+        return dao.observeAll()
     }
 
-    suspend fun getDailyProgress(
+    open suspend fun getDailyProgress(
         date: String
     ): DailyProgressEntity? {
-        return dailyProgressDao.getByDate(date)
+        val dao = dailyProgressDao ?: return null
+        return dao.getByDate(date)
     }
 
-    suspend fun getHistoricalProgress(
+    open suspend fun getHistoricalProgress(
         limit: Int
     ): List<DailyProgressEntity> {
-        return dailyProgressDao.getHistory(limit)
+        val dao = dailyProgressDao ?: return emptyList()
+        return dao.getHistory(limit)
     }
 
-    suspend fun saveDailyProgress(
+    open suspend fun saveDailyProgress(
         progress: DailyProgressEntity
     ) {
-        dailyProgressDao.insert(progress)
+        val dao = dailyProgressDao ?: return
+        dao.insert(progress)
+    }
+
+    // ─────────────────────────────────────
+    // AI LEARNING
+    // ─────────────────────────────────────
+
+    open suspend fun logRecommendation(recommendation: AiRecommendationHistory) {
+        val dao = aiLearningDao ?: return
+        dao.insertRecommendation(
+            AiRecommendationHistoryEntity(
+                id = recommendation.id,
+                type = recommendation.type.name,
+                title = recommendation.title,
+                message = recommendation.message,
+                timestamp = recommendation.timestamp,
+                relatedTaskId = recommendation.relatedTaskId,
+                relatedGoalId = recommendation.relatedGoalId,
+                confidence = recommendation.confidence.name
+            )
+        )
+    }
+
+    open suspend fun getRecentRecommendations(limit: Int): List<AiRecommendationHistory> {
+        val dao = aiLearningDao ?: return emptyList()
+        return dao.getRecentRecommendations(limit).map { entity ->
+            AiRecommendationHistory(
+                id = entity.id,
+                type = AiRecommendationType.valueOf(entity.type),
+                title = entity.title,
+                message = entity.message,
+                timestamp = entity.timestamp,
+                relatedTaskId = entity.relatedTaskId,
+                relatedGoalId = entity.relatedGoalId,
+                confidence = AiConfidence.valueOf(entity.confidence)
+            )
+        }
+    }
+
+    open suspend fun saveOutcome(outcome: AiOutcome) {
+        val dao = aiLearningDao ?: return
+        dao.insertOutcome(
+            AiOutcomeEntity(
+                id = outcome.id,
+                recommendationId = outcome.recommendationId,
+                actionId = outcome.actionId,
+                type = outcome.type.name,
+                timestamp = outcome.timestamp,
+                relatedTaskId = outcome.relatedTaskId,
+                relatedGoalId = outcome.relatedGoalId,
+                expectedResult = outcome.expectedResult,
+                actualResult = outcome.actualResult,
+                confidence = outcome.confidence.name,
+                evidence = outcome.evidence
+            )
+        )
+    }
+
+    open suspend fun getRecentOutcomes(limit: Int): List<AiOutcome> {
+        val dao = aiLearningDao ?: return emptyList()
+        return dao.getRecentOutcomes(limit).map { entity ->
+            AiOutcome(
+                id = entity.id,
+                recommendationId = entity.recommendationId,
+                actionId = entity.actionId,
+                type = AiOutcomeType.valueOf(entity.type),
+                timestamp = entity.timestamp,
+                relatedTaskId = entity.relatedTaskId,
+                relatedGoalId = entity.relatedGoalId,
+                expectedResult = entity.expectedResult,
+                actualResult = entity.actualResult,
+                confidence = AiConfidence.valueOf(entity.confidence),
+                evidence = entity.evidence
+            )
+        }
+    }
+
+    open suspend fun saveEvaluation(evaluation: AiEvaluation) {
+        val dao = aiLearningDao ?: return
+        dao.insertEvaluation(
+            AiEvaluationEntity(
+                id = evaluation.id,
+                title = evaluation.title,
+                whatWasExpected = evaluation.whatWasExpected,
+                whatActuallyHappened = evaluation.whatActuallyHappened,
+                outcome = evaluation.outcome.name,
+                improvementSignal = evaluation.improvementSignal,
+                timestamp = evaluation.timestamp,
+                confidence = evaluation.confidence.name
+            )
+        )
+    }
+
+    open suspend fun getRecentEvaluations(limit: Int): List<AiEvaluation> {
+        val dao = aiLearningDao ?: return emptyList()
+        return dao.getRecentEvaluations(limit).map { entity ->
+            AiEvaluation(
+                id = entity.id,
+                title = entity.title,
+                whatWasExpected = entity.whatWasExpected,
+                whatActuallyHappened = entity.whatActuallyHappened,
+                outcome = AiOutcomeType.valueOf(entity.outcome),
+                improvementSignal = entity.improvementSignal,
+                timestamp = entity.timestamp,
+                confidence = AiConfidence.valueOf(entity.confidence)
+            )
+        }
     }
 }

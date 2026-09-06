@@ -1,7 +1,5 @@
 package com.example.nexora.ai
 
-import com.example.nexora.data.NexoraRepository
-
 /**
  * Main entry point for Nexora AI capabilities.
  * Now powered by the Nexora AI Brain orchestration layer.
@@ -9,12 +7,16 @@ import com.example.nexora.data.NexoraRepository
 class NexoraAiEngine(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
-    private val actionExecutor: AiActionExecutor
+    private val actionExecutor: AiActionExecutor,
+    toolRegistry: AiToolRegistry,
+    repository: com.example.nexora.data.NexoraRepository
 ) {
     private val brain = NexoraAiBrain(
         contextBuilder = contextBuilder,
         aiService = aiService,
-        actionExecutor = actionExecutor
+        actionExecutor = actionExecutor,
+        toolRegistry = toolRegistry,
+        repository = repository
     )
 
     /**

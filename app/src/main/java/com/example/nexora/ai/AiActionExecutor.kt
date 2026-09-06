@@ -24,7 +24,7 @@ open class AiActionExecutor(
         }
 
         // 2. Execution Layer
-        return try {
+        val result = try {
             when (action.type) {
                 AiActionType.CREATE_TASK -> createTask(repo, action)
                 AiActionType.COMPLETE_TASK -> completeTask(repo, action)
@@ -46,6 +46,28 @@ open class AiActionExecutor(
                 error = e.message
             )
         }
+        
+        // 3. Learning Loop: Record action outcome
+        recordActionOutcome(action, result)
+        
+        return result
+    }
+
+    private suspend fun recordActionOutcome(action: AiAction, result: AiActionResult) {
+        val repo = repository ?: return
+        val outcome = AiOutcome(
+            id = java.util.UUID.randomUUID().toString(),
+            recommendationId = null,
+            actionId = action.id,
+            type = if (result.success) AiOutcomeType.SUCCESS else AiOutcomeType.FAILED,
+            timestamp = System.currentTimeMillis(),
+            relatedTaskId = result.affectedTaskId ?: action.taskId,
+            relatedGoalId = result.affectedGoalId ?: action.goalId,
+            expectedResult = action.title,
+            actualResult = result.message,
+            evidence = if (result.success) "Action execution returned success." else "Error: ${result.error}"
+        )
+        repo.saveOutcome(outcome)
     }
 
     private suspend fun createTask(repository: NexoraRepository, action: AiAction): AiActionResult {

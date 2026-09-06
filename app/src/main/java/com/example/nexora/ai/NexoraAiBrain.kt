@@ -1,5 +1,6 @@
 package com.example.nexora.ai
 
+import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 
@@ -11,15 +12,31 @@ class NexoraAiBrain(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
     private val actionExecutor: AiActionExecutor,
+    toolRegistry: AiToolRegistry,
+    private val repository: NexoraRepository,
     private val intentResolver: LocalAiIntentResolver = LocalAiIntentResolver()
 ) {
     private val planner = AiPlanner()
+    private val learningLoop = AiLearningLoop(repository)
+    
+    // The Agent system is a capability of the Brain
+    private val agent = NexoraAiAgent(toolRegistry)
 
     /**
      * Process a unified AI request.
      */
     suspend fun processRequest(request: AiRequest): AiResponse {
+        // Run outcome evaluation periodically or before analysis
+        learningLoop.evaluateOutcomes()
+        
         val context = contextBuilder.build()
+        
+        // Decide if we should use the multi-step Agent
+        if (shouldUseAgent(request)) {
+            val response = agent.execute(request, context)
+            logResponseRecommendations(response)
+            return response
+        }
 
         return when (request.type) {
             AiRequestType.CHAT -> handleChat(request, context)
@@ -39,14 +56,24 @@ class NexoraAiBrain(
         }
     }
 
-    private fun handleChat(request: AiRequest, context: AiContext): AiResponse {
+    private fun shouldUseAgent(request: AiRequest): Boolean {
+        if (request.type != AiRequestType.CHAT) return false
+        val msg = request.userMessage?.lowercase() ?: ""
+        
+        // If user says "complete", "finish", "add", "create", etc., they want an action performed.
+        // The agent is better at multi-step action resolution.
+        return msg.contains("complete") || msg.contains("finish") || 
+               msg.contains("add") || msg.contains("create")
+    }
+
+    private suspend fun handleChat(request: AiRequest, context: AiContext): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Understand Intent
         val structuredResult = intentResolver.resolve(message, context)
         
         // 2. Map Structured Response to Unified Response
-        return AiResponse(
+        val response = AiResponse(
             responseType = mapDecisionToResponseType(structuredResult.decision.type),
             title = structuredResult.decision.title,
             message = structuredResult.textResponse ?: structuredResult.decision.reason,
@@ -56,13 +83,48 @@ class NexoraAiBrain(
             relatedTaskId = structuredResult.decision.taskId,
             relatedGoalId = structuredResult.decision.goalId
         )
+        
+        logResponseRecommendations(response)
+        return response
+    }
+    
+    private suspend fun logResponseRecommendations(response: AiResponse) {
+        // Log individual recommendations if present
+        response.recommendations.forEach { rec ->
+            repository.logRecommendation(
+                AiRecommendationHistory(
+                    id = java.util.UUID.randomUUID().toString(),
+                    type = rec.type,
+                    title = rec.title,
+                    message = rec.message,
+                    relatedTaskId = rec.relatedTaskId,
+                    relatedGoalId = rec.relatedGoalId,
+                    confidence = rec.confidence
+                )
+            )
+        }
+        
+        // Log the main recommendation if it's a recommendation type
+        if (response.responseType == AiResponseType.RECOMMENDATION) {
+            repository.logRecommendation(
+                AiRecommendationHistory(
+                    id = java.util.UUID.randomUUID().toString(),
+                    type = AiRecommendationType.NEXT_TASK, // Default for next task
+                    title = response.title,
+                    message = response.message,
+                    relatedTaskId = response.relatedTaskId,
+                    relatedGoalId = response.relatedGoalId,
+                    confidence = response.confidence
+                )
+            )
+        }
     }
 
-    private fun handleNextTask(context: AiContext): AiResponse {
+    private suspend fun handleNextTask(context: AiContext): AiResponse {
         val recommendations = planner.analyze(context)
         val nextTaskRec = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
-        return if (nextTaskRec != null) {
+        val response = if (nextTaskRec != null) {
             val task = context.tasks.find { it.id == nextTaskRec.relatedTaskId }
             val reasoning = buildTaskReasoning(task, context)
             
@@ -81,9 +143,12 @@ class NexoraAiBrain(
                 message = "Nexora didn't find any urgent tasks requiring immediate attention. You're on top of things!"
             )
         }
+        
+        logResponseRecommendations(response)
+        return response
     }
 
-    private fun handleDailyPlan(context: AiContext): AiResponse {
+    private suspend fun handleDailyPlan(context: AiContext): AiResponse {
         val plan = planner.createDailyPlan(context)
         val proposedActions = plan.tasks.map { 
             AiAction(
@@ -94,45 +159,54 @@ class NexoraAiBrain(
             )
         }
 
-        return AiResponse(
+        val response = AiResponse(
             responseType = AiResponseType.PLAN,
             title = "Daily Plan",
             message = plan.summary,
             confidence = AiConfidence.HIGH,
             proposedActions = proposedActions
         )
+        
+        logResponseRecommendations(response)
+        return response
     }
 
-    private fun handleGoalAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleGoalAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeGoals(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.NO_ACTION, "Goal Status", "Your goals are currently on track.")
         
-        return AiResponse(
+        val response = AiResponse(
             responseType = AiResponseType.RECOMMENDATION,
             title = best.title,
             message = best.message,
             confidence = best.confidence,
             relatedGoalId = best.relatedGoalId
         )
+        
+        logResponseRecommendations(response)
+        return response
     }
 
-    private fun handleProductivityAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleProductivityAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeProductivity(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.INFORMATION, "Productivity", "Keep working on your tasks to build your productivity history.")
         
-        return AiResponse(
+        val response = AiResponse(
             responseType = AiResponseType.INFORMATION,
             title = best.title,
             message = best.message,
             confidence = best.confidence
         )
+        
+        logResponseRecommendations(response)
+        return response
     }
 
-    private fun handleProactiveAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleProactiveAnalysis(context: AiContext): AiResponse {
         val insights = planner.getProactiveInsights(context)
         val critical = insights.find { it.priority == AiPriority.CRITICAL } ?: insights.firstOrNull()
         
-        return if (critical != null) {
+        val response = if (critical != null) {
             AiResponse(
                 responseType = AiResponseType.WARNING,
                 title = critical.title,
@@ -145,6 +219,9 @@ class NexoraAiBrain(
         } else {
             AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any immediate issues with your workflow.")
         }
+        
+        logResponseRecommendations(response)
+        return response
     }
 
     private suspend fun handleGoalDecomposition(request: AiRequest, context: AiContext): AiResponse {
@@ -181,7 +258,7 @@ class NexoraAiBrain(
         )
     }
 
-    private fun handleGeneralAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleGeneralAnalysis(context: AiContext): AiResponse {
         val insights = planner.getProactiveInsights(context)
         val next = planner.analyze(context).find { it.type == AiRecommendationType.NEXT_TASK }
         
@@ -189,12 +266,15 @@ class NexoraAiBrain(
         if (next != null) summary.add("Top priority: ${next.title}")
         if (insights.isNotEmpty()) summary.add("Detected ${insights.size} items requiring attention.")
         
-        return AiResponse(
+        val response = AiResponse(
             responseType = AiResponseType.INFORMATION,
             title = "Nexora Analysis",
             message = if (summary.isEmpty()) "Your workspace is clear." else summary.joinToString("\n"),
             recommendations = insights
         )
+        
+        logResponseRecommendations(response)
+        return response
     }
 
     private suspend fun executeDirectAction(type: AiActionType, params: Map<String, Any>, taskId: Long? = null, goalId: Long? = null): AiResponse {

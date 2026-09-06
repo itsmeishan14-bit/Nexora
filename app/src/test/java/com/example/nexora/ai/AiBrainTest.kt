@@ -11,12 +11,10 @@ import org.junit.Test
 class AiBrainTest {
 
     private lateinit var fakeService: FakeNexoraAiService
-    private lateinit var fakeActionExecutor: FakeAiActionExecutor
 
     @Before
     fun setup() {
         fakeService = FakeNexoraAiService()
-        fakeActionExecutor = FakeAiActionExecutor()
     }
 
     @Test
@@ -47,15 +45,15 @@ class AiBrainTest {
     }
 
     @Test
-    fun `test brain handles chat intent for task creation`() = runBlocking {
+    fun `test brain handles chat intent for task creation via agent`() = runBlocking {
         val context = AiContext()
         val testBrain = createTestBrain(context)
         
         val request = AiRequest(AiRequestType.CHAT, userMessage = "Create a task to buy milk")
         val response = testBrain.processRequest(request)
         
-        assertEquals(AiResponseType.ACTION_PROPOSAL, response.responseType)
-        assertTrue(response.proposedActions.any { it.type == AiActionType.CREATE_TASK })
+        // Agent executes it directly and returns INFORMATION
+        assertEquals("Expected INFORMATION response type. Actual: ${response.responseType}, message: ${response.message}", AiResponseType.INFORMATION, response.responseType)
     }
 
     @Test
@@ -90,10 +88,29 @@ class AiBrainTest {
             override suspend fun build(): AiContext = context
         }
         
+        // Create a registry that definitely has the tools needed for the tests
+        val toolRegistry = object : AiToolRegistry(null, null) {
+            override fun getTool(name: String): AiTool? {
+                return when (name) {
+                    "createTask" -> object : AiTool {
+                        override val name = "createTask"
+                        override val description = ""
+                        override val riskLevel = ToolRiskLevel.LOW_RISK
+                        override suspend fun execute(parameters: Map<String, Any>): ToolResult {
+                            return ToolResult(true, message = "Task created")
+                        }
+                    }
+                    else -> null
+                }
+            }
+        }
+
         return NexoraAiBrain(
             contextBuilder = mockContextBuilder,
             aiService = fakeService,
-            actionExecutor = fakeActionExecutor
+            actionExecutor = AiActionExecutor(null),
+            toolRegistry = toolRegistry,
+            repository = com.example.nexora.data.NexoraRepository(null)
         )
     }
 
@@ -109,9 +126,5 @@ class AiBrainTest {
         override suspend fun generateProactiveInsights(context: AiContext): List<AiRecommendation> {
             return AiPlanner().getProactiveInsights(context)
         }
-    }
-
-    private class FakeAiActionExecutor : AiActionExecutor(null) {
-        override suspend fun execute(action: AiAction): AiActionResult = AiActionResult(true, "Success")
     }
 }

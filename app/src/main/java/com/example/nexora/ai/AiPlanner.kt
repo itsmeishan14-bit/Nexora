@@ -207,6 +207,21 @@ class AiPlanner {
             )
         }
 
+        // 6. LEARNING LOOP INSIGHTS
+        val recentEvaluations = context.recentEvaluations
+        if (recentEvaluations.any { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }) {
+            insights.add(
+                AiRecommendation(
+                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
+                    title = "Planning Adjustment",
+                    message = "Nexora noticed recent plans were quite ambitious. I'm adjusting your daily capacity to be more realistic.",
+                    evidence = "Recent evaluations identified 'Plan Too Large' pattern.",
+                    priority = AiPriority.MEDIUM,
+                    confidence = AiConfidence.HIGH
+                )
+            )
+        }
+
         return insights.sortedByDescending { it.priority }
     }
 
@@ -237,7 +252,19 @@ class AiPlanner {
         // Realistic workload limit: Based on profile if available, else 300 minutes
         var totalMinutes = 0
         val maxMinutes = 360
-        val maxTasks = if (profile.confidence != AdaptiveConfidence.UNKNOWN) profile.preferredDailyWorkload else 6
+        
+        // Learning Loop: Adjust workload based on recent evaluations
+        val recentEvaluations = context.recentEvaluations
+        val tooAmbitiousCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
+        val realisticCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC }
+        
+        val adaptiveMaxTasks = when {
+            tooAmbitiousCount >= 2 -> Math.max(3, profile.preferredDailyWorkload - 1)
+            realisticCount >= 3 -> profile.preferredDailyWorkload + 1
+            else -> profile.preferredDailyWorkload
+        }
+        
+        val maxTasks = if (profile.confidence != AdaptiveConfidence.UNKNOWN) adaptiveMaxTasks else 6
         
         val selectedPlannedTasks = mutableListOf<PlannedTask>()
 
@@ -326,6 +353,14 @@ class AiPlanner {
         if (context.incompleteTasks.size > 5 && duration in 1..30) {
             score += 15
             reasons.add("Quick win to reduce list size")
+        }
+
+        // 5. Learning Loop: Success-based reinforcement
+        val recentOutcomes = context.recentOutcomes
+        val recentSuccessCount = recentOutcomes.count { it.type == AiOutcomeType.SUCCESS }
+        if (recentSuccessCount >= 5) {
+            score += 10
+            reasons.add("Refined by your recent success pattern")
         }
 
         val primaryReason = reasons.lastOrNull() ?: "Consistent progress step"

@@ -10,9 +10,12 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
     entities = [
         TaskEntity::class,
         GoalEntity::class,
-        DailyProgressEntity::class
+        DailyProgressEntity::class,
+        AiRecommendationHistoryEntity::class,
+        AiOutcomeEntity::class,
+        AiEvaluationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class NexoraDatabase : RoomDatabase() {
@@ -22,6 +25,8 @@ abstract class NexoraDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
 
     abstract fun dailyProgressDao(): DailyProgressDao
+
+    abstract fun aiLearningDao(): AiLearningDao
 
     companion object {
 

@@ -22,6 +22,8 @@ open class AiContextBuilder(
             repository.getDailyProgress(today)
 
         val history = repository.getHistoricalProgress(30)
+        val recentOutcomes = repository.getRecentOutcomes(20)
+        val recentEvaluations = repository.getRecentEvaluations(10)
         
         val planner = AiPlanner()
         val memory = planner.detectPatterns(history)
@@ -36,7 +38,9 @@ open class AiContextBuilder(
             goalsWorkedOnToday = todayProgress?.goalsWorkedOn ?: 0,
             carriedTasks = todayProgress?.carriedTasks ?: 0,
             memory = memory,
-            adaptiveProfile = adaptiveProfile
+            adaptiveProfile = adaptiveProfile,
+            recentOutcomes = recentOutcomes,
+            recentEvaluations = recentEvaluations
         )
     }
 

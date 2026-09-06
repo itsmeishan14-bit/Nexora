@@ -41,8 +41,36 @@ class LocalAiIntentResolver {
             input.contains("productivity") || input.contains("pattern") || input.contains("consistent") ||
             input.contains("momentum") || input.contains("habit") || input.contains("analysis") -> showProductivity(context, planner)
 
+            // LEARNING LOOP / EVALUATION
+            input.contains("learning") || input.contains("getting better") || input.contains("improve") ||
+            input.contains("evaluate") || input.contains("outcome") || input.contains("result") -> showLearning(context)
+
             else -> noAction(query, context, planner)
         }
+    }
+
+    private fun showLearning(context: AiContext): AiModelStructuredResponse {
+        val evaluations = context.recentEvaluations
+        val textResponse = if (evaluations.isEmpty()) {
+            "I'm still observing your productivity patterns to learn how to help you better. Keep using Nexora, and I'll soon be able to evaluate my own recommendations."
+        } else {
+            val successful = evaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC || it.outcome == AiOutcomeType.SUCCESS }
+            val total = evaluations.size
+            val rate = (successful.toFloat() / total * 100).toInt()
+            
+            val summary = evaluations.take(3).joinToString("\n") { "- ${it.title}: ${it.outcome}" }
+            "I've been evaluating my previous plans. Approximately $rate% of recent evaluations were successful or realistic.\n\nRecent evaluations:\n$summary"
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.SHOW_INSIGHT,
+                title = "AI Self-Evaluation",
+                reason = "Reviewing previous outcomes."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
     }
 
     private fun analyzeProactive(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {

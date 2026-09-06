@@ -82,11 +82,15 @@ class MainActivity : ComponentActivity() {
                     )
                     
                     val actionExecutor = AiActionExecutor(repository)
+                    
+                    val toolRegistry = com.example.nexora.ai.AiToolRegistry(repository, actionExecutor)
 
                     NexoraAiEngine(
                         contextBuilder = contextBuilder,
                         aiService = aiService,
-                        actionExecutor = actionExecutor
+                        actionExecutor = actionExecutor,
+                        toolRegistry = toolRegistry,
+                        repository = repository
                     )
                 }
 
