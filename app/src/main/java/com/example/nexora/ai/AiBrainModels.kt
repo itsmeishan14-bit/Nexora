@@ -38,6 +38,7 @@ data class AiResponse(
     val evidence: List<ReasoningFactor> = emptyList(),
     val recommendations: List<AiRecommendation> = emptyList(),
     val proposedActions: List<AiAction> = emptyList(),
+    val proactiveSignals: List<AiProactiveSignal> = emptyList(),
     val requiresConfirmation: Boolean = false,
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,

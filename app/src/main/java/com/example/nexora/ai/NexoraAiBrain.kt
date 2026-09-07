@@ -20,6 +20,8 @@ class NexoraAiBrain(
     private val learningLoop = AiLearningLoop(repository)
     private val memoryRetriever = AiMemoryRetriever(repository)
     private val decisionGate = AiDecisionGate(repository)
+    private val proactiveEngine = NexoraProactiveEngine()
+    private val automationSystem = NexoraAutomationSystem()
     
     // The Agent system is a capability of the Brain
     private val agent = NexoraAiAgent(toolRegistry, decisionGate, contextBuilder)
@@ -35,28 +37,55 @@ class NexoraAiBrain(
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         
         // Decide if we should use the multi-step Agent
-        if (shouldUseAgent(request)) {
-            val response = agent.execute(request, context, relevantMemory)
-            logResponseRecommendations(response)
-            return response
+        val response = if (shouldUseAgent(request)) {
+            val agentResponse = agent.execute(request, context, relevantMemory)
+            logResponseRecommendations(agentResponse)
+            agentResponse
+        } else {
+            val brainResponse = when (request.type) {
+                AiRequestType.CHAT -> handleChat(request, context, relevantMemory)
+                AiRequestType.NEXT_TASK -> handleNextTask(context, relevantMemory)
+                AiRequestType.DAILY_PLAN -> handleDailyPlan(context, relevantMemory)
+                AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context, relevantMemory)
+                AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context, relevantMemory)
+                AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context, relevantMemory)
+                AiRequestType.GOAL_DECOMPOSITION -> handleGoalDecomposition(request, context)
+                
+                AiRequestType.CREATE_TASK -> executeDirectAction(AiActionType.CREATE_TASK, request.parameters)
+                AiRequestType.UPDATE_TASK -> executeDirectAction(AiActionType.UPDATE_TASK, request.parameters, request.taskId)
+                AiRequestType.COMPLETE_TASK -> executeDirectAction(AiActionType.COMPLETE_TASK, emptyMap(), request.taskId)
+                AiRequestType.UPDATE_GOAL -> executeDirectAction(AiActionType.UPDATE_GOAL, request.parameters, goalId = request.goalId)
+                
+                AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context, relevantMemory)
+            }
+            logResponseRecommendations(brainResponse)
+            brainResponse
         }
 
-        return when (request.type) {
-            AiRequestType.CHAT -> handleChat(request, context, relevantMemory)
-            AiRequestType.NEXT_TASK -> handleNextTask(context, relevantMemory)
-            AiRequestType.DAILY_PLAN -> handleDailyPlan(context, relevantMemory)
-            AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context, relevantMemory)
-            AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context, relevantMemory)
-            AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context, relevantMemory)
-            AiRequestType.GOAL_DECOMPOSITION -> handleGoalDecomposition(request, context)
-            
-            AiRequestType.CREATE_TASK -> executeDirectAction(AiActionType.CREATE_TASK, request.parameters)
-            AiRequestType.UPDATE_TASK -> executeDirectAction(AiActionType.UPDATE_TASK, request.parameters, request.taskId)
-            AiRequestType.COMPLETE_TASK -> executeDirectAction(AiActionType.COMPLETE_TASK, emptyMap(), request.taskId)
-            AiRequestType.UPDATE_GOAL -> executeDirectAction(AiActionType.UPDATE_GOAL, request.parameters, goalId = request.goalId)
-            
-            AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context, relevantMemory)
+        // 3. Automation Rule Evaluation
+        val automatedSignals = evaluateAutomations(request, context)
+        
+        // If automations triggered new signals, attach them to the response
+        return if (automatedSignals.isNotEmpty()) {
+            response.copy(
+                proactiveSignals = (response.proactiveSignals + automatedSignals).distinctBy { it.fingerprint }
+            )
+        } else {
+            response
         }
+    }
+
+    private fun evaluateAutomations(request: AiRequest, context: AiContext): List<AiProactiveSignal> {
+        val trigger = when (request.type) {
+            AiRequestType.CREATE_TASK -> AutomationTriggerType.TASK_CREATED
+            AiRequestType.COMPLETE_TASK -> AutomationTriggerType.TASK_COMPLETED
+            AiRequestType.UPDATE_TASK -> AutomationTriggerType.TASK_UPDATED
+            AiRequestType.UPDATE_GOAL -> AutomationTriggerType.GOAL_UPDATED
+            AiRequestType.PROACTIVE_ANALYSIS, AiRequestType.GENERAL_ANALYSIS -> AutomationTriggerType.PRODUCTIVITY_PATTERN_DETECTED
+            else -> null
+        } ?: return emptyList()
+
+        return automationSystem.evaluateTriggers(trigger, context)
     }
 
     private fun shouldUseAgent(request: AiRequest): Boolean {
@@ -241,48 +270,36 @@ class NexoraAiBrain(
     }
 
     private suspend fun handleProactiveAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
-        val insights = planner.getProactiveInsights(context).toMutableList()
+        val signals = proactiveEngine.detectSignals(context)
         
-        // Add dynamic context insights
-        context.personalContext.risks.forEach { risk ->
-            insights.add(
-                AiRecommendation(
-                    type = AiRecommendationType.WARNING,
-                    title = risk.message,
-                    message = risk.evidence,
-                    priority = risk.severity,
-                    relatedTaskId = risk.relatedTaskId,
-                    relatedGoalId = risk.relatedGoalId,
-                    actionLabel = "Review Risk"
-                )
-            )
-        }
-        
-        context.personalContext.opportunities.forEach { opp ->
-            insights.add(
-                AiRecommendation(
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = opp.title,
-                    message = opp.message,
-                    priority = AiPriority.LOW,
-                    relatedTaskId = opp.relatedTaskId,
-                    relatedGoalId = opp.relatedGoalId,
-                    actionLabel = "Seize Opportunity"
-                )
+        // Map signals to recommendations for backward compatibility
+        val recommendations = signals.map { signal ->
+            AiRecommendation(
+                type = mapSignalTypeToRecType(signal.type),
+                title = signal.title,
+                message = signal.message,
+                priority = signal.severity,
+                confidence = signal.confidence,
+                evidence = signal.evidence,
+                relatedTaskId = signal.relatedTaskId,
+                relatedGoalId = signal.relatedGoalId,
+                actionLabel = signal.suggestedAction?.title
             )
         }
 
-        val critical = insights.find { it.priority == AiPriority.CRITICAL } ?: insights.firstOrNull()
+        val criticalSignal = signals.find { it.severity == AiPriority.CRITICAL } ?: signals.firstOrNull()
         
-        val response = if (critical != null) {
+        val response = if (criticalSignal != null) {
             AiResponse(
-                responseType = AiResponseType.WARNING,
-                title = critical.title,
-                message = critical.message,
-                confidence = critical.confidence,
-                recommendations = insights,
-                relatedTaskId = critical.relatedTaskId,
-                relatedGoalId = critical.relatedGoalId
+                responseType = if (criticalSignal.severity >= AiPriority.MEDIUM) AiResponseType.WARNING else AiResponseType.INFORMATION,
+                title = criticalSignal.title,
+                message = criticalSignal.message,
+                confidence = criticalSignal.confidence,
+                recommendations = recommendations,
+                proactiveSignals = signals,
+                relatedTaskId = criticalSignal.relatedTaskId,
+                relatedGoalId = criticalSignal.relatedGoalId,
+                proposedActions = listOfNotNull(criticalSignal.suggestedAction)
             )
         } else {
             AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any immediate issues with your workflow.")
@@ -290,6 +307,20 @@ class NexoraAiBrain(
         
         logResponseRecommendations(response)
         return response
+    }
+
+    private fun mapSignalTypeToRecType(type: ProactiveSignalType): AiRecommendationType {
+        return when (type) {
+            ProactiveSignalType.OVERLOAD -> AiRecommendationType.WARNING
+            ProactiveSignalType.NEGLECTED_GOAL -> AiRecommendationType.GOAL_ACTION
+            ProactiveSignalType.REPEATED_CARRY_FORWARD -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            ProactiveSignalType.MISSING_NEXT_ACTION -> AiRecommendationType.GOAL_ACTION
+            ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> AiRecommendationType.WARNING
+            ProactiveSignalType.PRODUCTIVITY_DROP -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            ProactiveSignalType.PRODUCTIVITY_IMPROVEMENT -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            ProactiveSignalType.WORKLOAD_BALANCED -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            else -> AiRecommendationType.GENERAL
+        }
     }
 
     private suspend fun handleGoalDecomposition(request: AiRequest, context: AiContext): AiResponse {
@@ -327,19 +358,17 @@ class NexoraAiBrain(
     }
 
     private suspend fun handleGeneralAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
-        val insights = planner.getProactiveInsights(context).toMutableList()
-        
-        // Add dynamic context insights
-        context.personalContext.risks.forEach { risk ->
-            insights.add(
-                AiRecommendation(
-                    type = AiRecommendationType.WARNING,
-                    title = risk.message,
-                    message = risk.evidence,
-                    priority = risk.severity,
-                    relatedTaskId = risk.relatedTaskId,
-                    relatedGoalId = risk.relatedGoalId
-                )
+        val signals = proactiveEngine.detectSignals(context)
+        val recommendations = signals.map { signal ->
+            AiRecommendation(
+                type = mapSignalTypeToRecType(signal.type),
+                title = signal.title,
+                message = signal.message,
+                priority = signal.severity,
+                confidence = signal.confidence,
+                evidence = signal.evidence,
+                relatedTaskId = signal.relatedTaskId,
+                relatedGoalId = signal.relatedGoalId
             )
         }
 
@@ -351,13 +380,14 @@ class NexoraAiBrain(
         val personal = context.personalContext
         summary.add("Workload: ${personal.workload.state}. Goal Health: ${personal.goalHealth.count { it.state == GoalHealthState.HEALTHY }} healthy.")
 
-        if (insights.isNotEmpty()) summary.add("Detected ${insights.size} items requiring attention.")
+        if (signals.isNotEmpty()) summary.add("Detected ${signals.size} proactive items.")
         
         val response = AiResponse(
             responseType = AiResponseType.INFORMATION,
             title = "Nexora Analysis",
             message = if (summary.isEmpty()) "Your workspace is clear." else summary.joinToString("\n"),
-            recommendations = insights
+            recommendations = recommendations,
+            proactiveSignals = signals
         )
         
         logResponseRecommendations(response)

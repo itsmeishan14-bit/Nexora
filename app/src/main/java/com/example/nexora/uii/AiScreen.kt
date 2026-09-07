@@ -77,6 +77,8 @@ import com.example.nexora.ai.NexoraDailyPlan
 import com.example.nexora.ai.PlannedTask
 import com.example.nexora.ai.AiProductivityPattern
 import com.example.nexora.ai.AiPatternType
+import com.example.nexora.ai.AiProactiveSignal
+import com.example.nexora.ai.ProactiveSignalType
 import com.example.nexora.ai.AgentWorkflow
 import com.example.nexora.ai.AgentWorkflowStep
 import com.example.nexora.ai.WorkflowStatus
@@ -386,10 +388,38 @@ fun AiScreen(
             }
 
             // ====================================================
-            // PROACTIVE INSIGHTS
+            // PROACTIVE SIGNALS (2.0)
             // ====================================================
 
-            if (uiState.proactiveInsights.isNotEmpty()) {
+            if (uiState.proactiveSignals.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "What Nexora Noticed",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraInk,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                items(
+                    items = uiState.proactiveSignals,
+                    key = { "signal_${it.fingerprint}" }
+                ) { signal ->
+                    ProactiveSignalCard(
+                        signal = signal,
+                        onAction = { action: AiAction ->
+                            viewModel.proposeAction(action)
+                        }
+                    )
+                }
+            }
+
+            // ====================================================
+            // PROACTIVE INSIGHTS (Legacy Recommendations)
+            // ====================================================
+
+            if (uiState.proactiveInsights.isNotEmpty() && uiState.proactiveSignals.isEmpty()) {
                 item {
                     Text(
                         text = "Nexora Intelligence",
@@ -718,6 +748,103 @@ fun ProactiveInsightCard(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(insight.actionLabel, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProactiveSignalCard(
+    signal: AiProactiveSignal,
+    onAction: (AiAction) -> Unit
+) {
+    val icon = when (signal.type) {
+        ProactiveSignalType.OVERLOAD -> Icons.Default.Warning
+        ProactiveSignalType.NEGLECTED_GOAL -> Icons.Default.Lightbulb
+        ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> Icons.Default.Warning
+        ProactiveSignalType.PRODUCTIVITY_DROP -> Icons.Default.Warning
+        else -> Icons.Default.AutoAwesome
+    }
+
+    val backgroundColor = when (signal.severity) {
+        AiPriority.CRITICAL -> Color(0xFFFFF4F2)
+        AiPriority.HIGH -> Color(0xFFFFF9E6)
+        else -> Color.White
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        border = BorderStroke(1.dp, NexoraBorder)
+    ) {
+        Column(modifier = Modifier.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(NexoraSoftGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = NexoraGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(14.dp))
+                
+                Column {
+                    Text(
+                        text = signal.title,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraInk
+                    )
+                    
+                    Text(
+                        text = signal.severity.name,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NexoraMuted,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            Text(
+                text = signal.message,
+                fontSize = 14.sp,
+                color = NexoraInk,
+                lineHeight = 21.sp
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Evidence: ${signal.evidence}",
+                fontSize = 12.sp,
+                color = NexoraMuted,
+                fontWeight = FontWeight.Medium
+            )
+            
+            signal.suggestedAction?.let { action ->
+                Spacer(modifier = Modifier.height(18.dp))
+                Button(
+                    onClick = { onAction(action) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NexoraInk,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(action.title, fontWeight = FontWeight.Bold)
                 }
             }
         }
