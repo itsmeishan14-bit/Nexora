@@ -42,6 +42,7 @@ fun AiScreen(
     engine: NexoraAiEngine,
     onOpenGoalDecomposer: () -> Unit,
     onOpenAutomations: () -> Unit,
+    onOpenEvaluation: () -> Unit,
     onRecommendationAction: (AiRecommendation) -> Unit,
     onTaskAction: (Long) -> Unit = {}
 ) {
@@ -89,9 +90,12 @@ fun AiScreen(
                         Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = "Nexora AI", tint = NexoraGreen)
                     }
                     Spacer(modifier = Modifier.width(14.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(text = "Nexora Intelligence", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = NexoraInk)
                         Text(text = "Understand. Prioritize. Improve.", fontSize = 14.sp, color = NexoraMuted)
+                    }
+                    IconButton(onClick = onOpenEvaluation) {
+                        Icon(imageVector = Icons.Default.BarChart, contentDescription = "Benchmark", tint = NexoraGreen)
                     }
                 }
             }

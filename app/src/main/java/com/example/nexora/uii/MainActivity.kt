@@ -773,6 +773,10 @@ class MainActivity : ComponentActivity() {
                                         selectedScreen = "aiAutomations"
                                     },
 
+                                    onOpenEvaluation = {
+                                        selectedScreen = "aiBenchmarks"
+                                    },
+
                                     onRecommendationAction = { recommendation ->
 
                                         recommendation.relatedGoalId?.let { goalId ->
@@ -849,6 +853,29 @@ class MainActivity : ComponentActivity() {
                                     rules = aiUiState.automationRules,
                                     onBack = { selectedScreen = "insights" },
                                     onToggleRule = { aiViewModel.toggleAutomationRule(it) }
+                                )
+                            }
+
+                            // ==================================================
+                            // AI BENCHMARKS
+                            // ==================================================
+
+                            "aiBenchmarks" -> {
+                                val evaluationViewModel: com.example.nexora.ai.evaluation.AiEvaluationViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                        @Suppress("UNCHECKED_CAST")
+                                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                            return com.example.nexora.ai.evaluation.AiEvaluationViewModel(
+                                                repository = repository,
+                                                engine = aiEngine
+                                            ) as T
+                                        }
+                                    }
+                                )
+
+                                AiEvaluationScreen(
+                                    viewModel = evaluationViewModel,
+                                    onBack = { selectedScreen = "insights" }
                                 )
                             }
 

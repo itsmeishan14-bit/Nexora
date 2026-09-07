@@ -55,6 +55,8 @@ class NexoraAiBrain(
                 AiRequestType.UPDATE_TASK -> executeDirectAction(AiActionType.UPDATE_TASK, request.parameters, request.taskId)
                 AiRequestType.COMPLETE_TASK -> executeDirectAction(AiActionType.COMPLETE_TASK, emptyMap(), request.taskId)
                 AiRequestType.UPDATE_GOAL -> executeDirectAction(AiActionType.UPDATE_GOAL, request.parameters, goalId = request.goalId)
+                AiRequestType.DELETE_TASK -> executeDirectAction(AiActionType.DELETE_TASK, emptyMap(), request.taskId)
+                AiRequestType.DELETE_GOAL -> executeDirectAction(AiActionType.DELETE_GOAL, emptyMap(), goalId = request.goalId)
                 
                 AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context, relevantMemory)
             }

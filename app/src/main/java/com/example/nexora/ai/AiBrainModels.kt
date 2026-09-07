@@ -24,6 +24,8 @@ enum class AiRequestType {
     UPDATE_TASK,
     COMPLETE_TASK,
     UPDATE_GOAL,
+    DELETE_TASK,
+    DELETE_GOAL,
     GENERAL_ANALYSIS
 }
 
