@@ -29,7 +29,8 @@ data class NexoraAiUiState(
     val conversationalState: AiConversationalState = AiConversationalState(),
     val lastBrainResponse: AiResponse? = null,
     val currentWorkflow: AgentWorkflow? = null,
-    val proactiveSignals: List<AiProactiveSignal> = emptyList()
+    val proactiveSignals: List<AiProactiveSignal> = emptyList(),
+    val automationRules: List<AiAutomationRule> = emptyList()
 )
 
 class NexoraAiViewModel(
@@ -43,6 +44,19 @@ class NexoraAiViewModel(
 
     init {
         analyze()
+        loadAutomationRules()
+    }
+
+    private fun loadAutomationRules() {
+        _uiState.value = _uiState.value.copy(
+            automationRules = engine.getAutomationRules()
+        )
+    }
+
+    fun toggleAutomationRule(rule: AiAutomationRule) {
+        val updated = rule.copy(enabled = !rule.enabled)
+        engine.updateAutomationRule(updated)
+        loadAutomationRules()
     }
 
     fun analyze() {

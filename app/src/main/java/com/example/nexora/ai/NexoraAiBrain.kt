@@ -88,6 +88,12 @@ class NexoraAiBrain(
         return automationSystem.evaluateTriggers(trigger, context)
     }
 
+    fun getAutomationRules(): List<AiAutomationRule> = automationSystem.getRules()
+
+    fun updateAutomationRule(rule: AiAutomationRule) {
+        automationSystem.updateRule(rule)
+    }
+
     private fun shouldUseAgent(request: AiRequest): Boolean {
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""

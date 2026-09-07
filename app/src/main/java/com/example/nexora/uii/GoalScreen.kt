@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.nexora.ai.AiPersonalContext
+import com.example.nexora.ai.GoalHealthState
 
 private val Background = Color(0xFFF7F8F4)
 private val Ink = Color(0xFF17231C)
@@ -56,6 +59,7 @@ data class NexoraGoal(
 @Composable
 fun GoalScreen(
     goals: SnapshotStateList<NexoraGoal>,
+    personalContext: AiPersonalContext? = null,
     onAddGoal: () -> Unit,
     onEditGoal: (NexoraGoal) -> Unit,
     onOpenGoal: (NexoraGoal) -> Unit
@@ -240,8 +244,11 @@ fun GoalScreen(
 
                 ) { _, goal ->
 
+                    val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
+
                     GoalCard(
                         goal = goal,
+                        healthState = health?.state,
                         onOpen = {
                             onOpenGoal(goal)
                         }
@@ -278,11 +285,26 @@ fun GoalScreen(
 @Composable
 private fun GoalCard(
     goal: NexoraGoal,
+    healthState: GoalHealthState? = null,
     onOpen: () -> Unit
 ) {
 
     val percentage =
         (goal.progress * 100).toInt()
+
+    val healthLabel = when (healthState) {
+        GoalHealthState.HEALTHY -> "Healthy"
+        GoalHealthState.NEEDS_ATTENTION -> "Needs attention"
+        GoalHealthState.AT_RISK -> "At risk"
+        else -> null
+    }
+
+    val healthColor = when (healthState) {
+        GoalHealthState.HEALTHY -> Green
+        GoalHealthState.NEEDS_ATTENTION -> Color(0xFFF0AD4E)
+        GoalHealthState.AT_RISK -> Color(0xFFE57373)
+        else -> Muted
+    }
 
     Card(
         modifier = Modifier
@@ -342,11 +364,20 @@ private fun GoalCard(
                         modifier = Modifier.height(4.dp)
                     )
 
-                    Text(
-                        text = "${goal.category} • ${goal.targetDate}",
-                        fontSize = 12.sp,
-                        color = Muted
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${goal.category} • ${goal.targetDate}",
+                            fontSize = 12.sp,
+                            color = Muted
+                        )
+                        
+                        healthLabel?.let { label ->
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(healthColor))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = healthColor)
+                        }
+                    }
                 }
 
                 Text(

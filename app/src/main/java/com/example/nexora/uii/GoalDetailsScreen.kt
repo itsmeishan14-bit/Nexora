@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.nexora.ai.AiPersonalContext
+import com.example.nexora.ai.GoalHealthState
 
 private val Background = Color(0xFFF7F8F4)
 private val Ink = Color(0xFF17231C)
@@ -52,11 +55,13 @@ private val Border = Color(0xFFE1E5E1)
 fun GoalDetailsScreen(
     goal: NexoraGoal,
     relatedTasks: List<PremiumTask>,
+    personalContext: AiPersonalContext? = null,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
-    onAddTask: () -> Unit
+    onAddTask: () -> Unit,
+    onDecomposeGoal: () -> Unit = {}
 ) {
 
     val completedTasks = relatedTasks.count {
@@ -270,6 +275,62 @@ fun GoalDetailsScreen(
                             fontSize = 13.sp,
                             color = Color(0xFFB8C1BA)
                         )
+                    }
+                }
+            }
+
+            // ========================================================
+            // AI GOAL INSIGHT
+            // ========================================================
+
+            val goalHealth = personalContext?.goalHealth?.find { it.goalId == goal.id }
+            if (goalHealth != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = SoftGreen),
+                        border = BorderStroke(1.dp, Green.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Green,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "AI Progress Insight",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Green,
+                                    letterSpacing = 1.1.sp
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Text(
+                                text = goalHealth.evidence,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Ink
+                            )
+
+                            if (goalHealth.state == GoalHealthState.NEEDS_ATTENTION || goalHealth.state == GoalHealthState.AT_RISK) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = onDecomposeGoal,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Ink),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Plan next steps", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             }

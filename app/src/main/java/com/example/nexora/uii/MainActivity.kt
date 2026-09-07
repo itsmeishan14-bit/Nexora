@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -144,6 +145,14 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<AiAction?>(null)
                 }
 
+                var personalContext by remember {
+                    mutableStateOf<com.example.nexora.ai.AiPersonalContext?>(null)
+                }
+
+                var proactiveSignals by remember {
+                    mutableStateOf<List<com.example.nexora.ai.AiProactiveSignal>>(emptyList())
+                }
+
                 // ============================================================
                 // LOAD DATA FROM ROOM
                 // ============================================================
@@ -190,11 +199,14 @@ class MainActivity : ComponentActivity() {
                     // Fetch top AI insight
                     topAiInsight = aiEngine.getTopInsight()
 
-                    val proactive = aiEngine.getProactiveInsights()
-                    homeProactiveInsight = proactive.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
+                    val context = aiEngine.getContext()
+                    personalContext = context.personalContext
+                    
+                    val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
+                    proactiveSignals = response.proactiveSignals
+                    homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
                     
                     // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
-                    val context = aiEngine.getContext()
                     if (context.incompleteTasks.size >= 8) {
                         homeProposedAction = AiAction(
                             type = com.example.nexora.ai.AiActionType.RESCHEDULE_TASK,
@@ -266,9 +278,12 @@ class MainActivity : ComponentActivity() {
                             )
                         )
 
-                        // Refresh proactive insight
-                        val proactive = aiEngine.getProactiveInsights()
-                        homeProactiveInsight = proactive.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
+                        // Refresh proactive context
+                        val context = aiEngine.getContext()
+                        personalContext = context.personalContext
+                        val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
+                        proactiveSignals = response.proactiveSignals
+                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
                     }
                 }
 
@@ -446,6 +461,8 @@ class MainActivity : ComponentActivity() {
                                     topPattern = topAiInsight,
                                     
                                     proactiveInsight = homeProactiveInsight,
+
+                                    proactiveSignals = proactiveSignals,
                                     
                                     proposedAction = homeProposedAction,
                                     
@@ -550,6 +567,10 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
 
+                                    onAiAction = {
+                                        selectedScreen = "insights"
+                                    },
+
                                     onDeleteTask = { task ->
 
                                         scope.launch {
@@ -578,6 +599,8 @@ class MainActivity : ComponentActivity() {
                                 GoalScreen(
 
                                     goals = goals,
+
+                                    personalContext = personalContext,
 
                                     onAddGoal = {
 
@@ -618,6 +641,8 @@ class MainActivity : ComponentActivity() {
                                                 it.goalTitle ==
                                                         goal.title
                                             },
+
+                                        personalContext = personalContext,
 
                                         onBack = {
 
@@ -718,6 +743,11 @@ class MainActivity : ComponentActivity() {
 
                                             taskGoal = goal
                                             selectedScreen = "addTask"
+                                        },
+
+                                        onDecomposeGoal = {
+                                            selectedGoal = goal
+                                            selectedScreen = "aiGoalDecomposer"
                                         }
                                     )
                                 }
@@ -737,6 +767,10 @@ class MainActivity : ComponentActivity() {
 
                                         selectedScreen =
                                             "aiGoalDecomposer"
+                                    },
+
+                                    onOpenAutomations = {
+                                        selectedScreen = "aiAutomations"
                                     },
 
                                     onRecommendationAction = { recommendation ->
@@ -793,6 +827,28 @@ class MainActivity : ComponentActivity() {
                                             updateTodayProgress()
                                         }
                                     }
+                                )
+                            }
+
+                            // ==================================================
+                            // AI AUTOMATIONS
+                            // ==================================================
+
+                            "aiAutomations" -> {
+                                val aiViewModel: com.example.nexora.ai.NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                        @Suppress("UNCHECKED_CAST")
+                                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                            return com.example.nexora.ai.NexoraAiViewModel(engine = aiEngine) as T
+                                        }
+                                    }
+                                )
+                                val aiUiState by aiViewModel.uiState.collectAsState()
+
+                                AiAutomationScreen(
+                                    rules = aiUiState.automationRules,
+                                    onBack = { selectedScreen = "insights" },
+                                    onToggleRule = { aiViewModel.toggleAutomationRule(it) }
                                 )
                             }
 

@@ -32,6 +32,14 @@ class NexoraAiEngine(
         return actionExecutor.execute(action)
     }
 
+    fun getAutomationRules(): List<AiAutomationRule> {
+        return brain.getAutomationRules()
+    }
+
+    fun updateAutomationRule(rule: AiAutomationRule) {
+        brain.updateAutomationRule(rule)
+    }
+
     suspend fun analyze(): List<AiRecommendation> {
         val response = brain.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
         return response.recommendations
