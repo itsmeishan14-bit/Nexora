@@ -36,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -76,6 +77,10 @@ import com.example.nexora.ai.NexoraDailyPlan
 import com.example.nexora.ai.PlannedTask
 import com.example.nexora.ai.AiProductivityPattern
 import com.example.nexora.ai.AiPatternType
+import com.example.nexora.ai.AgentWorkflow
+import com.example.nexora.ai.AgentWorkflowStep
+import com.example.nexora.ai.WorkflowStatus
+import com.example.nexora.ai.StepStatus
 import com.example.nexora.uii.TaskPriority
 
 private val NexoraBackground = Color(0xFFF7F8F4)
@@ -192,6 +197,12 @@ fun AiScreen(
                         onConfirm = { viewModel.confirmAction() },
                         onDismiss = { viewModel.dismissAction() }
                     )
+                }
+            }
+
+            uiState.currentWorkflow?.let { workflow ->
+                item {
+                    WorkflowCard(workflow = workflow)
                 }
             }
 
@@ -1137,6 +1148,98 @@ fun AiPatternCard(pattern: AiProductivityPattern) {
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = NexoraGreen
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun WorkflowCard(
+    workflow: AgentWorkflow
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = NexoraInk),
+        border = BorderStroke(1.dp, NexoraGreen.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = NexoraGreen,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "AI Workflow Progress",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Objective: ${workflow.objective}",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = NexoraGreen
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Steps Progress
+            workflow.steps.forEach { step ->
+                Row(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val stepIcon = when (step.status) {
+                        StepStatus.COMPLETED -> Icons.Default.TaskAlt
+                        StepStatus.FAILED -> Icons.Default.Warning
+                        else -> Icons.Default.AutoAwesome
+                    }
+                    val stepColor = when (step.status) {
+                        StepStatus.COMPLETED -> NexoraGreen
+                        StepStatus.FAILED -> Color(0xFFE57373)
+                        else -> NexoraMuted
+                    }
+
+                    Icon(
+                        imageVector = stepIcon,
+                        contentDescription = null,
+                        tint = stepColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = step.description,
+                        fontSize = 13.sp,
+                        color = if (step.status == StepStatus.PENDING) Color.Gray else Color.White
+                    )
+                }
+            }
+
+            if (workflow.status == WorkflowStatus.EXECUTING) {
+                Spacer(modifier = Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = NexoraGreen,
+                    trackColor = Color(0xFF354439)
+                )
+            }
+
+            workflow.failureReason?.let {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Failure: $it",
+                    fontSize = 12.sp,
+                    color = Color(0xFFE57373),
+                    fontWeight = FontWeight.Medium
                 )
             }
         }

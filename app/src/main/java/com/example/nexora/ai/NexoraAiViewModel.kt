@@ -27,7 +27,8 @@ data class NexoraAiUiState(
     val proposedAction: AiAction? = null,
     val lastActionResult: AiActionResult? = null,
     val conversationalState: AiConversationalState = AiConversationalState(),
-    val lastBrainResponse: AiResponse? = null
+    val lastBrainResponse: AiResponse? = null,
+    val currentWorkflow: AgentWorkflow? = null
 )
 
 class NexoraAiViewModel(
@@ -59,7 +60,8 @@ class NexoraAiViewModel(
                     recommendations = response.recommendations,
                     proactiveInsights = response.recommendations.filter { it.type == AiRecommendationType.WARNING || it.type == AiRecommendationType.GOAL_ACTION },
                     memory = context.memory,
-                    lastBrainResponse = response
+                    lastBrainResponse = response,
+                    currentWorkflow = response.workflow
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -86,7 +88,8 @@ class NexoraAiViewModel(
                     isLoading = false,
                     dailyPlan = plan,
                     recommendations = emptyList(),
-                    lastBrainResponse = response
+                    lastBrainResponse = response,
+                    currentWorkflow = response.workflow
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -148,7 +151,8 @@ class NexoraAiViewModel(
     fun clearResults() {
         _uiState.value = _uiState.value.copy(
             recommendations = emptyList(),
-            error = null
+            error = null,
+            currentWorkflow = null
         )
     }
 
@@ -187,7 +191,8 @@ class NexoraAiViewModel(
                 _uiState.value = _uiState.value.copy(
                     chatMessages = _uiState.value.chatMessages + aiMessage,
                     isChatLoading = false,
-                    lastBrainResponse = response
+                    lastBrainResponse = response,
+                    currentWorkflow = response.workflow
                 )
 
                 processBrainResponse(response)
@@ -242,7 +247,8 @@ class NexoraAiViewModel(
                 _uiState.value = _uiState.value.copy(
                     chatMessages = _uiState.value.chatMessages + aiMessage,
                     isChatLoading = false,
-                    lastBrainResponse = response
+                    lastBrainResponse = response,
+                    currentWorkflow = response.workflow
                 )
                 
                 processBrainResponse(response)
@@ -291,7 +297,8 @@ class NexoraAiViewModel(
             
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                lastActionResult = result
+                lastActionResult = result,
+                currentWorkflow = null
             )
             
             if (result.success) {

@@ -22,7 +22,7 @@ class NexoraAiBrain(
     private val decisionGate = AiDecisionGate(repository)
     
     // The Agent system is a capability of the Brain
-    private val agent = NexoraAiAgent(toolRegistry, decisionGate)
+    private val agent = NexoraAiAgent(toolRegistry, decisionGate, contextBuilder)
 
     /**
      * Process a unified AI request.
@@ -66,7 +66,9 @@ class NexoraAiBrain(
         // If user says "complete", "finish", "add", "create", etc., they want an action performed.
         // The agent is better at multi-step action resolution.
         return msg.contains("complete") || msg.contains("finish") || 
-               msg.contains("add") || msg.contains("create")
+               msg.contains("add") || msg.contains("create") || msg.contains("goal") || 
+               msg.contains("organize") || msg.contains("clean") || msg.contains("yes") || 
+               msg.contains("approve") || msg.contains("confirm")
     }
 
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
@@ -440,10 +442,13 @@ class NexoraAiBrain(
             AiDecisionType.DELETE_TASK -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.UPDATE_GOAL -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.DELETE_GOAL -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.CREATE_GOAL -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.DECOMPOSE_GOAL -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.DAILY_PLAN -> AiResponseType.PLAN
             AiDecisionType.SHOW_INSIGHT -> AiResponseType.INFORMATION
             AiDecisionType.WARNING -> AiResponseType.WARNING
             AiDecisionType.AMBIGUOUS -> AiResponseType.CLARIFICATION_NEEDED
+            AiDecisionType.CLARIFY -> AiResponseType.CLARIFICATION_NEEDED
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }

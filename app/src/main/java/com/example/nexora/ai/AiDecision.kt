@@ -9,10 +9,13 @@ enum class AiDecisionType {
     DELETE_TASK,
     UPDATE_GOAL,
     DELETE_GOAL,
+    CREATE_GOAL,
+    DECOMPOSE_GOAL,
     DAILY_PLAN,
     SHOW_INSIGHT,
     WARNING,
     AMBIGUOUS,
+    CLARIFY,
     NO_ACTION
 }
 

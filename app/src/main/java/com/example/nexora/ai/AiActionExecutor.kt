@@ -76,6 +76,18 @@ open class AiActionExecutor(
                 val task = repository.observeTasksOnce().find { it.id == taskId }
                 if (task?.completed == true) executionResult else AiActionResult(false, "Verification failed: Task still marked incomplete.")
             }
+            AiActionType.UPDATE_TASK -> {
+                val taskId = action.taskId ?: return executionResult
+                val task = repository.observeTasksOnce().find { it.id == taskId }
+                if (task == null) return AiActionResult(false, "Verification failed: Task lost after update.")
+                
+                // Optional: Verify specific fields if they were in parameters
+                val expectedPriority = action.parameters["priority"] as? String
+                if (expectedPriority != null && task.priority.name != expectedPriority) {
+                     return AiActionResult(false, "Verification failed: Priority mismatch. Expected $expectedPriority but found ${task.priority.name}")
+                }
+                executionResult
+            }
             AiActionType.DELETE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
                 val task = repository.observeTasksOnce().find { it.id == taskId }

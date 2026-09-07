@@ -102,7 +102,7 @@ class LocalAiIntelligenceTest {
 
         // Decomposition query
         val res3 = intentResolver.resolve("break down my study goal", context)
-        assertEquals(AiDecisionType.UPDATE_GOAL, res3.decision.type)
+        assertEquals(AiDecisionType.DECOMPOSE_GOAL, res3.decision.type)
         assertTrue(res3.actions.any { it.type == AiActionType.DECOMPOSE_GOAL })
         
         // Task completion query

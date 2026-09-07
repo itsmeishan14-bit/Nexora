@@ -4,123 +4,221 @@ import com.example.nexora.uii.TaskPriority
 
 class LocalAiIntentResolver {
 
+    private val pipeline = AdvancedLocalLanguagePipeline()
+    private var conversationContext = AiConversationContext()
+
     /**
      * Resolves natural language queries into structured AI responses using local heuristics.
      * Operates entirely offline without external APIs.
      */
     fun resolve(query: String, context: AiContext): AiModelStructuredResponse {
-        val input = query.lowercase().trim()
-        val planner = AiPlanner()
+        // Refresh context if expired
+        if (conversationContext.isExpired()) {
+            conversationContext = AiConversationContext()
+        }
 
+        val langResult = pipeline.process(query, context, conversationContext)
+        
+        val response = when (langResult.intent) {
+            AiDecisionType.SHOW_INSIGHT -> handleShowInsight(langResult, context)
+            AiDecisionType.CREATE_TASK -> handleCreateTask(langResult, context)
+            AiDecisionType.COMPLETE_TASK -> handleCompleteTask(langResult, context)
+            AiDecisionType.DELETE_TASK -> handleDeleteTask(langResult, context)
+            AiDecisionType.UPDATE_TASK -> handleUpdateTask(langResult, context)
+            AiDecisionType.CREATE_GOAL -> handleCreateGoal(langResult, context)
+            AiDecisionType.DECOMPOSE_GOAL -> handleDecomposeGoal(langResult, context)
+            AiDecisionType.DAILY_PLAN -> planDay(context, AiPlanner())
+            AiDecisionType.START_TASK -> nextTask(context, AiPlanner())
+            AiDecisionType.UPDATE_GOAL -> decomposeGoal(query, context)
+            AiDecisionType.CLARIFY -> handleClarify(langResult)
+            else -> noAction(query, context, AiPlanner())
+        }
+
+        updateConversationContext(langResult, response)
+        return response
+    }
+
+    private fun updateConversationContext(langResult: AiLanguageResult, response: AiModelStructuredResponse) {
+        conversationContext = AiConversationContext(
+            lastIntent = langResult.intent,
+            lastTaskId = response.decision.taskId ?: conversationContext.lastTaskId,
+            lastGoalId = response.decision.goalId ?: conversationContext.lastGoalId,
+            lastEntityTitle = langResult.entities["title"]?.toString() ?: conversationContext.lastEntityTitle,
+            activeClarification = langResult.clarificationNeeded,
+            candidateIds = response.candidateTaskIds.takeIf { it.isNotEmpty() } ?: conversationContext.candidateIds
+        )
+    }
+
+    private fun handleShowInsight(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val query = langResult.entities["query"]?.toString()?.lowercase() ?: ""
         return when {
-            // READ intents
-            input.contains("show") && (input.contains("task") || input.contains("todo")) -> listTasks(context)
-            input.contains("show") && (input.contains("goal") || input.contains("objective")) -> listGoals(context)
-            input.contains("progress") || input.contains("how am i doing") || input.contains("status") -> showProgress(context)
-            
-            // WRITE intents - Task Creation
-            (input.contains("create") || input.contains("add") || input.contains("new")) && input.contains("task") -> createTask(query, context)
-            
-            // WRITE intents - Task Updates
-            input.contains("priority") || input.contains("urgent") || input.contains("important") -> updateTaskPriority(query, context)
-            input.contains("complete") || input.contains("finish") || (input.contains("mark") && (input.contains("done") || input.contains("complete"))) || input.contains("checked off") -> completeTask(query, context)
-            input.contains("delete") || input.contains("remove") -> deleteTask(query, context)
-            input.contains("move") || input.contains("postpone") || input.contains("reschedule") || input.contains("tomorrow") -> rescheduleTask(query, context)
-            
-            // PLANNING intents
-            input.contains("plan") && (input.contains("day") || input.contains("today")) -> planDay(context, planner)
-            input.contains("next") && (input.contains("work") || input.contains("task") || input.contains("do")) -> nextTask(context, planner)
-            input.contains("break down") || input.contains("decompose") || input.contains("steps") -> decomposeGoal(query, context)
-            
-            // PROACTIVE queries
-            input.contains("notice") || input.contains("what's up") || input.contains("behind") || 
-            input.contains("attention") || input.contains("issue") ||
-            input.contains("overload") || input.contains("too many") -> analyzeProactive(context, planner)
-
-            // PRODUCTIVITY
-            input.contains("productivity") || input.contains("pattern") || input.contains("consistent") ||
-            input.contains("momentum") || input.contains("habit") || input.contains("analysis") -> showProductivity(context, planner)
-
-            // LEARNING LOOP / EVALUATION
-            input.contains("learning") || input.contains("getting better") || input.contains("improve") ||
-            input.contains("evaluate") || input.contains("outcome") || input.contains("result") -> showLearning(context)
-
-            else -> noAction(query, context, planner)
+            query.contains("goal") -> listGoals(context)
+            query.contains("productivity") || query.contains("pattern") -> showProductivity(context, AiPlanner())
+            query.contains("progress") -> showProgress(context)
+            else -> listTasks(context)
         }
     }
 
-    private fun showLearning(context: AiContext): AiModelStructuredResponse {
-        val evaluations = context.recentEvaluations
-        val textResponse = if (evaluations.isEmpty()) {
-            "I'm still observing your productivity patterns to learn how to help you better. Keep using Nexora, and I'll soon be able to evaluate my own recommendations."
-        } else {
-            val successful = evaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC || it.outcome == AiOutcomeType.SUCCESS }
-            val total = evaluations.size
-            val rate = (successful.toFloat() / total * 100).toInt()
-            
-            val summary = evaluations.take(3).joinToString("\n") { "- ${it.title}: ${it.outcome}" }
-            "I've been evaluating my previous plans. Approximately $rate% of recent evaluations were successful or realistic.\n\nRecent evaluations:\n$summary"
+    private fun handleCreateTask(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val title = langResult.entities["title"]?.toString() ?: ""
+        
+        if (title.isBlank()) {
+            return AiModelStructuredResponse(
+                decision = AiDecision(AiDecisionType.CLARIFY, "Missing Title", "What should the task be called?"),
+                textResponse = "What should the task be called?",
+                modelName = "local-heuristic"
+            )
         }
+
+        val duration = langResult.entities["duration"]?.toString() ?: "30 minutes"
+        val priorityStr = langResult.entities["priority"]?.toString() ?: "MEDIUM"
+        val priority = try { AiPriority.valueOf(priorityStr) } catch (e: Exception) { AiPriority.MEDIUM }
 
         return AiModelStructuredResponse(
             decision = AiDecision(
-                type = AiDecisionType.SHOW_INSIGHT,
-                title = "AI Self-Evaluation",
-                reason = "Reviewing previous outcomes."
+                type = AiDecisionType.CREATE_TASK,
+                title = "Create Task",
+                reason = "Adding new task: $title",
+                taskTitle = title,
+                priority = priority
             ),
-            textResponse = textResponse,
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.CREATE_TASK,
+                    title = "Create Task",
+                    description = "Add \"$title\" ($duration, $priority priority)?",
+                    parameters = mapOf(
+                        "title" to title,
+                        "duration" to duration,
+                        "priority" to mapAiPriorityToTaskPriority(priority).name
+                    )
+                )
+            ),
+            textResponse = "I'll create a task for \"$title\" with $priority priority.",
             modelName = "local-heuristic"
         )
     }
 
-    private fun analyzeProactive(context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
-        val insights = planner.getProactiveInsights(context)
-        val best = insights.maxByOrNull { it.priority }
-        
-        val textResponse = if (insights.isEmpty()) {
-            "Nexora hasn't noticed anything unusual. You're on track with your current plan."
-        } else {
-            val summary = insights.joinToString("\n") { "- ${it.title}: ${it.message}" }
-            "Nexora has noticed several things that might need your attention:\n\n$summary"
+    private fun handleCompleteTask(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val taskId = langResult.entities["taskId"] as? Long
+        if (taskId != null) {
+            val task = context.tasks.find { it.id == taskId } ?: return notFoundResult("Task not found.")
+            return buildCompleteAction(task)
         }
 
-        return if (best != null) {
-            AiModelStructuredResponse(
-                decision = AiDecision(
-                    type = mapRecTypeToDecisionType(best.type),
-                    title = best.title,
-                    reason = best.message,
-                    evidence = best.evidence,
-                    confidence = best.confidence,
-                    taskId = best.relatedTaskId,
-                    goalId = best.relatedGoalId,
-                    priority = best.priority
-                ),
-                textResponse = textResponse,
-                modelName = "local-heuristic"
-            )
-        } else {
-            AiModelStructuredResponse(
-                decision = AiDecision(
-                    type = AiDecisionType.SHOW_INSIGHT,
-                    title = "All Clear",
-                    reason = "Nexora hasn't noticed anything unusual. You're doing great."
-                ),
-                textResponse = textResponse,
-                modelName = "local-heuristic"
-            )
+        val title = langResult.entities["title"]?.toString() ?: ""
+        val resolution = AiEntityResolver.resolveTask(title, context.tasks)
+        
+        return when (resolution) {
+            is ResolutionResult.Success -> buildCompleteAction(resolution.entity)
+            is ResolutionResult.Ambiguous -> ambiguousResult("I found multiple tasks matching \"$title\". Which one should I mark as complete?", resolution.candidates.map { it.id })
+            else -> notFoundResult("I couldn't find a task matching \"$title\".")
         }
     }
 
-    private fun mapRecTypeToDecisionType(type: AiRecommendationType): AiDecisionType {
-        return when (type) {
-            AiRecommendationType.NEXT_TASK -> AiDecisionType.START_TASK
-            AiRecommendationType.DAILY_PLAN -> AiDecisionType.DAILY_PLAN
-            AiRecommendationType.GOAL_ACTION -> AiDecisionType.UPDATE_GOAL
-            AiRecommendationType.PRODUCTIVITY_INSIGHT -> AiDecisionType.SHOW_INSIGHT
-            AiRecommendationType.WARNING -> AiDecisionType.WARNING
-            else -> AiDecisionType.NO_ACTION
+    private fun buildCompleteAction(task: com.example.nexora.uii.PremiumTask): AiModelStructuredResponse {
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.COMPLETE_TASK,
+                title = "Complete Task",
+                reason = "Mark ${task.title} as complete",
+                taskId = task.id
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.COMPLETE_TASK,
+                    title = "Complete Task",
+                    description = "Mark \"${task.title}\" as complete?",
+                    taskId = task.id
+                )
+            ),
+            textResponse = "Marking \"${task.title}\" as complete. Well done!",
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleUpdateTask(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val taskId = langResult.entities["taskId"] as? Long
+        val title = langResult.entities["title"]?.toString() ?: ""
+        
+        val task = if (taskId != null) {
+            context.tasks.find { it.id == taskId }
+        } else {
+            (AiEntityResolver.resolveTask(title, context.tasks) as? ResolutionResult.Success)?.entity
+        } ?: return notFoundResult("I couldn't find the task to update.")
+
+        val newPriorityStr = langResult.entities["priority"]?.toString()
+        val newDuration = langResult.entities["duration"]?.toString()
+
+        val params = mutableMapOf<String, Any>()
+        if (newPriorityStr != null) params["priority"] = newPriorityStr
+        if (newDuration != null) params["duration"] = newDuration
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.UPDATE_TASK,
+                title = "Update Task",
+                reason = "Updating ${task.title}",
+                taskId = task.id
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.UPDATE_TASK,
+                    title = "Update Task",
+                    description = "Update \"${task.title}\"? ${params.entries.joinToString { "${it.key}: ${it.value}" }}",
+                    taskId = task.id,
+                    parameters = params
+                )
+            ),
+            textResponse = "Updating \"${task.title}\" as requested.",
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleDeleteTask(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val title = langResult.entities["title"]?.toString() ?: ""
+        val resolution = AiEntityResolver.resolveTask(title, context.tasks)
+        
+        return when (resolution) {
+            is ResolutionResult.Success -> {
+                val task = resolution.entity
+                AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.DELETE_TASK,
+                        title = "Delete Task",
+                        reason = "Permanently delete ${task.title}",
+                        taskId = task.id
+                    ),
+                    actions = listOf(
+                        AiAction(
+                            type = AiActionType.DELETE_TASK,
+                            title = "Delete Task",
+                            description = "Are you sure you want to delete \"${task.title}\"?",
+                            taskId = task.id,
+                            priority = AiPriority.HIGH
+                        )
+                    ),
+                    textResponse = "I'll delete the task \"${task.title}\".",
+                    modelName = "local-heuristic"
+                )
+            }
+            is ResolutionResult.Ambiguous -> ambiguousResult("Multiple tasks match. Which one should I delete?", resolution.candidates.map { it.id })
+            else -> notFoundResult("Task not found.")
         }
+    }
+
+    private fun handleClarify(langResult: AiLanguageResult): AiModelStructuredResponse {
+        val clar = langResult.clarificationNeeded ?: return notFoundResult("I'm not sure how to proceed.")
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.CLARIFY,
+                title = "Clarification Needed",
+                reason = clar.question
+            ),
+            textResponse = clar.question,
+            candidateTaskIds = clar.candidates,
+            modelName = "local-heuristic"
+        )
     }
 
     private fun listTasks(context: AiContext): AiModelStructuredResponse {
@@ -202,201 +300,66 @@ class LocalAiIntentResolver {
         )
     }
 
-    private fun createTask(query: String, context: AiContext): AiModelStructuredResponse {
-        val titleMatch = Regex("\"([^\"]*)\"").find(query)
-        val title = titleMatch?.groupValues?.get(1) ?: query.replace(Regex("(?i)\\b(create|add|new|task|a|todo)\\b"), "").trim()
+    private fun handleCreateGoal(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val title = langResult.entities["title"]?.toString() ?: ""
         
-        if (title.isBlank()) return notFoundResult("What task would you like me to add?")
-
-        val duration = if (query.contains("minute")) {
-            Regex("\\d+").find(query)?.value?.let { "$it minutes" } ?: "30 minutes"
-        } else "30 minutes"
-        
-        val priority = when {
-            query.contains("urgent") || query.contains("critical") -> AiPriority.CRITICAL
-            query.contains("high") || query.contains("important") -> AiPriority.HIGH
-            query.contains("low") -> AiPriority.LOW
-            else -> AiPriority.MEDIUM
+        if (title.isBlank()) {
+            return AiModelStructuredResponse(
+                decision = AiDecision(AiDecisionType.CLARIFY, "Missing Title", "What should the goal be called?"),
+                textResponse = "What should the goal be called?",
+                modelName = "local-heuristic"
+            )
         }
-
-        val textResponse = "I'll create a task for \"$title\" with $priority priority."
 
         return AiModelStructuredResponse(
             decision = AiDecision(
-                type = AiDecisionType.CREATE_TASK,
-                title = "Create Task",
-                reason = "Adding new task: $title",
-                taskTitle = title,
-                priority = priority,
+                type = AiDecisionType.CREATE_GOAL,
+                title = "Create Goal",
+                reason = "Creating new goal: $title",
                 actionLabel = "Create"
             ),
             actions = listOf(
                 AiAction(
-                    type = AiActionType.CREATE_TASK,
-                    title = "Create Task",
-                    description = "Add \"$title\" ($duration, $priority priority)?",
-                    parameters = mapOf(
-                        "title" to title,
-                        "duration" to duration,
-                        "priority" to mapAiPriorityToTaskPriority(priority).name
-                    )
+                    type = AiActionType.CREATE_GOAL,
+                    title = "Create Goal",
+                    description = "Create goal \"$title\"?",
+                    parameters = mapOf("title" to title)
                 )
             ),
-            textResponse = textResponse,
+            textResponse = "I'll create the goal \"$title\" for you.",
             modelName = "local-heuristic"
         )
     }
 
-    private fun updateTaskPriority(query: String, context: AiContext): AiModelStructuredResponse {
-        val taskIdMatch = Regex("Task ID (\\d+)").find(query)
-        val result = if (taskIdMatch != null) {
-            val id = taskIdMatch.groupValues[1].toLong()
-            context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
-        } else {
-            val taskQuery = query.replace(Regex("(?i)\\b(make|change|priority|to|high|low|medium|urgent|task|important|critical)\\b"), "").trim()
-            AiEntityResolver.resolveTask(taskQuery, context.tasks)
-        }
+    private fun handleDecomposeGoal(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val title = langResult.entities["title"]?.toString() ?: ""
+        val resolution = AiEntityResolver.resolveGoal(title, context.goals)
         
-        return when (result) {
+        return when (resolution) {
             is ResolutionResult.Success -> {
-                val priority = when {
-                    query.contains("urgent") || query.contains("critical") -> AiPriority.CRITICAL
-                    query.contains("high") || query.contains("important") -> AiPriority.HIGH
-                    query.contains("low") -> AiPriority.LOW
-                    else -> AiPriority.MEDIUM
-                }
-                
+                val goal = resolution.entity
                 AiModelStructuredResponse(
                     decision = AiDecision(
-                        type = AiDecisionType.UPDATE_TASK,
-                        title = "Update Priority",
-                        reason = "Change ${result.entity.title} priority to $priority",
-                        taskId = result.entity.id,
-                        priority = priority
+                        type = AiDecisionType.DECOMPOSE_GOAL,
+                        title = "Decompose Goal",
+                        reason = "Breaking down ${goal.title} into steps.",
+                        goalId = goal.id
                     ),
                     actions = listOf(
                         AiAction(
-                            type = AiActionType.UPDATE_TASK,
-                            title = "Update Priority",
-                            description = "Change priority of \"${result.entity.title}\" to $priority?",
-                            taskId = result.entity.id,
-                            parameters = mapOf("priority" to mapAiPriorityToTaskPriority(priority).name)
+                            type = AiActionType.DECOMPOSE_GOAL,
+                            title = "Decompose Goal",
+                            description = "Break down goal \"${goal.title}\" into tasks?",
+                            goalId = goal.id,
+                            requiresConfirmation = false
                         )
                     ),
-                    textResponse = "I'll update the priority for \"${result.entity.title}\" to $priority.",
+                    textResponse = "I'll break down the goal \"${goal.title}\" into actionable steps.",
                     modelName = "local-heuristic"
                 )
             }
-            is ResolutionResult.Ambiguous -> ambiguousResult("I found multiple tasks matching that description. Which one should I prioritize?", result.candidates.map { it.id })
-            else -> notFoundResult("I couldn't find the task you mentioned. Try specifying the title more clearly.")
-        }
-    }
-
-    private fun completeTask(query: String, context: AiContext): AiModelStructuredResponse {
-        val taskIdMatch = Regex("Task ID (\\d+)").find(query)
-        val result = if (taskIdMatch != null) {
-            val id = taskIdMatch.groupValues[1].toLong()
-            context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
-        } else {
-            val taskQuery = query.replace(Regex("(?i)\\b(complete|mark|done|as|task|finish|checked|off)\\b"), "").trim()
-            AiEntityResolver.resolveTask(taskQuery, context.tasks)
-        }
-        
-        return when (result) {
-            is ResolutionResult.Success -> {
-                AiModelStructuredResponse(
-                    decision = AiDecision(
-                        type = AiDecisionType.COMPLETE_TASK,
-                        title = "Complete Task",
-                        reason = "Mark ${result.entity.title} as complete",
-                        taskId = result.entity.id
-                    ),
-                    actions = listOf(
-                        AiAction(
-                            type = AiActionType.COMPLETE_TASK,
-                            title = "Complete Task",
-                            description = "Mark \"${result.entity.title}\" as complete?",
-                            taskId = result.entity.id
-                        )
-                    ),
-                    textResponse = "Great job! Marking \"${result.entity.title}\" as complete.",
-                    modelName = "local-heuristic"
-                )
-            }
-            is ResolutionResult.Ambiguous -> ambiguousResult("I found multiple tasks. Which one should I mark as complete?", result.candidates.map { it.id })
-            else -> notFoundResult("I couldn't find the task you want to complete.")
-        }
-    }
-
-    private fun deleteTask(query: String, context: AiContext): AiModelStructuredResponse {
-        val taskIdMatch = Regex("Task ID (\\d+)").find(query)
-        val result = if (taskIdMatch != null) {
-            val id = taskIdMatch.groupValues[1].toLong()
-            context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
-        } else {
-            val taskQuery = query.replace(Regex("(?i)\\b(delete|task|remove)\\b"), "").trim()
-            AiEntityResolver.resolveTask(taskQuery, context.tasks)
-        }
-        
-        return when (result) {
-            is ResolutionResult.Success -> {
-                AiModelStructuredResponse(
-                    decision = AiDecision(
-                        type = AiDecisionType.DELETE_TASK,
-                        title = "Delete Task",
-                        reason = "Permanently delete ${result.entity.title}",
-                        taskId = result.entity.id
-                    ),
-                    actions = listOf(
-                        AiAction(
-                            type = AiActionType.DELETE_TASK,
-                            title = "Delete Task",
-                            description = "Are you sure you want to delete \"${result.entity.title}\"?",
-                            taskId = result.entity.id,
-                            priority = AiPriority.HIGH
-                        )
-                    ),
-                    textResponse = "I'll delete the task \"${result.entity.title}\".",
-                    modelName = "local-heuristic"
-                )
-            }
-            is ResolutionResult.Ambiguous -> ambiguousResult("Multiple tasks match. Which one should I delete?", result.candidates.map { it.id })
-            else -> notFoundResult("Task not found.")
-        }
-    }
-
-    private fun rescheduleTask(query: String, context: AiContext): AiModelStructuredResponse {
-        val taskIdMatch = Regex("Task ID (\\d+)").find(query)
-        val result = if (taskIdMatch != null) {
-            val id = taskIdMatch.groupValues[1].toLong()
-            context.tasks.find { it.id == id }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
-        } else {
-            val taskQuery = query.replace(Regex("(?i)\\b(move|to|tomorrow|task|postpone|reschedule)\\b"), "").trim()
-            AiEntityResolver.resolveTask(taskQuery, context.tasks)
-        }
-        
-        return when (result) {
-            is ResolutionResult.Success -> {
-                AiModelStructuredResponse(
-                    decision = AiDecision(
-                        type = AiDecisionType.RESCHEDULE_TASK,
-                        title = "Reschedule Task",
-                        reason = "Move ${result.entity.title} to tomorrow",
-                        taskId = result.entity.id
-                    ),
-                    actions = listOf(
-                        AiAction(
-                            type = AiActionType.RESCHEDULE_TASK,
-                            title = "Reschedule Task",
-                            description = "Move \"${result.entity.title}\" to tomorrow?",
-                            taskId = result.entity.id
-                        )
-                    ),
-                    textResponse = "Moving \"${result.entity.title}\" to tomorrow to balance your workload.",
-                    modelName = "local-heuristic"
-                )
-            }
-            else -> notFoundResult("I couldn't find that task to reschedule.")
+            is ResolutionResult.Ambiguous -> ambiguousResult("Which goal should I break down?", resolution.candidates.map { it.id })
+            else -> notFoundResult("I couldn't find the goal you want to break down.")
         }
     }
 
