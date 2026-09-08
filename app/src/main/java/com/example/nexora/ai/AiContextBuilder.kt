@@ -10,34 +10,35 @@ open class AiContextBuilder(
     private val repository: NexoraRepository?
 ) {
 
-    open suspend fun build(): AiContext {
+    open suspend fun build(request: AiRequest? = null): AiContext {
         if (repository == null) return AiContext()
 
-        val tasks = repository.observeTasksOnce()
-        val goals = repository.observeGoalsOnce()
+        // Apply Data Minimization: only load what's needed for the request
+        val tasks = if (shouldLoadTasks(request)) repository.observeTasksOnce() else emptyList()
+        val goals = if (shouldLoadGoals(request)) repository.observeGoalsOnce() else emptyList()
 
         val today = LocalDate.now().toString()
 
         val todayProgress =
             repository.getDailyProgress(today)
 
-        val history = repository.getHistoricalProgress(30)
-        val recentOutcomes = repository.getRecentOutcomes(20)
-        val recentEvaluations = repository.getRecentEvaluations(10)
+        val history = if (shouldLoadHistory(request)) repository.getHistoricalProgress(30) else emptyList()
+        val recentOutcomes = if (shouldLoadHistory(request)) repository.getRecentOutcomes(20) else emptyList()
+        val recentEvaluations = if (shouldLoadHistory(request)) repository.getRecentEvaluations(10) else emptyList()
         
         val planner = AiPlanner()
-        val memory = planner.detectPatterns(history)
-        val adaptiveProfile = calculateAdaptiveProfile(history, tasks)
+        val memory = if (shouldLoadMemory(request)) planner.detectPatterns(history) else AiMemory()
+        val adaptiveProfile = if (shouldLoadAdaptive(request)) calculateAdaptiveProfile(history, tasks) else AdaptiveProfile()
 
         val personalContextBuilder = AiPersonalContextBuilder()
-        val personalContext = personalContextBuilder.build(
+        val personalContext = if (shouldLoadPersonal(request)) personalContextBuilder.build(
             tasks = tasks,
             goals = goals,
             todayProgress = todayProgress,
             history = history,
             adaptiveProfile = adaptiveProfile,
             memory = memory
-        )
+        ) else AiPersonalContext()
 
         return AiContext(
             tasks = tasks,
@@ -53,6 +54,36 @@ open class AiContextBuilder(
             recentEvaluations = recentEvaluations,
             personalContext = personalContext
         )
+    }
+
+    private fun shouldLoadTasks(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.NEXT_TASK, AiRequestType.DAILY_PLAN, AiRequestType.CREATE_TASK, AiRequestType.UPDATE_TASK, AiRequestType.COMPLETE_TASK, AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT)
+    }
+
+    private fun shouldLoadGoals(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.GOAL_ANALYSIS, AiRequestType.GOAL_DECOMPOSITION, AiRequestType.UPDATE_GOAL, AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT)
+    }
+
+    private fun shouldLoadHistory(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.PRODUCTIVITY_ANALYSIS, AiRequestType.PROACTIVE_ANALYSIS, AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT)
+    }
+
+    private fun shouldLoadMemory(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT, AiRequestType.PROACTIVE_ANALYSIS)
+    }
+
+    private fun shouldLoadAdaptive(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.DAILY_PLAN, AiRequestType.NEXT_TASK, AiRequestType.GENERAL_ANALYSIS)
+    }
+
+    private fun shouldLoadPersonal(request: AiRequest?): Boolean {
+        if (request == null) return true
+        return request.type in listOf(AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT, AiRequestType.PROACTIVE_ANALYSIS)
     }
 
     private fun calculateAdaptiveProfile(

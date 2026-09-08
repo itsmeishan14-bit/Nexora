@@ -9,7 +9,7 @@ class NexoraAiEngine(
     private val aiService: NexoraAiService,
     private val actionExecutor: AiActionExecutor,
     toolRegistry: AiToolRegistry,
-    repository: com.example.nexora.data.NexoraRepository
+    private val repository: com.example.nexora.data.NexoraRepository
 ) {
     private val brain = NexoraAiBrain(
         contextBuilder = contextBuilder,
@@ -95,5 +95,13 @@ class NexoraAiEngine(
             context = context,
             userMessage = userMessage
         )
+    }
+
+    suspend fun deleteMemory(id: String) {
+        repository.deleteMemory(id)
+    }
+
+    suspend fun clearAllMemory() {
+        repository.clearAllMemory()
     }
 }

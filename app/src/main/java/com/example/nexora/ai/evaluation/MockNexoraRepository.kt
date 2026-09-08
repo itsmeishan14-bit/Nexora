@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.flowOf
 class MockNexoraRepository : NexoraRepository(null) {
     private val tasks = mutableListOf<PremiumTask>()
     private val goals = mutableListOf<NexoraGoal>()
+    private val memories = mutableListOf<com.example.nexora.ai.AiMemoryItem>()
 
     override suspend fun observeTasksOnce(): List<PremiumTask> = tasks.toList()
     
@@ -32,6 +33,22 @@ class MockNexoraRepository : NexoraRepository(null) {
         val newGoal = goal.copy(id = (goals.size + 1).toLong())
         goals.add(newGoal)
         return newGoal
+    }
+
+    override suspend fun saveMemory(item: com.example.nexora.ai.AiMemoryItem) {
+        memories.add(item)
+    }
+
+    override suspend fun getAllMemory(): List<com.example.nexora.ai.AiMemoryItem> {
+        return memories.toList()
+    }
+
+    override suspend fun deleteMemory(id: String) {
+        memories.removeAll { it.id == id }
+    }
+
+    override suspend fun clearAllMemory() {
+        memories.clear()
     }
 
     // Initialize with data

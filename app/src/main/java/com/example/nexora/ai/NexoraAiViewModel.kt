@@ -175,6 +175,27 @@ class NexoraAiViewModel(
         )
     }
 
+    fun deleteMemory(id: String) {
+        viewModelScope.launch {
+            engine.deleteMemory(id)
+            refreshMemory()
+        }
+    }
+
+    fun clearAllMemory() {
+        viewModelScope.launch {
+            engine.clearAllMemory()
+            refreshMemory()
+        }
+    }
+
+    private suspend fun refreshMemory() {
+        val context = engine.getContext()
+        _uiState.value = _uiState.value.copy(
+            memory = context.memory
+        )
+    }
+
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 

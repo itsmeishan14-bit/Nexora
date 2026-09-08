@@ -2,6 +2,7 @@ package com.example.nexora.ai
 
 import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.PremiumTask
+import com.example.nexora.util.NexoraLogger
 import java.time.LocalDate
 
 class AiLearningLoop(
@@ -11,6 +12,7 @@ class AiLearningLoop(
      * Evaluate recent recommendations and daily plans to detect outcomes.
      */
     suspend fun evaluateOutcomes() {
+        NexoraLogger.d(message = "Starting AI outcome evaluation")
         val recentRecommendations = repository.getRecentRecommendations(50)
         val tasks = repository.observeTasksOnce()
         

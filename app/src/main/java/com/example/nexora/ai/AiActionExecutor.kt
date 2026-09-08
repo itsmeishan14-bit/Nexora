@@ -4,6 +4,8 @@ import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import com.example.nexora.uii.NexoraGoal
+import com.example.nexora.util.NexoraLogger
+import com.example.nexora.util.NexoraSecurity
 
 open class AiActionExecutor(
     private val repository: NexoraRepository?
@@ -13,9 +15,20 @@ open class AiActionExecutor(
     open suspend fun execute(action: AiAction): AiActionResult {
         val repo = repository ?: return AiActionResult(false, "Repository not available")
         
-        // 1. Validation Layer
+        NexoraLogger.d(message = "Executing AI action: ${action.type}")
+
+        // 1. Authorization & Validation Layer
+        if (!NexoraSecurity.isAuthorized(action)) {
+             return AiActionResult(
+                success = false,
+                message = "Action requires explicit user confirmation.",
+                error = "Authorization error"
+            )
+        }
+
         val validationResult = validator?.validate(action)
         if (validationResult is ValidationResult.Invalid) {
+            NexoraLogger.w(message = "Validation failed for ${action.type}: ${validationResult.message}")
             return AiActionResult(
                 success = false,
                 message = "Validation failed: ${validationResult.message}",

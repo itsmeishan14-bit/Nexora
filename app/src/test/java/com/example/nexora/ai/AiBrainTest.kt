@@ -85,7 +85,7 @@ class AiBrainTest {
 
     private fun createTestBrain(context: AiContext): NexoraAiBrain {
         val mockContextBuilder = object : AiContextBuilder(null) {
-            override suspend fun build(): AiContext = context
+            override suspend fun build(request: AiRequest?): AiContext = context
         }
         
         // Create a registry that definitely has the tools needed for the tests

@@ -1,6 +1,7 @@
 package com.example.nexora.ai
 
 import com.example.nexora.data.NexoraRepository
+import com.example.nexora.util.NexoraSecurity
 import kotlinx.coroutines.delay
 
 /**
@@ -410,13 +411,16 @@ class NexoraAiAgent(
     }
 
     private fun mapStepToAction(step: AgentWorkflowStep): AiAction {
+        val type = mapToolToType(step.toolName)
+        val risk = NexoraSecurity.getRiskLevel(type)
+        
         return AiAction(
-            type = mapToolToType(step.toolName),
+            type = type,
             title = step.description,
             description = step.description,
             parameters = step.parameters,
             reason = step.reason,
-            requiresConfirmation = step.requiresConfirmation
+            requiresConfirmation = step.requiresConfirmation || risk == ToolRiskLevel.DESTRUCTIVE
         )
     }
 

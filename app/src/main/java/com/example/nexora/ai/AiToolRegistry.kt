@@ -18,6 +18,7 @@ open class AiToolRegistry(
                 registerTool(FindTaskTool(repo))
                 registerTool(CreateTaskTool(exec))
                 registerTool(CompleteTaskTool(exec))
+                registerTool(DeleteTaskTool(exec))
                 registerTool(ListTasksTool(repo))
                 
                 registerTool(FindGoalTool(repo))
@@ -87,6 +88,24 @@ open class AiToolRegistry(
                 type = AiActionType.COMPLETE_TASK, 
                 title = "Complete Task", 
                 description = "Agent requested completion of task ID: $taskId", 
+                taskId = taskId
+            )
+            val result = executor.execute(action)
+            return ToolResult(result.success, taskId, result.message, result.error)
+        }
+    }
+
+    private class DeleteTaskTool(private val executor: AiActionExecutor) : AiTool {
+        override val name = "deleteTask"
+        override val description = "Permanently deletes a task."
+        override val riskLevel = ToolRiskLevel.DESTRUCTIVE
+
+        override suspend fun execute(parameters: Map<String, Any>): ToolResult {
+            val taskId = parameters["taskId"]?.toString()?.toLongOrNull() ?: return ToolResult(false, message = "Valid taskId is required")
+            val action = AiAction(
+                type = AiActionType.DELETE_TASK, 
+                title = "Delete Task", 
+                description = "Agent requested deletion of task ID: $taskId",
                 taskId = taskId
             )
             val result = executor.execute(action)

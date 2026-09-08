@@ -33,7 +33,7 @@ class NexoraAiBrain(
         // Run outcome evaluation periodically or before analysis
         learningLoop.evaluateOutcomes()
         
-        val context = contextBuilder.build()
+        val context = contextBuilder.build(request)
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         
         // Decide if we should use the multi-step Agent
@@ -196,6 +196,7 @@ class NexoraAiBrain(
         val nextTaskRec = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
         val response = if (nextTaskRec != null) {
+            // Context minimized: only the specific task is needed for reasoning
             val task = context.tasks.find { it.id == nextTaskRec.relatedTaskId }
             val reasoning = buildTaskReasoning(task, context, relevantMemory)
             

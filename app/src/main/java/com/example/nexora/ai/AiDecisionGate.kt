@@ -1,6 +1,7 @@
 package com.example.nexora.ai
 
 import com.example.nexora.data.NexoraRepository
+import com.example.nexora.util.NexoraSecurity
 
 /**
  * Centralized decision gate for AI reliability.
@@ -17,22 +18,20 @@ class AiDecisionGate(
         confidence: AiConfidence,
         evidenceScore: Float
     ): ReliabilityResult {
-        val risk = mapActionToRisk(action.type)
+        val risk = NexoraSecurity.getRiskLevel(action.type)
         
         // 1. Threshold Check
         val permitResult = checkThresholds(confidence, risk, evidenceScore)
         if (!permitResult.success) return permitResult
 
         // 2. Safety/Confirmation Check
-        if (risk == ToolRiskLevel.HIGH_RISK || risk == ToolRiskLevel.DESTRUCTIVE) {
-            if (!action.requiresConfirmation) {
-                 return ReliabilityResult(
-                    success = false,
-                    status = ToolResultStatus.NEEDS_CONFIRMATION,
-                    message = "Potentially risky action requires explicit confirmation.",
-                    evaluation = buildEvaluation(action, confidence, evidenceScore, risk, failure = AiFailureType.VALIDATION_FAILURE)
-                )
-            }
+        if (!NexoraSecurity.isAuthorized(action)) {
+             return ReliabilityResult(
+                success = false,
+                status = ToolResultStatus.NEEDS_CONFIRMATION,
+                message = "Potentially risky action requires explicit confirmation.",
+                evaluation = buildEvaluation(action, confidence, evidenceScore, risk, failure = AiFailureType.VALIDATION_FAILURE)
+            )
         }
 
         return ReliabilityResult(
@@ -72,15 +71,6 @@ class AiDecisionGate(
         }
 
         return ReliabilityResult(true, ToolResultStatus.SUCCESS, "", buildEvaluation(null, confidence, evidenceScore, risk))
-    }
-
-    private fun mapActionToRisk(type: AiActionType): ToolRiskLevel {
-        return when (type) {
-            AiActionType.DELETE_TASK, AiActionType.DELETE_GOAL -> ToolRiskLevel.DESTRUCTIVE
-            AiActionType.CREATE_TASK, AiActionType.UPDATE_TASK, AiActionType.COMPLETE_TASK,
-            AiActionType.CREATE_GOAL, AiActionType.UPDATE_GOAL -> ToolRiskLevel.LOW_RISK
-            else -> ToolRiskLevel.SAFE
-        }
     }
 
     private fun buildEvaluation(
