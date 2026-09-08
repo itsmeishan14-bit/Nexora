@@ -14,7 +14,11 @@ open class AiContextBuilder(
         if (repository == null) return AiContext()
 
         // Apply Data Minimization: only load what's needed for the request
-        val tasks = if (shouldLoadTasks(request)) repository.observeTasksOnce() else emptyList()
+        val tasks = when {
+            request?.type == AiRequestType.NEXT_TASK -> repository.getIncompleteTasksOnce()
+            shouldLoadTasks(request) -> repository.observeTasksOnce()
+            else -> emptyList()
+        }
         val goals = if (shouldLoadGoals(request)) repository.observeGoalsOnce() else emptyList()
 
         val today = LocalDate.now().toString()

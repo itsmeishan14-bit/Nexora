@@ -48,10 +48,12 @@ fun AiScreen(
 ) {
 
     val viewModel: NexoraAiViewModel = viewModel(
-        factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return NexoraAiViewModel(engine = engine) as T
+        factory = remember(engine) {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    return NexoraAiViewModel(engine = engine) as T
+                }
             }
         }
     )

@@ -81,17 +81,17 @@ open class AiActionExecutor(
         return when (action.type) {
             AiActionType.CREATE_TASK -> {
                 val taskId = executionResult.affectedTaskId ?: return executionResult
-                val task = repository.observeTasksOnce().find { it.id == taskId }
+                val task = repository.getTaskById(taskId)
                 if (task != null) executionResult else AiActionResult(false, "Verification failed: Task not found in DB after creation.")
             }
             AiActionType.COMPLETE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
-                val task = repository.observeTasksOnce().find { it.id == taskId }
+                val task = repository.getTaskById(taskId)
                 if (task?.completed == true) executionResult else AiActionResult(false, "Verification failed: Task still marked incomplete.")
             }
             AiActionType.UPDATE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
-                val task = repository.observeTasksOnce().find { it.id == taskId }
+                val task = repository.getTaskById(taskId)
                 if (task == null) return AiActionResult(false, "Verification failed: Task lost after update.")
                 
                 // Optional: Verify specific fields if they were in parameters
@@ -103,13 +103,13 @@ open class AiActionExecutor(
             }
             AiActionType.DELETE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
-                val task = repository.observeTasksOnce().find { it.id == taskId }
+                val task = repository.getTaskById(taskId)
                 if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists after deletion.")
             }
             AiActionType.UPDATE_GOAL -> {
                 val goalId = action.goalId ?: return executionResult
-                val goal = repository.observeGoalsOnce().find { it.id == goalId }
-                // Basic existence check, could check specific fields if needed
+                val goal = repository.getGoalById(goalId)
+                // Basic existence check
                 if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found after update.")
             }
             else -> executionResult
@@ -165,8 +165,7 @@ open class AiActionExecutor(
 
     private suspend fun completeTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
-        val tasks = repository.observeTasksOnce()
-        val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
+        val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
 
         val updated = task.copy(completed = true)
         repository.updateTask(updated)
@@ -180,8 +179,7 @@ open class AiActionExecutor(
 
     private suspend fun updateTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
-        val tasks = repository.observeTasksOnce()
-        val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
+        val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
 
         val newPriorityStr = action.parameters["priority"] as? String
         val newDuration = action.parameters["duration"] as? String
@@ -210,8 +208,7 @@ open class AiActionExecutor(
 
     private suspend fun deleteTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
-        val tasks = repository.observeTasksOnce()
-        val task = tasks.find { it.id == taskId } ?: return AiActionResult(false, "Task not found.")
+        val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
 
         repository.deleteTask(task)
         
@@ -249,8 +246,7 @@ open class AiActionExecutor(
 
     private suspend fun updateGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
-        val goals = repository.observeGoalsOnce()
-        val goal = goals.find { it.id == goalId } ?: return AiActionResult(false, "Goal not found.")
+        val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Goal not found.")
 
         val newTitle = action.parameters["title"] as? String
         val newCategory = action.parameters["category"] as? String
@@ -270,8 +266,7 @@ open class AiActionExecutor(
 
     private suspend fun deleteGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
-        val goals = repository.observeGoalsOnce()
-        val goal = goals.find { it.id == goalId } ?: return AiActionResult(false, "Goal not found.")
+        val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Goal not found.")
 
         repository.deleteGoal(goal)
         

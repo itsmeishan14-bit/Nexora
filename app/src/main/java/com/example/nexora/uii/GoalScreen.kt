@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -227,22 +228,16 @@ fun GoalScreen(
 
             } else {
 
-                itemsIndexed(
+                items(
                     items = goals,
 
                     // IMPORTANT:
                     // Use the Room-generated goal ID.
-                    // Never use title/category/date as the key.
-                    key = { index, goal ->
-
-                        if (goal.id != 0L) {
-                            "goal_${goal.id}"
-                        } else {
-                            "temporary_goal_$index"
-                        }
+                    key = { goal ->
+                        if (goal.id != 0L) "goal_${goal.id}" else "temp_${goal.title}"
                     }
 
-                ) { _, goal ->
+                ) { goal ->
 
                     val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
 

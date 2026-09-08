@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,13 +62,15 @@ fun TasksScreen(
     }
 ) {
 
-    val completed = tasks.count { it.completed }
+    val completed = remember(tasks) { tasks.count { it.completed } }
     val total = tasks.size
 
-    val progress = if (total == 0) {
-        0f
-    } else {
-        completed.toFloat() / total.toFloat()
+    val progress = remember(completed, total) {
+        if (total == 0) {
+            0f
+        } else {
+            completed.toFloat() / total.toFloat()
+        }
     }
 
     Box(
@@ -244,20 +248,15 @@ fun TasksScreen(
                 // TASK LIST
                 // ========================================================
 
-                itemsIndexed(
+                items(
                     items = tasks,
 
-                    // NEVER use title/category/duration as the key.
-                    key = { index, task ->
-
-                        if (task.id != 0L) {
-                            "task_${task.id}"
-                        } else {
-                            "temporary_task_$index"
-                        }
+                    // IMPORTANT: Use the stable ID from the database.
+                    key = { task ->
+                        if (task.id != 0L) "task_${task.id}" else "temp_${task.title}_${task.priority}"
                     }
 
-                ) { _, task ->
+                ) { task ->
 
                     TaskCard(
                         task = task,

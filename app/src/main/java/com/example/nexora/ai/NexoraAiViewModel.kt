@@ -60,6 +60,8 @@ class NexoraAiViewModel(
     }
 
     fun analyze() {
+        if (_uiState.value.isLoading) return
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
@@ -89,6 +91,8 @@ class NexoraAiViewModel(
     }
 
     fun createDailyPlan() {
+        if (_uiState.value.isLoading) return
+        
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
@@ -118,6 +122,8 @@ class NexoraAiViewModel(
     }
 
     fun analyzeGoals() {
+        if (_uiState.value.isLoading) return
+        
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
@@ -143,6 +149,8 @@ class NexoraAiViewModel(
     }
 
     fun analyzeProductivity() {
+        if (_uiState.value.isLoading) return
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,

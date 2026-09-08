@@ -8,11 +8,20 @@ import java.time.LocalDate
 class AiLearningLoop(
     private val repository: NexoraRepository
 ) {
+    private var lastEvaluatedAt: Long = 0
+    private val evaluationCooldown: Long = 1000 * 60 * 15 // 15 minutes
+
     /**
      * Evaluate recent recommendations and daily plans to detect outcomes.
      */
     suspend fun evaluateOutcomes() {
+        if (System.currentTimeMillis() - lastEvaluatedAt < evaluationCooldown) {
+            return
+        }
+        
         NexoraLogger.d(message = "Starting AI outcome evaluation")
+        lastEvaluatedAt = System.currentTimeMillis()
+
         val recentRecommendations = repository.getRecentRecommendations(50)
         val tasks = repository.observeTasksOnce()
         

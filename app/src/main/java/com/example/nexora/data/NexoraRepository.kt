@@ -34,19 +34,7 @@ open class NexoraRepository(
         val dao = taskDao ?: return flowOf(emptyList())
         return dao.observeAll().map { entities ->
             entities.map { entity ->
-                PremiumTask(
-                    id = entity.id,
-                    title = entity.title,
-                    category = entity.category,
-                    duration = entity.duration,
-                    goalTitle = entity.goalTitle,
-                    priority = try {
-                        TaskPriority.valueOf(entity.priority)
-                    } catch (e: IllegalArgumentException) {
-                        TaskPriority.MEDIUM
-                    },
-                    completed = entity.completed
-                )
+                mapTaskEntityToDomain(entity)
             }
         }
     }
@@ -54,20 +42,39 @@ open class NexoraRepository(
     open suspend fun observeTasksOnce(): List<PremiumTask> {
         val dao = taskDao ?: return emptyList()
         return dao.observeAllOnce().map { entity ->
-            PremiumTask(
-                id = entity.id,
-                title = entity.title,
-                category = entity.category,
-                duration = entity.duration,
-                goalTitle = entity.goalTitle,
-                priority = try {
-                    TaskPriority.valueOf(entity.priority)
-                } catch (e: IllegalArgumentException) {
-                    TaskPriority.MEDIUM
-                },
-                completed = entity.completed
-            )
+            mapTaskEntityToDomain(entity)
         }
+    }
+
+    open suspend fun getTaskById(id: Long): PremiumTask? {
+        val dao = taskDao ?: return null
+        return dao.getById(id)?.let { mapTaskEntityToDomain(it) }
+    }
+
+    open suspend fun getIncompleteTasksOnce(): List<PremiumTask> {
+        val dao = taskDao ?: return emptyList()
+        return dao.getIncomplete().map { mapTaskEntityToDomain(it) }
+    }
+
+    open suspend fun getTasksByGoal(goalTitle: String): List<PremiumTask> {
+        val dao = taskDao ?: return emptyList()
+        return dao.getByGoalTitle(goalTitle).map { mapTaskEntityToDomain(it) }
+    }
+
+    private fun mapTaskEntityToDomain(entity: TaskEntity): PremiumTask {
+        return PremiumTask(
+            id = entity.id,
+            title = entity.title,
+            category = entity.category,
+            duration = entity.duration,
+            goalTitle = entity.goalTitle,
+            priority = try {
+                TaskPriority.valueOf(entity.priority)
+            } catch (e: IllegalArgumentException) {
+                TaskPriority.MEDIUM
+            },
+            completed = entity.completed
+        )
     }
 
     open suspend fun addTask(task: PremiumTask): PremiumTask {
@@ -124,13 +131,7 @@ open class NexoraRepository(
         val dao = goalDao ?: return flowOf(emptyList())
         return dao.observeAll().map { entities ->
             entities.map { entity ->
-                NexoraGoal(
-                    id = entity.id,
-                    title = entity.title,
-                    category = entity.category,
-                    targetDate = entity.targetDate,
-                    progress = entity.progress
-                )
+                mapGoalEntityToDomain(entity)
             }
         }
     }
@@ -138,14 +139,23 @@ open class NexoraRepository(
     open suspend fun observeGoalsOnce(): List<NexoraGoal> {
         val dao = goalDao ?: return emptyList()
         return dao.observeAllOnce().map { entity ->
-            NexoraGoal(
-                id = entity.id,
-                title = entity.title,
-                category = entity.category,
-                targetDate = entity.targetDate,
-                progress = entity.progress
-            )
+            mapGoalEntityToDomain(entity)
         }
+    }
+
+    open suspend fun getGoalById(id: Long): NexoraGoal? {
+        val dao = goalDao ?: return null
+        return dao.getById(id)?.let { mapGoalEntityToDomain(it) }
+    }
+
+    private fun mapGoalEntityToDomain(entity: GoalEntity): NexoraGoal {
+        return NexoraGoal(
+            id = entity.id,
+            title = entity.title,
+            category = entity.category,
+            targetDate = entity.targetDate,
+            progress = entity.progress
+        )
     }
 
     open suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
@@ -353,25 +363,44 @@ open class NexoraRepository(
     open suspend fun getAllMemory(): List<AiMemoryItem> {
         val dao = aiMemoryDao ?: return emptyList()
         return dao.getAllMemory().map { entity ->
-            AiMemoryItem(
-                id = entity.id,
-                category = AiMemoryCategory.valueOf(entity.category),
-                title = entity.title,
-                content = entity.content,
-                confidence = AiMemoryConfidence.valueOf(entity.confidence),
-                importance = AiMemoryImportance.valueOf(entity.importance),
-                relatedTaskId = entity.relatedTaskId,
-                relatedGoalId = entity.relatedGoalId,
-                createdAt = entity.createdAt,
-                lastUsedAt = entity.lastUsedAt,
-                expiration = entity.expiration,
-                metadata = if (entity.metadata.isBlank()) emptyMap() else 
-                    entity.metadata.split(";").associate { 
-                        val parts = it.split("=")
-                        parts[0] to (parts.getOrNull(1) ?: "")
-                    }
-            )
+            mapMemoryEntityToDomain(entity)
         }
+    }
+
+    open suspend fun getMemoryByTask(taskId: Long): List<AiMemoryItem> {
+        val dao = aiMemoryDao ?: return emptyList()
+        return dao.getMemoryByTask(taskId).map { mapMemoryEntityToDomain(it) }
+    }
+
+    open suspend fun getMemoryByGoal(goalId: Long): List<AiMemoryItem> {
+        val dao = aiMemoryDao ?: return emptyList()
+        return dao.getMemoryByGoal(goalId).map { mapMemoryEntityToDomain(it) }
+    }
+
+    open suspend fun getMemoryByCategory(category: AiMemoryCategory): List<AiMemoryItem> {
+        val dao = aiMemoryDao ?: return emptyList()
+        return dao.getMemoryByCategory(category.name).map { mapMemoryEntityToDomain(it) }
+    }
+
+    private fun mapMemoryEntityToDomain(entity: AiMemoryEntity): AiMemoryItem {
+        return AiMemoryItem(
+            id = entity.id,
+            category = AiMemoryCategory.valueOf(entity.category),
+            title = entity.title,
+            content = entity.content,
+            confidence = AiMemoryConfidence.valueOf(entity.confidence),
+            importance = AiMemoryImportance.valueOf(entity.importance),
+            relatedTaskId = entity.relatedTaskId,
+            relatedGoalId = entity.relatedGoalId,
+            createdAt = entity.createdAt,
+            lastUsedAt = entity.lastUsedAt,
+            expiration = entity.expiration,
+            metadata = if (entity.metadata.isBlank()) emptyMap() else 
+                entity.metadata.split(";").associate { 
+                    val parts = it.split("=")
+                    parts[0] to (parts.getOrNull(1) ?: "")
+                }
+        )
     }
 
     open suspend fun deleteMemory(id: String) {

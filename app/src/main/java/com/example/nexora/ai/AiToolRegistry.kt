@@ -120,11 +120,10 @@ open class AiToolRegistry(
 
         override suspend fun execute(parameters: Map<String, Any>): ToolResult {
             val filter = parameters["filter"]?.toString() ?: "all"
-            val allTasks = repository.observeTasksOnce()
             val filtered = when (filter) {
-                "incomplete" -> allTasks.filter { !it.completed }
-                "completed" -> allTasks.filter { it.completed }
-                else -> allTasks
+                "incomplete" -> repository.getIncompleteTasksOnce()
+                "completed" -> repository.observeTasksOnce().filter { it.completed }
+                else -> repository.observeTasksOnce()
             }
             return ToolResult(true, filtered, "Listed ${filtered.size} tasks.")
         }

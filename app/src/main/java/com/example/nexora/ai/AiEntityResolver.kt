@@ -18,7 +18,10 @@ object AiEntityResolver {
         if (cleanQuery.isBlank()) return ResolutionResult.NotFound()
 
         // Match against all tasks, but we could prioritize incomplete ones if needed.
-        val candidates = tasks.map { it to scoreMatch(cleanQuery, normalize(it.title)) }
+        val candidates = tasks.map { 
+            val normalizedTitle = normalize(it.title)
+            it to scoreMatch(cleanQuery, normalizedTitle) 
+        }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
 
@@ -44,7 +47,10 @@ object AiEntityResolver {
         val cleanQuery = normalize(query)
         if (cleanQuery.isBlank()) return ResolutionResult.NotFound()
 
-        val candidates = goals.map { it to scoreMatch(cleanQuery, normalize(it.title)) }
+        val candidates = goals.map { 
+            val normalizedTitle = normalize(it.title)
+            it to scoreMatch(cleanQuery, normalizedTitle) 
+        }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
 

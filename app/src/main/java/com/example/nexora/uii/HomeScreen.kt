@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,24 +46,25 @@ fun HomeScreen(
     onDismissAction: () -> Unit = {}
 ) {
 
-    val completed = tasks.count { it.completed }
+    val completed = remember(tasks) { tasks.count { it.completed } }
     val total = tasks.size
 
-    val progress = if (total == 0) 0f else completed.toFloat() / total
+    val progress = remember(completed, total) { if (total == 0) 0f else completed.toFloat() / total }
 
-    val priorityOrder = mapOf(
-        TaskPriority.URGENT to 0,
-        TaskPriority.HIGH to 1,
-        TaskPriority.MEDIUM to 2,
-        TaskPriority.LOW to 3
-    )
-
-    val focusTasks = tasks
-        .sortedWith(
-            compareBy<PremiumTask> { if (it.completed) 1 else 0 }
-                .thenBy { priorityOrder[it.priority] ?: 2 }
+    val focusTasks = remember(tasks) {
+        val priorityOrder = mapOf(
+            TaskPriority.URGENT to 0,
+            TaskPriority.HIGH to 1,
+            TaskPriority.MEDIUM to 2,
+            TaskPriority.LOW to 3
         )
-        .take(5)
+        tasks
+            .sortedWith(
+                compareBy<PremiumTask> { if (it.completed) 1 else 0 }
+                    .thenBy { priorityOrder[it.priority] ?: 2 }
+            )
+            .take(5)
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -140,7 +142,10 @@ fun HomeScreen(
         if (tasks.isEmpty()) {
             item { EmptyHomeCard(onAddTask = onAddTask) }
         } else {
-            items(items = focusTasks) { task ->
+            items(
+                items = focusTasks,
+                key = { it.id }
+            ) { task ->
                 HomeTaskCard(task = task, onToggle = { onToggleTask(task) })
             }
         }

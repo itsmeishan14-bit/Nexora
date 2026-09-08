@@ -202,19 +202,22 @@ class MainActivity : ComponentActivity() {
                     val context = aiEngine.getContext()
                     personalContext = context.personalContext
                     
-                    val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
-                    proactiveSignals = response.proactiveSignals
-                    homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
-                    
-                    // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
-                    if (context.incompleteTasks.size >= 8) {
-                        homeProposedAction = AiAction(
-                            type = com.example.nexora.ai.AiActionType.RESCHEDULE_TASK,
-                            title = "High Workload Detected",
-                            description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
-                            reason = "Too many tasks today reduces focus.",
-                            requiresConfirmation = true
-                        )
+                    // Don't block UI for initial analysis
+                    scope.launch {
+                        val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
+                        proactiveSignals = response.proactiveSignals
+                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
+                        
+                        // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
+                        if (context.incompleteTasks.size >= 8) {
+                            homeProposedAction = AiAction(
+                                type = com.example.nexora.ai.AiActionType.RESCHEDULE_TASK,
+                                title = "High Workload Detected",
+                                description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
+                                reason = "Too many tasks today reduces focus.",
+                                requiresConfirmation = true
+                            )
+                        }
                     }
                 }
 

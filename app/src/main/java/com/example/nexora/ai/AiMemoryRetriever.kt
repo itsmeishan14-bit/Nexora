@@ -9,10 +9,36 @@ class AiMemoryRetriever(
      * Retrieve memories relevant to the current AI request context.
      */
     suspend fun retrieveRelevantMemory(request: AiRequest): List<AiMemoryItem> {
-        val allMemory = repository.getAllMemory()
-        if (allMemory.isEmpty()) return emptyList()
+        // Targeted retrieval
+        val candidates = mutableSetOf<AiMemoryItem>()
+        
+        // 1. By relationship
+        if (request.taskId != null) {
+            candidates.addAll(repository.getMemoryByTask(request.taskId))
+        }
+        if (request.goalId != null) {
+            candidates.addAll(repository.getMemoryByGoal(request.goalId))
+        }
+        
+        // 2. By Category (broadened based on request type)
+        val categories = when (request.type) {
+            AiRequestType.NEXT_TASK -> listOf(AiMemoryCategory.TASK_PATTERN, AiMemoryCategory.PRODUCTIVITY_PATTERN)
+            AiRequestType.DAILY_PLAN -> listOf(AiMemoryCategory.PLANNING_PATTERN, AiMemoryCategory.WORKLOAD_PATTERN)
+            AiRequestType.GOAL_ANALYSIS -> listOf(AiMemoryCategory.GOAL_PATTERN)
+            AiRequestType.PRODUCTIVITY_ANALYSIS -> listOf(AiMemoryCategory.PRODUCTIVITY_PATTERN)
+            else -> emptyList()
+        }
+        
+        categories.forEach {
+            candidates.addAll(repository.getMemoryByCategory(it))
+        }
 
-        return allMemory.map { memory ->
+        // If we still have few candidates, fall back to all memory or a sample
+        if (candidates.size < 5) {
+            candidates.addAll(repository.getAllMemory().take(20))
+        }
+
+        return candidates.map { memory ->
             val relevance = calculateRelevance(memory, request)
             memory to relevance
         }

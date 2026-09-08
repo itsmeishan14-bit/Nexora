@@ -26,6 +26,10 @@ class NexoraAiBrain(
     // The Agent system is a capability of the Brain
     private val agent = NexoraAiAgent(toolRegistry, decisionGate, contextBuilder)
 
+    private var lastContext: AiContext? = null
+    private var lastContextBuiltAt: Long = 0
+    private val contextCacheDuration = 1000 * 30 // 30 seconds
+
     /**
      * Process a unified AI request.
      */
@@ -33,7 +37,7 @@ class NexoraAiBrain(
         // Run outcome evaluation periodically or before analysis
         learningLoop.evaluateOutcomes()
         
-        val context = contextBuilder.build(request)
+        val context = getContext(request)
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         
         // Decide if we should use the multi-step Agent
@@ -75,6 +79,25 @@ class NexoraAiBrain(
         } else {
             response
         }
+    }
+
+    private suspend fun getContext(request: AiRequest): AiContext {
+        val now = System.currentTimeMillis()
+        
+        // Cache bypass for writes or explicit refreshes
+        val isWrite = request.type in listOf(
+            AiRequestType.CREATE_TASK, AiRequestType.UPDATE_TASK, AiRequestType.COMPLETE_TASK,
+            AiRequestType.UPDATE_GOAL, AiRequestType.DELETE_TASK, AiRequestType.DELETE_GOAL
+        )
+        
+        if (!isWrite && lastContext != null && now - lastContextBuiltAt < contextCacheDuration) {
+            return lastContext!!
+        }
+        
+        val context = contextBuilder.build(request)
+        lastContext = context
+        lastContextBuiltAt = now
+        return context
     }
 
     private fun evaluateAutomations(request: AiRequest, context: AiContext): List<AiProactiveSignal> {

@@ -20,6 +20,12 @@ interface AiMemoryDao {
     @Query("SELECT * FROM ai_memory WHERE id = :id LIMIT 1")
     suspend fun getMemoryById(id: String): AiMemoryEntity?
 
+    @Query("SELECT * FROM ai_memory WHERE relatedTaskId = :taskId")
+    suspend fun getMemoryByTask(taskId: Long): List<AiMemoryEntity>
+
+    @Query("SELECT * FROM ai_memory WHERE relatedGoalId = :goalId")
+    suspend fun getMemoryByGoal(goalId: Long): List<AiMemoryEntity>
+
     @Query("DELETE FROM ai_memory WHERE id = :id")
     suspend fun deleteMemoryById(id: String)
 

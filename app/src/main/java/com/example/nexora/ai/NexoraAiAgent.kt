@@ -38,7 +38,7 @@ class NexoraAiAgent(
             
             // 1. OBSERVE & REFRESH (if not first step)
             if (stepsTaken > 0 && contextBuilder != null) {
-                currentContext = contextBuilder.build()
+                currentContext = contextBuilder.build(request)
             }
 
             // 2. UNDERSTAND & PLAN

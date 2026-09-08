@@ -25,6 +25,9 @@ interface GoalDao {
     @Delete
     suspend fun delete(goal: GoalEntity)
 
+    @Query("SELECT * FROM goals WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): GoalEntity?
+
     @Query("DELETE FROM goals")
     suspend fun deleteAll()
 }

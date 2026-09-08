@@ -64,44 +64,60 @@ fun DailyProgressCalendar(
         mutableStateOf(LocalDate.now())
     }
 
-    val progressByDate = progressHistory.associateBy {
-        it.date
+    val progressByDate = remember(progressHistory) {
+        progressHistory.associateBy {
+            it.date
+        }
     }
 
     // --------------------------------------------------------
     // GLOBAL STATS
     // --------------------------------------------------------
 
-    val currentStreak = calculateCurrentStreak(
-        progressHistory = progressHistory
-    )
+    val currentStreak = remember(progressHistory) {
+        calculateCurrentStreak(
+            progressHistory = progressHistory
+        )
+    }
 
-    val longestStreak = calculateLongestStreak(
-        progressHistory = progressHistory
-    )
+    val longestStreak = remember(progressHistory) {
+        calculateLongestStreak(
+            progressHistory = progressHistory
+        )
+    }
 
-    val averageCompletion = calculateAverageCompletion(
-        progressHistory = progressHistory
-    )
+    val averageCompletion = remember(progressHistory) {
+        calculateAverageCompletion(
+            progressHistory = progressHistory
+        )
+    }
 
-    val perfectDays = progressHistory.count {
-        it.isPerfectDay
+    val perfectDays = remember(progressHistory) {
+        progressHistory.count {
+            it.isPerfectDay
+        }
     }
 
     // --------------------------------------------------------
     // DISPLAYED MONTH DATA
     // --------------------------------------------------------
 
-    val monthProgress = progressHistory.filter {
-        YearMonth.from(it.date) == displayedMonth
+    val monthProgress = remember(progressHistory, displayedMonth) {
+        progressHistory.filter {
+            YearMonth.from(it.date) == displayedMonth
+        }
     }
 
-    val monthCompletedTasks = monthProgress.sumOf {
-        it.tasksCompleted
+    val monthCompletedTasks = remember(monthProgress) {
+        monthProgress.sumOf {
+            it.tasksCompleted
+        }
     }
 
-    val monthPlannedTasks = monthProgress.sumOf {
-        it.tasksPlanned
+    val monthPlannedTasks = remember(monthProgress) {
+        monthProgress.sumOf {
+            it.tasksPlanned
+        }
     }
 
     val monthCompletion = if (monthPlannedTasks == 0) {
