@@ -1,40 +1,20 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.nexora.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,311 +25,152 @@ fun AddGoalScreen(
     onSave: (String, String, String, Float) -> Unit,
     existingGoal: NexoraGoal? = null
 ) {
-
-    var goalName by remember {
-        mutableStateOf(existingGoal?.title ?: "")
-    }
-
-    var category by remember {
-        mutableStateOf(existingGoal?.category ?: "")
-    }
-
-    var targetDate by remember {
-        mutableStateOf(existingGoal?.targetDate ?: "")
-    }
-
-    var showDatePicker by remember {
-        mutableStateOf(false)
-    }
+    var goalName by remember { mutableStateOf(existingGoal?.title ?: "") }
+    var category by remember { mutableStateOf(existingGoal?.category ?: "") }
+    var targetDate by remember { mutableStateOf(existingGoal?.targetDate ?: "") }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val isEditing = existingGoal != null
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color(0xFFF7F8F4)
-    ) {
-
+    Scaffold(
+        containerColor = NexoraBackground,
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = NexoraPrimaryText)
+                }
+                TextButton(
+                    onClick = {
+                        if (goalName.isNotBlank()) {
+                            onSave(
+                                goalName.trim(),
+                                category.trim().ifBlank { "Personal" },
+                                targetDate.trim().ifBlank { "No date" },
+                                existingGoal?.progress ?: 0f
+                            )
+                        }
+                    },
+                    enabled = goalName.isNotBlank()
+                ) {
+                    Text(
+                        if (isEditing) "Save" else "Create",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (goalName.isNotBlank()) NexoraPrimaryGreen else NexoraMutedText
+                    )
+                }
+            }
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(22.dp)
+                .padding(padding)
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        text = if (isEditing) "Edit goal" else "New goal",
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF17231C)
-                    )
-
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Text(
-                        text = if (isEditing)
-                            "Refine your goal details."
-                        else
-                            "What do you want to achieve?",
-                        fontSize = 14.sp,
-                        color = Color(0xFF747B75)
-                    )
-                }
-
-                IconButton(
-                    onClick = onBack
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color(0xFF17231C)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(30.dp))
-
             Text(
-                text = "Goal name",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF303630)
+                text = if (isEditing) "Edit Goal" else "New Goal",
+                style = MaterialTheme.typography.headlineLarge,
+                color = NexoraPrimaryText
             )
+            
+            Spacer(modifier = Modifier.height(32.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
+            // TITLE INPUT
+            TextField(
                 value = goalName,
-                onValueChange = {
-                    goalName = it
-                },
+                onValueChange = { goalName = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = {
-                    Text("e.g. Master Java")
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp)
+                placeholder = { Text("What's your objective?", style = MaterialTheme.typography.headlineSmall, color = NexoraMutedText) },
+                textStyle = MaterialTheme.typography.headlineSmall,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = NexoraPrimaryGreen,
+                    unfocusedIndicatorColor = NexoraBorder
+                ),
+                singleLine = true
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
-            Text(
-                text = "Category",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF303630)
-            )
+            // OPTIONS
+            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                // CATEGORY
+                InputFieldLabel("Category")
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("e.g. Career, Growth") },
+                    shape = NexoraShapes.medium,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NexoraPrimaryGreen,
+                        unfocusedBorderColor = NexoraBorder
+                    )
+                )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = category,
-                onValueChange = {
-                    category = it
-                },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = {
-                    Text("e.g. Academic")
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "Target date",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF303630)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = targetDate,
-                onValueChange = {
-                    // Date is selected through the calendar.
-                },
-                modifier = Modifier.fillMaxWidth(),
-                readOnly = true,
-                placeholder = {
-                    Text("Select a date")
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            showDatePicker = true
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = "Select target date",
-                            tint = Color(0xFF17231C)
-                        )
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(30.dp))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFFE4EFE5)
-            ) {
-
-                Column(
-                    modifier = Modifier.padding(18.dp)
+                // TARGET DATE
+                InputFieldLabel("Target Date")
+                OutlinedCard(
+                    onClick = { showDatePicker = true },
+                    shape = NexoraShapes.medium,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NexoraBorder),
+                    colors = CardDefaults.outlinedCardColors(containerColor = Color.Transparent)
                 ) {
-
-                    Text(
-                        text = if (isEditing)
-                            "Keep moving forward"
-                        else
-                            "Start with clarity",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF17231C)
-                    )
-
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Text(
-                        text = if (isEditing)
-                            "Small improvements keep your goals moving in the right direction."
-                        else
-                            "A clear goal gives Nexora something meaningful to help you work toward.",
-                        fontSize = 13.sp,
-                        color = Color(0xFF747B75),
-                        lineHeight = 19.sp
-                    )
+                    Row(
+                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            targetDate.ifBlank { "Set a deadline" },
+                            color = if (targetDate.isBlank()) NexoraMutedText else NexoraPrimaryText
+                        )
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = NexoraPrimaryGreen)
+                    }
                 }
             }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = {
-
-                    if (goalName.isNotBlank()) {
-
-                        onSave(
-                            goalName.trim(),
-
-                            if (category.isBlank())
-                                "Personal"
-                            else
-                                category.trim(),
-
-                            if (targetDate.isBlank())
-                                "No date"
-                            else
-                                targetDate,
-
-                            existingGoal?.progress ?: 0f
-                        )
-                    }
-                },
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-
-                shape = RoundedCornerShape(18.dp),
-
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF17231C),
-                    contentColor = Color.White
-                )
-            ) {
-
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Text(
-                    text = if (isEditing)
-                        "Save changes"
-                    else
-                        "Create goal",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
+            
+            Spacer(modifier = Modifier.height(48.dp))
         }
     }
 
-    // Calendar dialog
     if (showDatePicker) {
-
         val datePickerState = rememberDatePickerState()
-
         DatePickerDialog(
-            onDismissRequest = {
-                showDatePicker = false
-            },
-
+            onDismissRequest = { showDatePicker = false },
             confirmButton = {
-
                 TextButton(
                     onClick = {
-
                         datePickerState.selectedDateMillis?.let { millis ->
-
-                            val formatter =
-                                SimpleDateFormat(
-                                    "MMMM d, yyyy",
-                                    Locale.getDefault()
-                                )
-
-                            targetDate =
-                                formatter.format(Date(millis))
+                            val formatter = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+                            targetDate = formatter.format(Date(millis))
                         }
-
                         showDatePicker = false
                     }
                 ) {
-                    Text(
-                        text = "Select",
-                        color = Color(0xFF17231C),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-
-            dismissButton = {
-
-                TextButton(
-                    onClick = {
-                        showDatePicker = false
-                    }
-                ) {
-                    Text(
-                        text = "Cancel",
-                        color = Color(0xFF747B75)
-                    )
+                    Text("Select", color = NexoraPrimaryGreen, fontWeight = FontWeight.Bold)
                 }
             }
         ) {
-
-            DatePicker(
-                state = datePickerState
-            )
+            DatePicker(state = datePickerState)
         }
     }
+}
+
+@Composable
+private fun InputFieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = NexoraMutedText,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
 }

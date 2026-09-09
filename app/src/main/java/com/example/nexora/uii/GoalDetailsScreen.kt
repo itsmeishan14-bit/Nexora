@@ -1,55 +1,24 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.AiPersonalContext
-import com.example.nexora.ai.GoalHealthState
-
-private val Background = Color(0xFFF7F8F4)
-private val Ink = Color(0xFF17231C)
-private val Muted = Color(0xFF747B75)
-private val Green = Color(0xFF78A982)
-private val SoftGreen = Color(0xFFE4EFE5)
-private val Border = Color(0xFFE1E5E1)
+import com.example.nexora.ui.theme.*
 
 @Composable
 fun GoalDetailsScreen(
@@ -61,528 +30,205 @@ fun GoalDetailsScreen(
     onDelete: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     onAddTask: () -> Unit,
-    onDecomposeGoal: () -> Unit = {}
+    onDecomposeGoal: () -> Unit
 ) {
+    val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
+    val progress = (goal.progress * 100).toInt()
 
-    val completedTasks = relatedTasks.count {
-        it.completed
-    }
-
-    val totalTasks = relatedTasks.size
-
-    val progress = if (totalTasks == 0) {
-        0f
-    } else {
-        completedTasks.toFloat() / totalTasks.toFloat()
-    }
-
-    val percentage = (progress * 100).toInt()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
-
-        // ============================================================
-        // TOP BAR
-        // ============================================================
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = 16.dp,
-                    vertical = 12.dp
-                ),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            IconButton(
-                onClick = onBack
+    Scaffold(
+        containerColor = NexoraBackground,
+        topBar = {
+            Column(
+                modifier = Modifier
+                    .background(Color.White)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Ink
-                )
-            }
-
-            Text(
-                text = "Goal details",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink,
-                modifier = Modifier.weight(1f)
-            )
-
-            IconButton(
-                onClick = onEdit
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit",
-                    tint = Ink
-                )
-            }
-
-            IconButton(
-                onClick = onDelete
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = Muted
-                )
-            }
-        }
-
-        // ============================================================
-        // CONTENT
-        // ============================================================
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 22.dp,
-                end = 22.dp,
-                top = 12.dp,
-                bottom = 30.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-
-            // ========================================================
-            // GOAL HEADER
-            // ========================================================
-
-            item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(26.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Ink
-                    )
-                ) {
-
-                    Column(
-                        modifier = Modifier.padding(24.dp)
-                    ) {
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-
-                            Box(
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Color(0xFF344039)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-
-                                Icon(
-                                    imageVector = Icons.Default.Flag,
-                                    contentDescription = null,
-                                    tint = Green,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Spacer(
-                                modifier = Modifier.size(15.dp)
-                            )
-
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-
-                                Text(
-                                    text = goal.title,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-
-                                Spacer(
-                                    modifier = Modifier.height(5.dp)
-                                )
-
-                                Text(
-                                    text = "${goal.category} • ${goal.targetDate}",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFFB8C1BA)
-                                )
-                            }
-                        }
-
-                        Spacer(
-                            modifier = Modifier.height(24.dp)
-                        )
-
-                        Row(
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-
-                            Text(
-                                text = "$percentage%",
-                                fontSize = 42.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-
-                            Spacer(
-                                modifier = Modifier.size(10.dp)
-                            )
-
-                            Text(
-                                text = "complete",
-                                fontSize = 13.sp,
-                                color = Color(0xFFB8C1BA),
-                                modifier = Modifier.padding(
-                                    bottom = 8.dp
-                                )
-                            )
-                        }
-
-                        Spacer(
-                            modifier = Modifier.height(14.dp)
-                        )
-
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(CircleShape),
-                            color = Green,
-                            trackColor = Color(0xFF3B453F)
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(13.dp)
-                        )
-
-                        Text(
-                            text = if (totalTasks == 0) {
-                                "No tasks linked to this goal yet."
-                            } else {
-                                "$completedTasks of $totalTasks linked tasks completed"
-                            },
-                            fontSize = 13.sp,
-                            color = Color(0xFFB8C1BA)
-                        )
-                    }
-                }
-            }
-
-            // ========================================================
-            // AI GOAL INSIGHT
-            // ========================================================
-
-            val goalHealth = personalContext?.goalHealth?.find { it.goalId == goal.id }
-            if (goalHealth != null) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(containerColor = SoftGreen),
-                        border = BorderStroke(1.dp, Green.copy(alpha = 0.3f))
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = Green,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "AI Progress Insight",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Green,
-                                    letterSpacing = 1.1.sp
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.height(8.dp))
-                            
-                            Text(
-                                text = goalHealth.evidence,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Ink
-                            )
-
-                            if (goalHealth.state == GoalHealthState.NEEDS_ATTENTION || goalHealth.state == GoalHealthState.AT_RISK) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = onDecomposeGoal,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Ink),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Plan next steps", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ========================================================
-            // TASK SECTION
-            // ========================================================
-
-            item {
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = NexoraPrimaryText)
+                    }
+                    Row {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = NexoraMutedText)
+                        }
+                        IconButton(onClick = onDelete) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = NexoraError)
+                        }
+                    }
+                }
+            }
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onAddTask,
+                containerColor = NexoraPrimaryText,
+                contentColor = Color.White,
+                shape = NexoraShapes.medium
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add task")
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp)
+        ) {
+            // GOAL HEADER
+            item {
+                Column {
                     Text(
-                        text = "Tasks",
-                        fontSize = 21.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Ink,
-                        modifier = Modifier.weight(1f)
+                        text = goal.category.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NexoraPrimaryGreen,
+                        letterSpacing = 1.sp
                     )
-
-                    Button(
-                        onClick = onAddTask,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Ink,
-                            contentColor = Color.White
-                        )
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp)
-                        )
-
-                        Spacer(
-                            modifier = Modifier.width(5.dp)
-                        )
-
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = goal.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = NexoraPrimaryText
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            LinearProgressIndicator(
+                                progress = { goal.progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(CircleShape),
+                                color = NexoraPrimaryGreen,
+                                trackColor = NexoraBorder,
+                                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
                         Text(
-                            text = "Add task",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "$progress%",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = NexoraPrimaryGreen
                         )
                     }
                 }
             }
 
-            // ========================================================
-            // TASK LIST
-            // ========================================================
-
-            if (relatedTasks.isEmpty()) {
-
-                item {
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
+            // AI INSIGHT
+            item {
+                NexoraCard(containerColor = NexoraSoftGreen, border = null) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = NexoraPrimaryGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Nexora insight",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = NexoraPrimaryGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = health?.evidence ?: "You're making steady progress toward this objective.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = NexoraPrimaryText
                         )
-                    ) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = "Decompose into tasks",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = NexoraPrimaryGreen,
+                            modifier = Modifier.clickable { onDecomposeGoal() }
+                        )
+                    }
+                }
+            }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(25.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-
-                            Text(
-                                text = "No linked tasks",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Ink
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(6.dp)
-                            )
-
-                            Text(
-                                text = "Add a task to start making progress.",
-                                fontSize = 13.sp,
-                                color = Muted
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(14.dp)
-                            )
-
-                            Button(
-                                onClick = onAddTask,
-                                shape = RoundedCornerShape(15.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Ink,
-                                    contentColor = Color.White
-                                )
-                            ) {
-
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null
-                                )
-
-                                Spacer(
-                                    modifier = Modifier.width(7.dp)
-                                )
-
-                                Text(
-                                    text = "Add first task"
-                                )
+            // TASKS
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = "Related tasks",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NexoraPrimaryText
+                    )
+                    
+                    if (relatedTasks.isEmpty()) {
+                        Text(
+                            text = "No tasks linked to this goal yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = NexoraMutedText
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            relatedTasks.forEach { task ->
+                                GoalTaskCard(task = task, onToggle = { onToggleTask(task) })
                             }
                         }
                     }
                 }
-
-            } else {
-
-                itemsIndexed(
-                    items = relatedTasks,
-                    key = { index, task ->
-
-                        if (task.id != 0L) {
-                            "goal_task_${task.id}"
-                        } else {
-                            "temporary_goal_task_$index"
-                        }
-                    }
-                ) { _, task ->
-
-                    GoalTaskCard(
-                        task = task,
-                        onToggle = {
-                            onToggleTask(task)
-                        }
-                    )
-                }
             }
 
-            // ========================================================
-            // AUTOMATIC TRACKING CARD
-            // ========================================================
-
             item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = SoftGreen
-                    )
-                ) {
-
-                    Column(
-                        modifier = Modifier.padding(18.dp)
-                    ) {
-
-                        Text(
-                            text = "Nexora is tracking this automatically",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Ink
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(5.dp)
-                        )
-
-                        Text(
-                            text = "Complete the tasks connected to this goal and its progress will update automatically.",
-                            fontSize = 13.sp,
-                            color = Muted,
-                            lineHeight = 19.sp
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
     }
 }
 
-// ========================================================================
-// GOAL TASK CARD
-// ========================================================================
-
 @Composable
-private fun GoalTaskCard(
-    task: PremiumTask,
-    onToggle: () -> Unit
-) {
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
-        )
-    ) {
-
+private fun GoalTaskCard(task: PremiumTask, onToggle: () -> Unit) {
+    NexoraCard {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(15.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
-            IconButton(
-                onClick = onToggle
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (task.completed) NexoraPrimaryGreen else NexoraSoftGreen)
+                    .clickable { onToggle() },
+                contentAlignment = Alignment.Center
             ) {
-
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Toggle task",
-                    tint = if (task.completed) {
-                        Green
-                    } else {
-                        Border
-                    }
-                )
+                if (task.completed) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
-
-            Column(
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (task.completed) NexoraMutedText else NexoraPrimaryText,
                 modifier = Modifier.weight(1f)
-            ) {
-
-                Text(
-                    text = task.title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (task.completed) {
-                        Muted
-                    } else {
-                        Ink
-                    }
-                )
-
-                Spacer(
-                    modifier = Modifier.height(3.dp)
-                )
-
-                Text(
-                    text = "${task.category} • ${task.duration}",
-                    fontSize = 11.sp,
-                    color = Muted
+            )
+            
+            if (task.priority == TaskPriority.URGENT) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(NexoraError)
                 )
             }
         }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,16 +14,65 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.*
+import com.example.nexora.ui.theme.*
 
-private val Ink = Color(0xFF17231C)
-private val Green = Color(0xFF78A982)
-private val SoftGreen = Color(0xFFE4EFE5)
-private val Muted = Color(0xFF747B75)
-private val Border = Color(0xFFE1E5E1)
+// ============================================================
+// BASE COMPONENTS
+// ============================================================
+
+@Composable
+fun NexoraCard(
+    modifier: Modifier = Modifier,
+    containerColor: Color = Color.White,
+    border: BorderStroke? = BorderStroke(1.dp, NexoraBorder),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier,
+        shape = NexoraShapes.large,
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = border,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        content = content
+    )
+}
+
+@Composable
+fun NexoraSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = NexoraPrimaryText
+        )
+        if (actionLabel != null && onAction != null) {
+            Text(
+                text = actionLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = NexoraPrimaryGreen,
+                modifier = Modifier.clickable { onAction() }
+            )
+        }
+    }
+}
+
+// ============================================================
+// AI COMPONENTS
+// ============================================================
 
 @Composable
 fun ProposedActionCard(
@@ -30,74 +80,74 @@ fun ProposedActionCard(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Ink),
-        border = BorderStroke(2.dp, Green)
+    NexoraCard(
+        containerColor = NexoraPrimaryText,
+        border = BorderStroke(1.dp, NexoraPrimaryGreen.copy(alpha = 0.5f))
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Green,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(NexoraShapes.small)
+                        .background(NexoraSoftGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = NexoraPrimaryGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "AI Proposed Action",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    text = "Nexora suggests",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = NexoraSoftGreen
                 )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             Text(
                 text = action.title,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Green
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
             )
             
             Text(
                 text = action.description,
-                fontSize = 14.sp,
-                color = Color(0xFFB8C1BA),
+                style = MaterialTheme.typography.bodyMedium,
+                color = NexoraMutedText,
                 lineHeight = 20.sp
             )
             
-            action.reason?.let {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Reason: $it",
-                    fontSize = 12.sp,
-                    color = Color(0xFF747B75),
-                    fontWeight = FontWeight.Medium
-                )
-            }
+            Spacer(modifier = Modifier.height(24.dp))
             
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = onConfirm,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Green, contentColor = Ink),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NexoraPrimaryGreen,
+                        contentColor = Color.White
+                    ),
+                    shape = NexoraShapes.medium
                 ) {
-                    Text("Approve", fontWeight = FontWeight.Bold)
+                    Text("Approve", style = MaterialTheme.typography.labelLarge)
                 }
                 
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF354439), contentColor = Color.White),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        contentColor = Color.White
+                    ),
+                    shape = NexoraShapes.medium
                 ) {
-                    Text("Cancel", fontWeight = FontWeight.Bold)
+                    Text("Dismiss", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -111,39 +161,25 @@ fun HomeProactiveCard(
 ) {
     val icon = when (signal.type) {
         ProactiveSignalType.OVERLOAD -> Icons.Default.Warning
-        ProactiveSignalType.NEGLECTED_GOAL -> Icons.Default.Lightbulb
-        ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> Icons.Default.Warning
+        ProactiveSignalType.NEGLECTED_GOAL -> Icons.Default.Flag
+        ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> Icons.Default.PriorityHigh
         else -> Icons.Default.AutoAwesome
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Border)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+    NexoraCard {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SoftGreen),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = Green,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = NexoraPrimaryGreen,
+                    modifier = Modifier.size(20.dp)
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = signal.title,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Ink
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NexoraPrimaryText
                 )
             }
             
@@ -151,18 +187,17 @@ fun HomeProactiveCard(
             
             Text(
                 text = signal.message,
-                fontSize = 13.sp,
-                color = Muted,
+                style = MaterialTheme.typography.bodyMedium,
+                color = NexoraMutedText,
                 lineHeight = 18.sp
             )
 
             signal.suggestedAction?.let { action ->
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = action.title,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Green,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = NexoraPrimaryGreen,
                     modifier = Modifier.clickable { onAction(action) }
                 )
             }
@@ -171,115 +206,66 @@ fun HomeProactiveCard(
 }
 
 @Composable
-fun HomeLegacyInsightCard(insight: AiRecommendation) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = SoftGreen),
-        border = BorderStroke(1.dp, Green.copy(alpha = 0.2f))
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = insight.title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-            Text(
-                text = insight.message,
-                fontSize = 13.sp,
-                color = Muted,
-                lineHeight = 18.sp
-            )
-        }
-    }
-}
-
-@Composable
 fun WorkflowCard(
     workflow: AgentWorkflow
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Ink),
-        border = BorderStroke(1.dp, Green.copy(alpha = 0.5f))
+    NexoraCard(
+        containerColor = NexoraPrimaryText,
+        border = BorderStroke(1.dp, NexoraPrimaryGreen.copy(alpha = 0.3f))
     ) {
-        Column(modifier = Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Green,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "AI Workflow Progress",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                text = "Nexora is working",
+                style = MaterialTheme.typography.labelSmall,
+                color = NexoraPrimaryGreen,
+                letterSpacing = 1.sp
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Objective: ${workflow.objective}",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Green
+                text = workflow.objective,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             workflow.steps.forEach { step ->
                 Row(
-                    modifier = Modifier.padding(vertical = 4.dp),
+                    modifier = Modifier.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val stepIcon = when (step.status) {
-                        StepStatus.COMPLETED -> Icons.Default.CheckCircle
-                        StepStatus.FAILED -> Icons.Default.Warning
-                        else -> Icons.Default.RadioButtonUnchecked
-                    }
-                    val stepColor = when (step.status) {
-                        StepStatus.COMPLETED -> Green
-                        StepStatus.FAILED -> Color(0xFFE57373)
-                        else -> Muted
+                    val (icon, color) = when (step.status) {
+                        StepStatus.COMPLETED -> Icons.Default.Check to NexoraPrimaryGreen
+                        StepStatus.FAILED -> Icons.Default.Close to NexoraError
+                        else -> Icons.Default.HorizontalRule to NexoraMutedText
                     }
 
                     Icon(
-                        imageVector = stepIcon,
+                        imageVector = icon,
                         contentDescription = null,
-                        tint = stepColor,
-                        modifier = Modifier.size(16.dp)
+                        tint = color,
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = step.description,
-                        fontSize = 13.sp,
-                        color = if (step.status == StepStatus.PENDING) Color.Gray else Color.White
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (step.status == StepStatus.PENDING) NexoraMutedText else Color.White
                     )
                 }
             }
 
             if (workflow.status == WorkflowStatus.EXECUTING) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    color = Green,
-                    trackColor = Color(0xFF354439)
-                )
-            }
-
-            workflow.failureReason?.let {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Failure: $it",
-                    fontSize = 12.sp,
-                    color = Color(0xFFE57373),
-                    fontWeight = FontWeight.Medium
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(CircleShape),
+                    color = NexoraPrimaryGreen,
+                    trackColor = Color.White.copy(alpha = 0.1f)
                 )
             }
         }
@@ -293,92 +279,49 @@ fun ProactiveSignalCard(
 ) {
     val icon = when (signal.type) {
         ProactiveSignalType.OVERLOAD -> Icons.Default.Warning
-        ProactiveSignalType.NEGLECTED_GOAL -> Icons.Default.Lightbulb
-        ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> Icons.Default.Warning
-        ProactiveSignalType.PRODUCTIVITY_DROP -> Icons.Default.Warning
+        ProactiveSignalType.NEGLECTED_GOAL -> Icons.Default.Flag
+        ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> Icons.Default.PriorityHigh
         else -> Icons.Default.AutoAwesome
     }
 
-    val backgroundColor = when (signal.severity) {
-        AiPriority.CRITICAL -> Color(0xFFFFF4F2)
-        AiPriority.HIGH -> Color(0xFFFFF9E6)
-        else -> Color.White
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
-        border = BorderStroke(1.dp, Border)
-    ) {
-        Column(modifier = Modifier.padding(22.dp)) {
+    NexoraCard {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SoftGreen),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = Green,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(14.dp))
-                
-                Column {
-                    Text(
-                        text = signal.title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Ink
-                    )
-                    
-                    Text(
-                        text = signal.severity.name,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Muted,
-                        letterSpacing = 1.sp
-                    )
-                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = NexoraPrimaryGreen,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = signal.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = NexoraPrimaryText
+                )
             }
             
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
             Text(
                 text = signal.message,
-                fontSize = 14.sp,
-                color = Ink,
-                lineHeight = 21.sp
+                style = MaterialTheme.typography.bodyMedium,
+                color = NexoraMutedText,
+                lineHeight = 18.sp
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Evidence: ${signal.evidence}",
-                fontSize = 12.sp,
-                color = Muted,
-                fontWeight = FontWeight.Medium
-            )
-            
+
             signal.suggestedAction?.let { action ->
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = { onAction(action) },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Ink,
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(containerColor = NexoraPrimaryGreen),
+                    shape = NexoraShapes.medium
                 ) {
-                    Text(action.title, fontWeight = FontWeight.Bold)
+                    Text(action.title, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
     }
 }
+

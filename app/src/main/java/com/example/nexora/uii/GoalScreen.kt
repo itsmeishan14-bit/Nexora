@@ -2,60 +2,26 @@ package com.example.nexora.uii
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.AiPersonalContext
 import com.example.nexora.ai.GoalHealthState
-
-private val Background = Color(0xFFF7F8F4)
-private val Ink = Color(0xFF17231C)
-private val Muted = Color(0xFF747B75)
-private val Green = Color(0xFF78A982)
-private val SoftGreen = Color(0xFFE4EFE5)
-private val Border = Color(0xFFE1E5E1)
-
-data class NexoraGoal(
-    val id: Long = 0,
-    val title: String,
-    val category: String,
-    val targetDate: String,
-    val progress: Float
-)
+import com.example.nexora.ui.theme.*
 
 @Composable
 fun GoalScreen(
@@ -65,217 +31,83 @@ fun GoalScreen(
     onEditGoal: (NexoraGoal) -> Unit,
     onOpenGoal: (NexoraGoal) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
+    val activeGoals = remember(goals.toList()) { goals.filter { it.progress < 1f } }
+    val completedGoals = remember(goals.toList()) { goals.filter { it.progress >= 1f } }
 
+    Scaffold(
+        containerColor = NexoraBackground,
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = onAddGoal,
+                containerColor = NexoraPrimaryText,
+                contentColor = Color.White,
+                shape = NexoraShapes.medium
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add goal")
+            }
+        }
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 22.dp,
-                top = 26.dp,
-                end = 22.dp,
-                bottom = 100.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-
-            // ============================================================
-            // HEADER
-            // ============================================================
-
             item {
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-
-                        Text(
-                            text = "Goals",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Ink
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(6.dp)
-                        )
-
-                        Text(
-                            text = "Turn intentions into progress.",
-                            fontSize = 15.sp,
-                            color = Muted
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onAddGoal
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add goal",
-                            tint = Ink
-                        )
-                    }
-                }
-            }
-
-            // ============================================================
-            // ACTIVE GOALS CARD
-            // ============================================================
-
-            item {
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Ink
-                    )
-                ) {
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Color(0xFF344039)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-
-                            Icon(
-                                imageVector = Icons.Default.Flag,
-                                contentDescription = null,
-                                tint = Green,
-                                modifier = Modifier.size(23.dp)
-                            )
-                        }
-
-                        Spacer(
-                            modifier = Modifier.size(15.dp)
-                        )
-
-                        Column(
-                            modifier = Modifier.weight(1f)
-                        ) {
-
-                            Text(
-                                text = "ACTIVE GOALS",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.3.sp,
-                                color = Color(0xFFB8C1BA)
-                            )
-
-                            Spacer(
-                                modifier = Modifier.height(5.dp)
-                            )
-
-                            Text(
-                                text = "${goals.size} goals in progress",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ============================================================
-            // SECTION TITLE
-            // ============================================================
-
-            item {
-
-                Spacer(
-                    modifier = Modifier.height(10.dp)
-                )
-
                 Text(
-                    text = "Your goals",
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Ink
+                    text = "Goals",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = NexoraPrimaryText
                 )
             }
 
-            // ============================================================
-            // GOAL LIST
-            // ============================================================
-
-            if (goals.isEmpty()) {
-
+            if (activeGoals.isEmpty() && completedGoals.isEmpty()) {
                 item {
-                    EmptyGoalsCard()
+                    EmptyGoalsState(onAddGoal = onAddGoal)
                 }
-
-            } else {
-
+            } else if (activeGoals.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Strategic focus",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NexoraPrimaryText
+                    )
+                }
                 items(
-                    items = goals,
-
-                    // IMPORTANT:
-                    // Use the Room-generated goal ID.
-                    key = { goal ->
-                        if (goal.id != 0L) "goal_${goal.id}" else "temp_${goal.title}"
-                    }
-
+                    items = activeGoals,
+                    key = { "goal_${it.id}" }
                 ) { goal ->
-
                     val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
-
                     GoalCard(
                         goal = goal,
                         healthState = health?.state,
-                        onOpen = {
-                            onOpenGoal(goal)
-                        }
+                        onOpen = { onOpenGoal(goal) }
+                    )
+                }
+            }
+
+            if (completedGoals.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Achieved",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = NexoraMutedText
+                    )
+                }
+                items(
+                    items = completedGoals,
+                    key = { "completed_goal_${it.id}" }
+                ) { goal ->
+                    GoalCard(
+                        goal = goal,
+                        onOpen = { onOpenGoal(goal) }
                     )
                 }
             }
         }
-
-        // ================================================================
-        // ADD BUTTON
-        // ================================================================
-
-        FloatingActionButton(
-            onClick = onAddGoal,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(22.dp),
-            containerColor = Ink,
-            contentColor = Color.White
-        ) {
-
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add goal"
-            )
-        }
     }
 }
-
-// ========================================================================
-// GOAL CARD
-// ========================================================================
 
 @Composable
 private fun GoalCard(
@@ -283,210 +115,107 @@ private fun GoalCard(
     healthState: GoalHealthState? = null,
     onOpen: () -> Unit
 ) {
-
-    val percentage =
-        (goal.progress * 100).toInt()
-
-    val healthLabel = when (healthState) {
-        GoalHealthState.HEALTHY -> "Healthy"
-        GoalHealthState.NEEDS_ATTENTION -> "Needs attention"
-        GoalHealthState.AT_RISK -> "At risk"
-        else -> null
-    }
-
     val healthColor = when (healthState) {
-        GoalHealthState.HEALTHY -> Green
-        GoalHealthState.NEEDS_ATTENTION -> Color(0xFFF0AD4E)
-        GoalHealthState.AT_RISK -> Color(0xFFE57373)
-        else -> Muted
+        GoalHealthState.HEALTHY -> NexoraPrimaryGreen
+        GoalHealthState.NEEDS_ATTENTION -> NexoraWarning
+        GoalHealthState.AT_RISK -> NexoraError
+        else -> NexoraMutedText
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                onOpen()
-            },
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
-        )
-    ) {
-
+    NexoraCard {
         Column(
-            modifier = Modifier.padding(18.dp)
+            modifier = Modifier
+                .clickable { onOpen() }
+                .padding(20.dp)
         ) {
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(SoftGreen),
+                        .size(36.dp)
+                        .clip(NexoraShapes.small)
+                        .background(NexoraSoftGreen),
                     contentAlignment = Alignment.Center
                 ) {
-
                     Icon(
                         imageVector = Icons.Default.Flag,
                         contentDescription = null,
-                        tint = Green,
-                        modifier = Modifier.size(20.dp)
+                        tint = NexoraPrimaryGreen,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-
-                Spacer(
-                    modifier = Modifier.size(14.dp)
-                )
-
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = goal.title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Ink
+                        style = MaterialTheme.typography.titleSmall,
+                        color = NexoraPrimaryText
                     )
-
-                    Spacer(
-                        modifier = Modifier.height(4.dp)
+                    Text(
+                        text = "${goal.category} • ${goal.targetDate}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NexoraMutedText
                     )
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "${goal.category} • ${goal.targetDate}",
-                            fontSize = 12.sp,
-                            color = Muted
-                        )
-                        
-                        healthLabel?.let { label ->
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(healthColor))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = healthColor)
-                        }
-                    }
                 }
 
                 Text(
-                    text = "$percentage%",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Green
+                    text = "${(goal.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = NexoraPrimaryGreen
                 )
             }
 
-            Spacer(
-                modifier = Modifier.height(16.dp)
-            )
+            Spacer(modifier = Modifier.height(16.dp))
 
             LinearProgressIndicator(
                 progress = { goal.progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(7.dp)
+                    .height(4.dp)
                     .clip(CircleShape),
-                color = Green,
-                trackColor = Border
+                color = NexoraPrimaryGreen,
+                trackColor = NexoraBorder,
+                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
             )
 
-            Spacer(
-                modifier = Modifier.height(13.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Text(
-                    text = if (percentage == 100) {
-                        "Goal completed"
-                    } else {
-                        "Tap to view goal"
-                    },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Muted,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Icon(
-                    imageVector = Icons.Default.ArrowForward,
-                    contentDescription = null,
-                    tint = Color(0xFFB0B6B1),
-                    modifier = Modifier.size(17.dp)
-                )
+            if (healthState != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(healthColor)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = healthState.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = healthColor
+                    )
+                }
             }
         }
     }
 }
 
-// ========================================================================
-// EMPTY GOALS CARD
-// ========================================================================
-
 @Composable
-private fun EmptyGoalsCard() {
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+private fun EmptyGoalsState(onAddGoal: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .background(SoftGreen),
-                contentAlignment = Alignment.Center
-            ) {
-
-                Icon(
-                    imageVector = Icons.Default.Flag,
-                    contentDescription = null,
-                    tint = Green,
-                    modifier = Modifier.size(25.dp)
-                )
-            }
-
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
-
-            Text(
-                text = "No goals yet",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink
-            )
-
-            Spacer(
-                modifier = Modifier.height(5.dp)
-            )
-
-            Text(
-                text = "Create a goal and start making progress.",
-                fontSize = 13.sp,
-                color = Muted
-            )
+        Text(
+            text = "Aim high.",
+            style = MaterialTheme.typography.titleMedium,
+            color = NexoraMutedText
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(onClick = onAddGoal) {
+            Text("Create your first goal", color = NexoraPrimaryGreen)
         }
     }
 }

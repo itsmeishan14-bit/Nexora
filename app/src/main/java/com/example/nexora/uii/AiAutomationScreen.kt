@@ -1,14 +1,12 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,18 +14,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.AiAutomationRule
-import com.example.nexora.ai.NexoraAiEngine
-
-private val Background = Color(0xFFF7F8F4)
-private val Ink = Color(0xFF17231C)
-private val Green = Color(0xFF78A982)
-private val Muted = Color(0xFF747B75)
-private val SoftGreen = Color(0xFFE4EFE5)
-private val Border = Color(0xFFE1E5E1)
+import com.example.nexora.ui.theme.*
 
 @Composable
 fun AiAutomationScreen(
@@ -35,40 +25,41 @@ fun AiAutomationScreen(
     onBack: () -> Unit,
     onToggleRule: (AiAutomationRule) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Ink)
+    Scaffold(
+        containerColor = NexoraBackground,
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = NexoraPrimaryText)
+                }
+                Text(
+                    text = "Automations",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = NexoraPrimaryText,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Text(
-                text = "AI Automations",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Ink,
-                modifier = Modifier.weight(1f)
-            )
         }
-
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(22.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
                 Text(
-                    text = "Control how Nexora helps you proactively. Automations work 100% locally.",
-                    fontSize = 14.sp,
-                    color = Muted,
-                    lineHeight = 20.sp
+                    text = "Automations help Nexora assist you without being asked. All logic remains entirely on your device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NexoraMutedText,
+                    lineHeight = 22.sp
                 )
             }
 
@@ -87,12 +78,7 @@ fun AutomationRuleCard(
     rule: AiAutomationRule,
     onToggle: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, Border)
-    ) {
+    NexoraCard {
         Row(
             modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -100,14 +86,14 @@ fun AutomationRuleCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(CircleShape)
-                    .background(SoftGreen),
+                    .clip(NexoraShapes.small)
+                    .background(NexoraSoftGreen),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = Green,
+                    tint = NexoraPrimaryGreen,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -117,14 +103,13 @@ fun AutomationRuleCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = rule.name,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Ink
+                    style = MaterialTheme.typography.titleSmall,
+                    color = NexoraPrimaryText
                 )
                 Text(
                     text = rule.description,
-                    fontSize = 12.sp,
-                    color = Muted,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NexoraMutedText,
                     lineHeight = 16.sp
                 )
             }
@@ -134,9 +119,10 @@ fun AutomationRuleCard(
                 onCheckedChange = { onToggle() },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = Green,
+                    checkedTrackColor = NexoraPrimaryGreen,
                     uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Border
+                    uncheckedTrackColor = NexoraBorder,
+                    uncheckedBorderColor = Color.Transparent
                 )
             )
         }

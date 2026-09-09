@@ -44,16 +44,3 @@ data class AgentWorkflowStep(
     val result: ToolResult? = null,
     val requiresConfirmation: Boolean = false
 )
-
-/**
- * Enhanced Agent Response that includes workflow details.
- */
-data class AgentWorkflowResponse(
-    val workflow: AgentWorkflow,
-    val message: String,
-    val status: WorkflowStatus,
-    val executedActions: List<String> = emptyList(),
-    val proposedActions: List<AiAction> = emptyList(),
-    val clarificationQuestion: String? = null,
-    val warnings: List<String> = emptyList()
-)

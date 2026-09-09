@@ -6,68 +6,71 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/*
- * Nexora typography
- *
- * Manrope -> headlines and titles
- * Inter   -> body and supporting text
- *
- * Font files will be connected once they are added to res/font.
- */
-
-// Temporary font families.
-// These will be replaced with Manrope and Inter after the
-// font files are added to res/font.
-private val NexoraHeadlineFont = FontFamily.SansSerif
-private val NexoraBodyFont = FontFamily.SansSerif
+// Using system fonts for reliability, but with premium spacing and sizing
+private val NexoraFontFamily = FontFamily.SansSerif
 
 val Typography = Typography(
-
-    // ============================================================
-    // HEADLINES
-    // ============================================================
-
     headlineLarge = TextStyle(
-        fontFamily = NexoraHeadlineFont,
+        fontFamily = NexoraFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
         letterSpacing = (-0.5).sp
     ),
-
-    // ============================================================
-    // TITLES
-    // ============================================================
-
+    headlineMedium = TextStyle(
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
+        letterSpacing = (-0.5).sp
+    ),
     titleLarge = TextStyle(
-        fontFamily = NexoraHeadlineFont,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
-
-    // ============================================================
-    // BODY
-    // ============================================================
-
+    titleMedium = TextStyle(
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.1.sp
+    ),
+    bodyLarge = TextStyle(
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.5.sp
+    ),
     bodyMedium = TextStyle(
-        fontFamily = NexoraBodyFont,
+        fontFamily = NexoraFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.sp
+        letterSpacing = 0.25.sp
     ),
-
-    // ============================================================
-    // SMALL LABELS
-    // ============================================================
-
-    labelSmall = TextStyle(
-        fontFamily = NexoraBodyFont,
+    labelLarge = TextStyle(
+        fontFamily = NexoraFontFamily,
         fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.1.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = NexoraFontFamily,
+        fontWeight = FontWeight.Bold,
         fontSize = 11.sp,
-        lineHeight = 14.sp,
-        letterSpacing = 1.sp
+        lineHeight = 16.sp,
+        letterSpacing = 0.5.sp
     )
 )

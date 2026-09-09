@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.example.nexora.ai.evaluation.AiEvaluationMetric
 import com.example.nexora.ai.evaluation.AiEvaluationResult
 import com.example.nexora.ai.evaluation.AiEvaluationViewModel
+import com.example.nexora.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,19 +27,21 @@ fun AiEvaluationScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
+        containerColor = NexoraBackground,
         topBar = {
             TopAppBar(
-                title = { Text("Nexora AI Benchmarks") },
+                title = { Text("Benchmarks", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = NexoraPrimaryText)
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.runFullBenchmark() }) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Run All")
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Run All", tint = NexoraPrimaryGreen)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { padding ->
@@ -47,7 +51,7 @@ fun AiEvaluationScreen(
                 .fillMaxSize()
         ) {
             if (uiState.isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = NexoraPrimaryGreen, trackColor = NexoraSoftGreen)
             }
 
             if (uiState.report == null && !uiState.isLoading) {
@@ -55,28 +59,36 @@ fun AiEvaluationScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No benchmark data yet. Tap the play icon to start.")
+                    Text("No benchmark data yet.", style = MaterialTheme.typography.bodyLarge, color = NexoraMutedText)
                 }
             }
 
             uiState.report?.let { report ->
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    contentPadding = PaddingValues(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     item {
-                        SummaryCard(
-                            passRate = report.overallPassRate,
-                            totalCases = report.results.size
-                        )
+                        NexoraCard(containerColor = NexoraPrimaryGreen) {
+                            Column(modifier = Modifier.padding(24.dp)) {
+                                Text("Overall Quality Score", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.8f))
+                                Text(
+                                    "${(report.overallPassRate * 100).toInt()}%",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Text("Based on ${report.results.size} scenarios", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
+                            }
+                        }
                     }
 
                     item {
                         Text(
-                            "Category Metrics",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            "Categories",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = NexoraPrimaryText
                         )
                     }
 
@@ -87,8 +99,8 @@ fun AiEvaluationScreen(
                     item {
                         Text(
                             "Detailed Results",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.titleMedium,
+                            color = NexoraPrimaryText
                         )
                     }
 
@@ -102,44 +114,20 @@ fun AiEvaluationScreen(
 }
 
 @Composable
-fun SummaryCard(passRate: Float, totalCases: Int) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Overall Quality Score", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "${(passRate * 100).toInt()}%",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Black
-            )
-            Text("Based on $totalCases deterministic scenarios", style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
 fun MetricRow(metric: AiEvaluationMetric) {
-    Surface(
-        tonalElevation = 2.dp,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    NexoraCard {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
-                Text(metric.category, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                Text("${metric.passedCases}/${metric.totalCases} passed", style = MaterialTheme.typography.bodySmall)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(metric.category, style = MaterialTheme.typography.titleSmall, color = NexoraPrimaryText)
+                Text("${metric.passedCases}/${metric.totalCases} passed", style = MaterialTheme.typography.labelMedium, color = NexoraMutedText)
             }
             Text(
                 "${(metric.passRate * 100).toInt()}%",
-                color = if (metric.passRate >= 0.8f) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error,
+                color = if (metric.passRate >= 0.8f) NexoraPrimaryGreen else NexoraError,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -149,20 +137,21 @@ fun MetricRow(metric: AiEvaluationMetric) {
 
 @Composable
 fun ResultItem(result: AiEvaluationResult) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 if (result.passed) Icons.Default.CheckCircle else Icons.Default.Warning,
                 contentDescription = null,
-                tint = if (result.passed) Color(0xFF4CAF50) else Color.Red,
+                tint = if (result.passed) NexoraPrimaryGreen else NexoraError,
                 modifier = Modifier.size(16.dp)
             )
-            Spacer(Modifier.width(8.dp))
-            Text(result.caseId, style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.width(12.dp))
+            Text(result.caseId, style = MaterialTheme.typography.labelLarge, color = NexoraPrimaryText)
             Spacer(Modifier.weight(1f))
-            Text("${result.latencies.processingTimeMs}ms", style = MaterialTheme.typography.labelSmall)
+            Text("${result.latencies.processingTimeMs}ms", style = MaterialTheme.typography.labelSmall, color = NexoraMutedText)
         }
-        Text(result.actualMessage, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-        Divider(modifier = Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(result.actualMessage, style = MaterialTheme.typography.bodyMedium, color = NexoraMutedText, maxLines = 2)
+        HorizontalDivider(modifier = Modifier.padding(top = 12.dp), color = NexoraBorder)
     }
 }

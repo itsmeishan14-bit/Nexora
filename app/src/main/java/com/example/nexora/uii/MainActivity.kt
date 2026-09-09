@@ -6,37 +6,24 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import com.example.nexora.ai.AiAction
-import com.example.nexora.ai.AiActionExecutor
-import com.example.nexora.ai.AiContextBuilder
-import com.example.nexora.ai.AiRecommendation
-import com.example.nexora.ai.AiRecommendationType
-import com.example.nexora.ai.LocalNexoraAiService
-import com.example.nexora.ai.NexoraAiEngine
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
+import com.example.nexora.ai.*
 import com.example.nexora.data.DailyProgressEntity
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
-import com.example.nexora.ui.theme.NexoraTheme
+import com.example.nexora.ui.theme.*
 import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -47,44 +34,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-
             NexoraTheme {
-
                 val context = LocalContext.current
-
-                val database = remember {
-                    NexoraDatabase.getDatabase(context)
-                }
-
-                val repository = remember {
-                    NexoraRepository(database)
-                }
-
-                // ============================================================
-                // NEXORA AI
-                // ============================================================
+                val database = remember { NexoraDatabase.getDatabase(context) }
+                val repository = remember { NexoraRepository(database) }
 
                 val aiEngine = remember {
-
-                    val contextBuilder =
-                        AiContextBuilder(repository)
-
-                    // 1. Define Providers
-                    val localProvider = com.example.nexora.ai.LocalAiProvider()
-                    
-                    // 2. Manage Providers (Cloud config can be loaded securely here)
-                    val providerManager = com.example.nexora.ai.AiProviderManager(
-                        localProvider = localProvider
-                    )
-
-                    // 3. Orchestrate with Service
-                    val aiService = com.example.nexora.ai.LocalNexoraAiService(
-                        providerManager = providerManager
-                    )
-                    
+                    val contextBuilder = AiContextBuilder(repository)
+                    val localProvider = LocalAiProvider()
+                    val providerManager = AiProviderManager(localProvider = localProvider)
+                    val aiService = LocalNexoraAiService(providerManager = providerManager)
                     val actionExecutor = AiActionExecutor(repository)
-                    
-                    val toolRegistry = com.example.nexora.ai.AiToolRegistry(repository, actionExecutor)
+                    val toolRegistry = AiToolRegistry(repository, actionExecutor)
 
                     NexoraAiEngine(
                         contextBuilder = contextBuilder,
@@ -96,122 +57,54 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val scope = rememberCoroutineScope()
+                val tasks = remember { mutableStateListOf<PremiumTask>() }
+                val goals = remember { mutableStateListOf<NexoraGoal>() }
+                val progressHistory = remember { mutableStateListOf<DailyProgress>() }
 
-                // ============================================================
-                // APP DATA
-                // ============================================================
+                var selectedScreen by remember { mutableStateOf("home") }
+                var selectedGoal by remember { mutableStateOf<NexoraGoal?>(null) }
+                var editingGoal by remember { mutableStateOf<NexoraGoal?>(null) }
+                var taskGoal by remember { mutableStateOf<NexoraGoal?>(null) }
+                var topAiInsight by remember { mutableStateOf<String?>(null) }
+                var homeProactiveInsight by remember { mutableStateOf<AiRecommendation?>(null) }
+                var homeProposedAction by remember { mutableStateOf<AiAction?>(null) }
+                var personalContext by remember { mutableStateOf<AiPersonalContext?>(null) }
+                var proactiveSignals by remember { mutableStateOf<List<AiProactiveSignal>>(emptyList()) }
 
-                val tasks = remember {
-                    mutableStateListOf<PremiumTask>()
-                }
-
-                val goals = remember {
-                    mutableStateListOf<NexoraGoal>()
-                }
-
-                val progressHistory = remember {
-                    mutableStateListOf<DailyProgress>()
-                }
-
-                // ============================================================
-                // NAVIGATION
-                // ============================================================
-
-                var selectedScreen by remember {
-                    mutableStateOf("home")
-                }
-
-                var selectedGoal by remember {
-                    mutableStateOf<NexoraGoal?>(null)
-                }
-
-                var editingGoal by remember {
-                    mutableStateOf<NexoraGoal?>(null)
-                }
-
-                var taskGoal by remember {
-                    mutableStateOf<NexoraGoal?>(null)
-                }
-
-                var topAiInsight by remember {
-                    mutableStateOf<String?>(null)
-                }
-
-                var homeProactiveInsight by remember {
-                    mutableStateOf<AiRecommendation?>(null)
-                }
-
-                var homeProposedAction by remember {
-                    mutableStateOf<AiAction?>(null)
-                }
-
-                var personalContext by remember {
-                    mutableStateOf<com.example.nexora.ai.AiPersonalContext?>(null)
-                }
-
-                var proactiveSignals by remember {
-                    mutableStateOf<List<com.example.nexora.ai.AiProactiveSignal>>(emptyList())
-                }
-
-                // ============================================================
-                // LOAD DATA FROM ROOM
-                // ============================================================
-
+                // LOAD DATA
                 LaunchedEffect(Unit) {
-
-                    val savedTasks =
-                        repository
-                            .observeTasks()
-                            .first()
-
-                    val savedGoals =
-                        repository
-                            .observeGoals()
-                            .first()
-
-                    val savedProgress =
-                        repository
-                            .observeDailyProgress()
-                            .first()
+                    val savedTasks = repository.observeTasks().first()
+                    val savedGoals = repository.observeGoals().first()
+                    val savedProgress = repository.observeDailyProgress().first()
 
                     tasks.clear()
                     tasks.addAll(savedTasks)
-
                     goals.clear()
                     goals.addAll(savedGoals)
-
                     progressHistory.clear()
+                    progressHistory.addAll(savedProgress.map { item ->
+                        DailyProgress(
+                            date = LocalDate.parse(item.date),
+                            tasksPlanned = item.tasksPlanned,
+                            tasksCompleted = item.tasksCompleted,
+                            focusMinutes = item.focusMinutes,
+                            goalsWorkedOn = item.goalsWorkedOn,
+                            carriedTasks = item.carriedTasks
+                        )
+                    })
 
-                    progressHistory.addAll(
-                        savedProgress.map { item ->
-
-                            DailyProgress(
-                                date = LocalDate.parse(item.date),
-                                tasksPlanned = item.tasksPlanned,
-                                tasksCompleted = item.tasksCompleted,
-                                focusMinutes = item.focusMinutes,
-                                goalsWorkedOn = item.goalsWorkedOn,
-                                carriedTasks = item.carriedTasks
-                            )
-                        }
-                    )
-
-                    // Fetch top AI insight
                     topAiInsight = aiEngine.getTopInsight()
-
                     val context = aiEngine.getContext()
                     personalContext = context.personalContext
                     
-                    // Don't block UI for initial analysis
                     scope.launch {
-                        val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
+                        val response = aiEngine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
                         proactiveSignals = response.proactiveSignals
-                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
+                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= AiPriority.HIGH }
                         
-                        // Simple heuristic for Home proposal: if many incomplete tasks, suggest rescheduling
                         if (context.incompleteTasks.size >= 8) {
                             homeProposedAction = AiAction(
-                                type = com.example.nexora.ai.AiActionType.RESCHEDULE_TASK,
+                                type = AiActionType.RESCHEDULE_TASK,
                                 title = "High Workload Detected",
                                 description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
                                 reason = "Too many tasks today reduces focus.",
@@ -221,828 +114,304 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // ============================================================
-                // TODAY'S PROGRESS
-                // ============================================================
-
                 fun updateTodayProgress() {
-
                     val today = LocalDate.now()
+                    val completedCount = tasks.count { it.completed }
+                    val totalCount = tasks.size
+                    val goalsWorkedOn = tasks.mapNotNull { it.goalTitle }.distinct().size
 
-                    val completed =
-                        tasks.count { it.completed }
+                    val todayProgress = DailyProgress(
+                        date = today,
+                        tasksPlanned = totalCount,
+                        tasksCompleted = completedCount,
+                        focusMinutes = 0,
+                        goalsWorkedOn = goalsWorkedOn,
+                        carriedTasks = 0
+                    )
 
-                    val total =
-                        tasks.size
+                    val index = progressHistory.indexOfFirst { it.date == today }
+                    if (index >= 0) progressHistory[index] = todayProgress else progressHistory.add(todayProgress)
 
-                    val goalsWorkedOn =
-                        tasks
-                            .mapNotNull { it.goalTitle }
-                            .distinct()
-                            .size
-
-                    val todayProgress =
-                        DailyProgress(
-                            date = today,
-                            tasksPlanned = total,
-                            tasksCompleted = completed,
+                    scope.launch {
+                        repository.saveDailyProgress(DailyProgressEntity(
+                            date = today.toString(),
+                            tasksPlanned = totalCount,
+                            tasksCompleted = completedCount,
                             focusMinutes = 0,
                             goalsWorkedOn = goalsWorkedOn,
                             carriedTasks = 0
-                        )
+                        ))
 
-                    val index =
-                        progressHistory.indexOfFirst {
-                            it.date == today
-                        }
-
-                    if (index >= 0) {
-
-                        progressHistory[index] =
-                            todayProgress
-
-                    } else {
-
-                        progressHistory.add(
-                            todayProgress
-                        )
-                    }
-
-                    scope.launch {
-
-                        repository.saveDailyProgress(
-                            DailyProgressEntity(
-                                date = today.toString(),
-                                tasksPlanned = total,
-                                tasksCompleted = completed,
-                                focusMinutes = 0,
-                                goalsWorkedOn = goalsWorkedOn,
-                                carriedTasks = 0
-                            )
-                        )
-
-                        // Refresh proactive context
                         val context = aiEngine.getContext()
                         personalContext = context.personalContext
-                        val response = aiEngine.processRequest(com.example.nexora.ai.AiRequest(com.example.nexora.ai.AiRequestType.PROACTIVE_ANALYSIS))
+                        val response = aiEngine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
                         proactiveSignals = response.proactiveSignals
-                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= com.example.nexora.ai.AiPriority.HIGH }
+                        homeProactiveInsight = response.recommendations.firstOrNull { it.priority >= AiPriority.HIGH }
                     }
                 }
-
-                // ============================================================
-                // GOAL PROGRESS
-                // ============================================================
 
                 fun refreshGoalProgress() {
-
                     goals.forEachIndexed { index, goal ->
-
-                        val progress =
-                            calculateGoalProgress(
-                                goal = goal,
-                                tasks = tasks
-                            )
-
-                        val updatedGoal =
-                            goal.copy(
-                                progress = progress
-                            )
-
-                        goals[index] =
-                            updatedGoal
-
-                        if (
-                            selectedGoal?.id ==
-                            goal.id
-                        ) {
-
-                            selectedGoal =
-                                updatedGoal
-                        }
-
-                        scope.launch {
-
-                            repository.updateGoal(
-                                updatedGoal
-                            )
-                        }
+                        val progress = calculateGoalProgress(goal = goal, tasks = tasks)
+                        val updatedGoal = goal.copy(progress = progress)
+                        goals[index] = updatedGoal
+                        if (selectedGoal?.id == goal.id) selectedGoal = updatedGoal
+                        scope.launch { repository.updateGoal(updatedGoal) }
                     }
                 }
 
-                // ============================================================
-                // APP
-                // ============================================================
-
                 Scaffold(
-
                     bottomBar = {
-
-                        if (
-                            selectedScreen != "addTask" &&
-                            selectedScreen != "addGoal" &&
-                            selectedScreen != "goalDetails" &&
-                            selectedScreen != "aiGoalDecomposer"
-                        ) {
-
-                            NavigationBar {
-
+                        val showBar = selectedScreen in listOf("home", "tasks", "goals", "insights")
+                        if (showBar) {
+                            NavigationBar(
+                                containerColor = Color.White,
+                                tonalElevation = 0.dp
+                            ) {
                                 NavigationBarItem(
-                                    selected =
-                                        selectedScreen == "home",
-
-                                    onClick = {
-                                        selectedScreen = "home"
-                                    },
-
-                                    icon = {
-                                        Icon(
-                                            imageVector =
-                                                Icons.Default.Home,
-                                            contentDescription =
-                                                "Home"
-                                        )
-                                    },
-
-                                    label = {
-                                        Text("Home")
-                                    }
+                                    selected = selectedScreen == "home",
+                                    onClick = { selectedScreen = "home" },
+                                    icon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                                    label = { Text("Home", style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = NexoraPrimaryGreen,
+                                        selectedTextColor = NexoraPrimaryGreen,
+                                        unselectedIconColor = NexoraMutedText,
+                                        unselectedTextColor = NexoraMutedText,
+                                        indicatorColor = NexoraSoftGreen
+                                    )
                                 )
-
                                 NavigationBarItem(
-                                    selected =
-                                        selectedScreen == "tasks",
-
-                                    onClick = {
-                                        selectedScreen = "tasks"
-                                    },
-
-                                    icon = {
-                                        Icon(
-                                            imageVector =
-                                                Icons.Default.CheckCircle,
-                                            contentDescription =
-                                                "Tasks"
-                                        )
-                                    },
-
-                                    label = {
-                                        Text("Tasks")
-                                    }
+                                    selected = selectedScreen == "tasks",
+                                    onClick = { selectedScreen = "tasks" },
+                                    icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                                    label = { Text("Tasks", style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = NexoraPrimaryGreen,
+                                        selectedTextColor = NexoraPrimaryGreen,
+                                        unselectedIconColor = NexoraMutedText,
+                                        unselectedTextColor = NexoraMutedText,
+                                        indicatorColor = NexoraSoftGreen
+                                    )
                                 )
-
                                 NavigationBarItem(
-                                    selected =
-                                        selectedScreen == "goals",
-
-                                    onClick = {
-                                        selectedScreen = "goals"
-                                    },
-
-                                    icon = {
-                                        Icon(
-                                            imageVector =
-                                                Icons.Default.Flag,
-                                            contentDescription =
-                                                "Goals"
-                                        )
-                                    },
-
-                                    label = {
-                                        Text("Goals")
-                                    }
+                                    selected = selectedScreen == "goals",
+                                    onClick = { selectedScreen = "goals" },
+                                    icon = { Icon(Icons.Default.Flag, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                                    label = { Text("Goals", style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = NexoraPrimaryGreen,
+                                        selectedTextColor = NexoraPrimaryGreen,
+                                        unselectedIconColor = NexoraMutedText,
+                                        unselectedTextColor = NexoraMutedText,
+                                        indicatorColor = NexoraSoftGreen
+                                    )
                                 )
-
                                 NavigationBarItem(
-                                    selected =
-                                        selectedScreen == "insights",
-
-                                    onClick = {
-                                        selectedScreen = "insights"
-                                    },
-
-                                    icon = {
-                                        Icon(
-                                            imageVector =
-                                                Icons.Default.Insights,
-                                            contentDescription =
-                                                "Insights"
-                                        )
-                                    },
-
-                                    label = {
-                                        Text("AI")
-                                    }
+                                    selected = selectedScreen == "insights",
+                                    onClick = { selectedScreen = "insights" },
+                                    icon = { Icon(Icons.Default.Insights, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                                    label = { Text("AI", style = MaterialTheme.typography.labelSmall) },
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = NexoraPrimaryGreen,
+                                        selectedTextColor = NexoraPrimaryGreen,
+                                        unselectedIconColor = NexoraMutedText,
+                                        unselectedTextColor = NexoraMutedText,
+                                        indicatorColor = NexoraSoftGreen
+                                    )
                                 )
                             }
                         }
                     }
-
                 ) { paddingValues ->
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(paddingValues)
-                    ) {
-
+                    Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
                         when (selectedScreen) {
-
-                            // ==================================================
-                            // HOME
-                            // ==================================================
-
-                            "home" -> {
-
-                                HomeScreen(
-
-                                    tasks = tasks,
-
-                                    progressHistory =
-                                        progressHistory,
-
-                                    topPattern = topAiInsight,
-                                    
-                                    proactiveInsight = homeProactiveInsight,
-
-                                    proactiveSignals = proactiveSignals,
-                                    
-                                    proposedAction = homeProposedAction,
-                                    
-                                    onApproveAction = { action ->
-                                        scope.launch {
-                                            aiEngine.executeAction(action)
-                                            homeProposedAction = null
-                                            
-                                            // Refresh data
-                                            val savedTasks = repository.observeTasks().first()
-                                            tasks.clear()
-                                            tasks.addAll(savedTasks)
-                                            updateTodayProgress()
-                                        }
-                                    },
-                                    
-                                    onDismissAction = {
+                            "home" -> HomeScreen(
+                                tasks = tasks,
+                                goals = goals,
+                                progressHistory = progressHistory,
+                                onAddTask = { selectedScreen = "addTask" },
+                                onToggleTask = { task ->
+                                    val index = tasks.indexOfFirst { it.id == task.id }
+                                    if (index >= 0) {
+                                        val updated = task.copy(completed = !task.completed)
+                                        tasks[index] = updated
+                                        scope.launch { repository.updateTask(updated) }
+                                        refreshGoalProgress()
+                                        updateTodayProgress()
+                                    }
+                                },
+                                proactiveSignals = proactiveSignals,
+                                proposedAction = homeProposedAction,
+                                onApproveAction = { action ->
+                                    scope.launch {
+                                        aiEngine.executeAction(action)
                                         homeProposedAction = null
-                                    },
-
-                                    onAddTask = {
-
-                                        taskGoal = null
-                                        selectedScreen = "addTask"
-                                    },
-
-                                    onToggleTask = { task ->
-
-                                        val index =
-                                            tasks.indexOfFirst {
-                                                it.id == task.id
-                                            }
-
-                                        if (index >= 0) {
-
-                                            val updated =
-                                                task.copy(
-                                                    completed =
-                                                        !task.completed
-                                                )
-
-                                            tasks[index] =
-                                                updated
-
-                                            scope.launch {
-
-                                                repository.updateTask(
-                                                    updated
-                                                )
-                                            }
-
-                                            refreshGoalProgress()
-                                            updateTodayProgress()
-                                        }
+                                        val savedTasks = repository.observeTasks().first()
+                                        tasks.clear()
+                                        tasks.addAll(savedTasks)
+                                        updateTodayProgress()
                                     }
-                                )
-                            }
-
-                            // ==================================================
-                            // TASKS
-                            // ==================================================
-
-                            "tasks" -> {
-
-                                TasksScreen(
-
-                                    tasks = tasks,
-
-                                    onAddTask = {
-
-                                        taskGoal = null
-                                        selectedScreen = "addTask"
-                                    },
-
-                                    onToggleTask = { task ->
-
-                                        val index =
-                                            tasks.indexOfFirst {
-                                                it.id == task.id
-                                            }
-
-                                        if (index >= 0) {
-
-                                            val updated =
-                                                task.copy(
-                                                    completed =
-                                                        !task.completed
-                                                )
-
-                                            tasks[index] =
-                                                updated
-
-                                            scope.launch {
-
-                                                repository.updateTask(
-                                                    updated
-                                                )
-                                            }
-
-                                            refreshGoalProgress()
-                                            updateTodayProgress()
-                                        }
-                                    },
-
-                                    onAiAction = {
-                                        selectedScreen = "insights"
-                                    },
-
-                                    onDeleteTask = { task ->
-
-                                        scope.launch {
-
-                                            repository.deleteTask(
-                                                task
-                                            )
-
-                                            tasks.removeAll {
-                                                it.id == task.id
-                                            }
-
-                                            refreshGoalProgress()
-                                            updateTodayProgress()
-                                        }
+                                },
+                                onDismissAction = { homeProposedAction = null }
+                            )
+                            "tasks" -> TasksScreen(
+                                tasks = tasks,
+                                onAddTask = { selectedScreen = "addTask" },
+                                onToggleTask = { task ->
+                                    val index = tasks.indexOfFirst { it.id == task.id }
+                                    if (index >= 0) {
+                                        val updated = task.copy(completed = !task.completed)
+                                        tasks[index] = updated
+                                        scope.launch { repository.updateTask(updated) }
+                                        refreshGoalProgress()
+                                        updateTodayProgress()
                                     }
-                                )
-                            }
-
-                            // ==================================================
-                            // GOALS
-                            // ==================================================
-
-                            "goals" -> {
-
-                                GoalScreen(
-
-                                    goals = goals,
-
-                                    personalContext = personalContext,
-
-                                    onAddGoal = {
-
-                                        editingGoal = null
-                                        selectedGoal = null
-                                        selectedScreen = "addGoal"
-                                    },
-
-                                    onEditGoal = { goal ->
-
-                                        editingGoal = goal
-                                        selectedGoal = goal
-                                        selectedScreen = "addGoal"
-                                    },
-
-                                    onOpenGoal = { goal ->
-
-                                        selectedGoal = goal
-                                        selectedScreen = "goalDetails"
+                                },
+                                onAiAction = { selectedScreen = "insights" },
+                                onDeleteTask = { task ->
+                                    scope.launch {
+                                        repository.deleteTask(task)
+                                        tasks.removeAll { it.id == task.id }
+                                        refreshGoalProgress()
+                                        updateTodayProgress()
                                     }
-                                )
-                            }
-
-                            // ==================================================
-                            // GOAL DETAILS
-                            // ==================================================
-
-                            "goalDetails" -> {
-
-                                selectedGoal?.let { goal ->
-
-                                    GoalDetailsScreen(
-
-                                        goal = goal,
-
-                                        relatedTasks =
-                                            tasks.filter {
-                                                it.goalTitle ==
-                                                        goal.title
-                                            },
-
-                                        personalContext = personalContext,
-
-                                        onBack = {
-
-                                            selectedGoal = null
-                                            selectedScreen = "goals"
-                                        },
-
-                                        onEdit = {
-
-                                            editingGoal = goal
-                                            selectedScreen = "addGoal"
-                                        },
-
-                                        onDelete = {
-
-                                            scope.launch {
-
-                                                repository.deleteGoal(
-                                                    goal
-                                                )
-
-                                                val linkedTasks =
-                                                    tasks.filter {
-                                                        it.goalTitle ==
-                                                                goal.title
-                                                    }
-
-                                                linkedTasks.forEach { task ->
-
-                                                    repository.updateTask(
-                                                        task.copy(
-                                                            goalTitle = null
-                                                        )
-                                                    )
-                                                }
-
-                                                goals.removeAll {
-                                                    it.id == goal.id
-                                                }
-
-                                                tasks.replaceAll { task ->
-
-                                                    if (
-                                                        task.goalTitle ==
-                                                        goal.title
-                                                    ) {
-
-                                                        task.copy(
-                                                            goalTitle = null
-                                                        )
-
-                                                    } else {
-
-                                                        task
-                                                    }
-                                                }
-
-                                                selectedGoal = null
-                                                taskGoal = null
-
-                                                updateTodayProgress()
-
-                                                selectedScreen = "goals"
-                                            }
-                                        },
-
-                                        onToggleTask = { task ->
-
-                                            val index =
-                                                tasks.indexOfFirst {
-                                                    it.id == task.id
-                                                }
-
-                                            if (index >= 0) {
-
-                                                val updated =
-                                                    task.copy(
-                                                        completed =
-                                                            !task.completed
-                                                    )
-
-                                                tasks[index] =
-                                                    updated
-
-                                                scope.launch {
-
-                                                    repository.updateTask(
-                                                        updated
-                                                    )
-                                                }
-
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-                                        },
-
-                                        onAddTask = {
-
-                                            taskGoal = goal
-                                            selectedScreen = "addTask"
-                                        },
-
-                                        onDecomposeGoal = {
-                                            selectedGoal = goal
-                                            selectedScreen = "aiGoalDecomposer"
-                                        }
-                                    )
                                 }
-                            }
-
-                            // ==================================================
-                            // AI
-                            // ==================================================
-
-                            "insights" -> {
-
-                                AiScreen(
-
-                                    engine = aiEngine,
-
-                                    onOpenGoalDecomposer = {
-
-                                        selectedScreen =
-                                            "aiGoalDecomposer"
-                                    },
-
-                                    onOpenAutomations = {
-                                        selectedScreen = "aiAutomations"
-                                    },
-
-                                    onOpenEvaluation = {
-                                        selectedScreen = "aiBenchmarks"
-                                    },
-
-                                    onRecommendationAction = { recommendation ->
-
-                                        recommendation.relatedGoalId?.let { goalId ->
-
-                                            val goal =
-                                                goals.find {
-                                                    it.id == goalId
-                                                }
-
-                                            if (goal != null) {
-
-                                                selectedGoal = goal
-                                                selectedScreen = "goalDetails"
-                                            }
-                                        }
-
-                                        recommendation.relatedTaskId?.let { _ ->
-
-                                            selectedScreen = "tasks"
-                                        }
-                                    },
-
-                                    onTaskAction = { taskId ->
-                                        selectedScreen = "tasks"
-                                    }
-                                )
-                            }
-
-                            // ==================================================
-                            // AI GOAL DECOMPOSER
-                            // ==================================================
-
-                            "aiGoalDecomposer" -> {
-
-                                AiGoalDecomposerScreen(
-
-                                    engine = aiEngine,
-
-                                    onBack = {
-
-                                        selectedScreen =
-                                            "insights"
-                                    },
-
-                                    onTasksCreated = {
+                            )
+                            "goals" -> GoalScreen(
+                                goals = goals,
+                                personalContext = personalContext,
+                                onAddGoal = { selectedScreen = "addGoal" },
+                                onEditGoal = { goal -> editingGoal = goal; selectedScreen = "addGoal" },
+                                onOpenGoal = { goal -> selectedGoal = goal; selectedScreen = "goalDetails" }
+                            )
+                            "goalDetails" -> selectedGoal?.let { goal ->
+                                GoalDetailsScreen(
+                                    goal = goal,
+                                    relatedTasks = tasks.filter { it.goalTitle == goal.title },
+                                    personalContext = personalContext,
+                                    onBack = { selectedGoal = null; selectedScreen = "goals" },
+                                    onEdit = { editingGoal = goal; selectedScreen = "addGoal" },
+                                    onDelete = {
                                         scope.launch {
-                                            val savedTasks = repository.observeTasks().first()
-                                            tasks.clear()
-                                            tasks.addAll(savedTasks)
-                                            
+                                            repository.deleteGoal(goal)
+                                            val linkedTasks = tasks.filter { it.goalTitle == goal.title }
+                                            linkedTasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
+                                            goals.removeAll { it.id == goal.id }
+                                            tasks.replaceAll { if (it.goalTitle == goal.title) it.copy(goalTitle = null) else it }
+                                            selectedGoal = null
+                                            updateTodayProgress()
+                                            selectedScreen = "goals"
+                                        }
+                                    },
+                                    onToggleTask = { task ->
+                                        val index = tasks.indexOfFirst { it.id == task.id }
+                                        if (index >= 0) {
+                                            val updated = task.copy(completed = !task.completed)
+                                            tasks[index] = updated
+                                            scope.launch { repository.updateTask(updated) }
                                             refreshGoalProgress()
                                             updateTodayProgress()
                                         }
-                                    }
+                                    },
+                                    onAddTask = { taskGoal = goal; selectedScreen = "addTask" },
+                                    onDecomposeGoal = { selectedScreen = "aiGoalDecomposer" }
                                 )
                             }
-
-                            // ==================================================
-                            // AI AUTOMATIONS
-                            // ==================================================
-
+                            "insights" -> AiScreen(
+                                engine = aiEngine,
+                                onOpenGoalDecomposer = { selectedScreen = "aiGoalDecomposer" },
+                                onOpenAutomations = { selectedScreen = "aiAutomations" },
+                                onOpenEvaluation = { selectedScreen = "aiBenchmarks" },
+                                onRecommendationAction = { rec ->
+                                    rec.relatedGoalId?.let { id -> goals.find { it.id == id }?.let { selectedGoal = it; selectedScreen = "goalDetails" } }
+                                    rec.relatedTaskId?.let { selectedScreen = "tasks" }
+                                }
+                            )
+                            "aiGoalDecomposer" -> AiGoalDecomposerScreen(
+                                engine = aiEngine,
+                                onBack = { selectedScreen = "insights" },
+                                onTasksCreated = {
+                                    scope.launch {
+                                        val savedTasks = repository.observeTasks().first()
+                                        tasks.clear()
+                                        tasks.addAll(savedTasks)
+                                        refreshGoalProgress()
+                                        updateTodayProgress()
+                                    }
+                                }
+                            )
                             "aiAutomations" -> {
-                                val aiViewModel: com.example.nexora.ai.NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                val aiViewModel: NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                    factory = object : ViewModelProvider.Factory {
                                         @Suppress("UNCHECKED_CAST")
                                         override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                            return com.example.nexora.ai.NexoraAiViewModel(engine = aiEngine) as T
+                                            return NexoraAiViewModel(engine = aiEngine) as T
                                         }
                                     }
                                 )
                                 val aiUiState by aiViewModel.uiState.collectAsState()
-
                                 AiAutomationScreen(
                                     rules = aiUiState.automationRules,
                                     onBack = { selectedScreen = "insights" },
                                     onToggleRule = { aiViewModel.toggleAutomationRule(it) }
                                 )
                             }
-
-                            // ==================================================
-                            // AI BENCHMARKS
-                            // ==================================================
-
                             "aiBenchmarks" -> {
                                 val evaluationViewModel: com.example.nexora.ai.evaluation.AiEvaluationViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                    factory = object : ViewModelProvider.Factory {
                                         @Suppress("UNCHECKED_CAST")
                                         override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                            return com.example.nexora.ai.evaluation.AiEvaluationViewModel(
-                                                repository = repository,
-                                                engine = aiEngine
-                                            ) as T
+                                            return com.example.nexora.ai.evaluation.AiEvaluationViewModel(repository = repository, engine = aiEngine) as T
                                         }
                                     }
                                 )
-
-                                AiEvaluationScreen(
-                                    viewModel = evaluationViewModel,
-                                    onBack = { selectedScreen = "insights" }
-                                )
+                                AiEvaluationScreen(viewModel = evaluationViewModel, onBack = { selectedScreen = "insights" })
                             }
-
-                            // ==================================================
-                            // ADD TASK
-                            // ==================================================
-
-                            "addTask" -> {
-
-                                AddTaskScreen(
-
-                                    onBack = {
-
-                                        taskGoal = null
-                                        selectedScreen = "tasks"
-                                    },
-
-                                    goals = goals,
-
-                                    selectedGoal = taskGoal,
-
-                                    onSave = {
-                                            title,
-                                            category,
-                                            duration,
-                                            goalTitle,
-                                            priority ->
-
-                                        val newTask =
-                                            PremiumTask(
-                                                title = title,
-                                                category = category,
-                                                duration = duration,
-                                                goalTitle = goalTitle,
-                                                priority = priority,
-                                                completed = false
-                                            )
-
+                            "addTask" -> AddTaskScreen(
+                                onBack = { taskGoal = null; selectedScreen = "tasks" },
+                                goals = goals,
+                                selectedGoal = taskGoal,
+                                onSave = { name, cat, dur, gt, p ->
+                                    val newTask = PremiumTask(title = name, category = cat, duration = dur, goalTitle = gt, priority = p)
+                                    scope.launch {
+                                        repository.addTask(newTask)
+                                        val savedTasks = repository.observeTasks().first()
+                                        tasks.clear()
+                                        tasks.addAll(savedTasks)
+                                        refreshGoalProgress()
+                                        updateTodayProgress()
+                                    }
+                                    taskGoal = null
+                                    selectedScreen = "tasks"
+                                }
+                            )
+                            "addGoal" -> AddGoalScreen(
+                                existingGoal = editingGoal,
+                                onBack = { editingGoal = null; selectedScreen = "goals" },
+                                onSave = { name, cat, td, _ ->
+                                    if (editingGoal == null) {
+                                        val newGoal = NexoraGoal(title = name, category = cat, targetDate = td, progress = 0f)
                                         scope.launch {
-
-                                            repository.addTask(
-                                                newTask
-                                            )
-
-                                            val savedTasks =
-                                                repository
-                                                    .observeTasks()
-                                                    .first()
-
-                                            tasks.clear()
-                                            tasks.addAll(
-                                                savedTasks
-                                            )
-
+                                            repository.addGoal(newGoal)
+                                            val savedGoals = repository.observeGoals().first()
+                                            goals.clear()
+                                            goals.addAll(savedGoals)
                                             refreshGoalProgress()
                                             updateTodayProgress()
                                         }
-
-                                        taskGoal = null
-                                        selectedScreen = "tasks"
+                                    } else {
+                                        val updatedGoal = editingGoal!!.copy(title = name, category = cat, targetDate = td)
+                                        val index = goals.indexOfFirst { it.id == editingGoal!!.id }
+                                        if (index >= 0) goals[index] = updatedGoal
+                                        scope.launch { repository.updateGoal(updatedGoal) }
                                     }
-                                )
-                            }
-
-                            // ==================================================
-                            // ADD / EDIT GOAL
-                            // ==================================================
-
-                            "addGoal" -> {
-
-                                AddGoalScreen(
-
-                                    existingGoal =
-                                        editingGoal,
-
-                                    onBack = {
-
-                                        editingGoal = null
-                                        selectedGoal = null
-                                        selectedScreen = "goals"
-                                    },
-
-                                    onSave = {
-                                            title,
-                                            category,
-                                            targetDate,
-                                            _ ->
-
-                                        if (
-                                            editingGoal == null
-                                        ) {
-
-                                            val newGoal =
-                                                NexoraGoal(
-                                                    title = title,
-                                                    category = category,
-                                                    targetDate =
-                                                        targetDate,
-                                                    progress = 0f
-                                                )
-
-                                            scope.launch {
-
-                                                repository.addGoal(
-                                                    newGoal
-                                                )
-
-                                                val savedGoals =
-                                                    repository
-                                                        .observeGoals()
-                                                        .first()
-
-                                                goals.clear()
-                                                goals.addAll(
-                                                    savedGoals
-                                                )
-
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-
-                                        } else {
-
-                                            val oldGoal =
-                                                editingGoal!!
-
-                                            val updatedGoal =
-                                                oldGoal.copy(
-                                                    title = title,
-                                                    category = category,
-                                                    targetDate =
-                                                        targetDate
-                                                )
-
-                                            val index =
-                                                goals.indexOfFirst {
-                                                    it.id ==
-                                                            oldGoal.id
-                                                }
-
-                                            if (index >= 0) {
-
-                                                goals[index] =
-                                                    updatedGoal
-                                            }
-
-                                            scope.launch {
-
-                                                repository.updateGoal(
-                                                    updatedGoal
-                                                )
-                                            }
-                                        }
-
-                                        editingGoal = null
-                                        selectedGoal = null
-
-                                        refreshGoalProgress()
-                                        updateTodayProgress()
-
-                                        selectedScreen = "goals"
-                                    }
-                                )
-                            }
+                                    editingGoal = null
+                                    refreshGoalProgress()
+                                    updateTodayProgress()
+                                    selectedScreen = "goals"
+                                }
+                            )
                         }
                     }
                 }
