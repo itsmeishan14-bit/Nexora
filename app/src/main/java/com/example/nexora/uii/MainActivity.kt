@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import com.example.nexora.ai.*
+import com.example.nexora.ai.evaluation.AiEvaluationViewModel
 import com.example.nexora.data.DailyProgressEntity
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
@@ -303,12 +304,43 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     )
-                                    "aiAutomations" -> AiAutomationScreen(
-                                        rules = emptyList(), // Load rules via viewmodel properly in production
-                                        onBack = { selectedScreen = "insights" },
-                                        onToggleRule = { /* Handle properly */ }
-                                    )
-                                    "aiBenchmarks" -> { /* Open screen properly */ }
+                                    "aiAutomations" -> {
+                                        val aiViewModel: NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                            factory = remember(aiEngine) {
+                                                object : ViewModelProvider.Factory {
+                                                    @Suppress("UNCHECKED_CAST")
+                                                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                                        return NexoraAiViewModel(engine = aiEngine) as T
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        val aiUiState by aiViewModel.uiState.collectAsState()
+                                        AiAutomationScreen(
+                                            rules = aiUiState.automationRules,
+                                            onBack = { selectedScreen = "insights" },
+                                            onToggleRule = { aiViewModel.toggleAutomationRule(it) }
+                                        )
+                                    }
+                                    "aiBenchmarks" -> {
+                                        val evaluationViewModel: AiEvaluationViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                                            factory = remember(repository, aiEngine) {
+                                                object : ViewModelProvider.Factory {
+                                                    @Suppress("UNCHECKED_CAST")
+                                                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                                        return AiEvaluationViewModel(
+                                                            repository = repository,
+                                                            engine = aiEngine
+                                                        ) as T
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        AiEvaluationScreen(
+                                            viewModel = evaluationViewModel,
+                                            onBack = { selectedScreen = "insights" }
+                                        )
+                                    }
                                     "addTask" -> AddTaskScreen(
                                         onBack = { taskGoal = null; selectedScreen = "tasks" },
                                         goals = goals,
