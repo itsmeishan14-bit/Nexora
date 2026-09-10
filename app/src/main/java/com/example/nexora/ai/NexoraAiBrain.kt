@@ -307,6 +307,7 @@ class NexoraAiBrain(
         // Map signals to recommendations for backward compatibility
         val recommendations = signals.map { signal ->
             AiRecommendation(
+                id = signal.fingerprint,
                 type = mapSignalTypeToRecType(signal.type),
                 title = signal.title,
                 message = signal.message,
@@ -393,6 +394,7 @@ class NexoraAiBrain(
         val signals = proactiveEngine.detectSignals(context)
         val recommendations = signals.map { signal ->
             AiRecommendation(
+                id = signal.fingerprint,
                 type = mapSignalTypeToRecType(signal.type),
                 title = signal.title,
                 message = signal.message,

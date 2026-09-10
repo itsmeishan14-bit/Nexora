@@ -189,7 +189,7 @@ fun AiScreen(
 
                 // RECOMMENDATIONS
                 if (uiState.recommendations.isNotEmpty()) {
-                    items(items = uiState.recommendations, key = { "rec_${it.title}_${it.type}" }) { recommendation ->
+                    items(items = uiState.recommendations, key = { it.id }) { recommendation ->
                         RecommendationCard(recommendation = recommendation, onAction = { rec ->
                             val action = recommendationToAction(rec)
                             if (action != null) viewModel.proposeAction(action) else onRecommendationAction(rec)

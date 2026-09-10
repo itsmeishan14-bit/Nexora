@@ -102,6 +102,7 @@ class AiPlanner {
             val scoreResult = improvedTaskScore(nextTask, context)
             recommendations.add(
                 AiRecommendation(
+                    id = "planner_next_task_${nextTask.id}",
                     type = AiRecommendationType.NEXT_TASK,
                     title = "Start with this",
                     message = buildNextTaskMessage(nextTask, context, scoreResult.second),
@@ -128,6 +129,7 @@ class AiPlanner {
             val confidence = mapAdaptiveConfidence(profile.confidence)
             insights.add(
                 AiRecommendation(
+                    id = "planner_workload_high",
                     type = AiRecommendationType.WARNING,
                     title = "High Workload Warning",
                     message = "You've planned $plannedToday tasks, but you usually complete around $capacity tasks per day.",
@@ -147,6 +149,7 @@ class AiPlanner {
         if (neglectedGoal != null) {
             insights.add(
                 AiRecommendation(
+                    id = "planner_neglected_goal_${neglectedGoal.id}",
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "Goal Neglected",
                     message = "\"${neglectedGoal.title}\" is falling behind and has no tasks planned today.",
@@ -167,6 +170,7 @@ class AiPlanner {
         if (urgentIgnored != null) {
             insights.add(
                 AiRecommendation(
+                    id = "planner_urgent_pending_${urgentIgnored.id}",
                     type = AiRecommendationType.WARNING,
                     title = "Urgent Task Pending",
                     message = "\"${urgentIgnored.title}\" is marked as urgent but remains incomplete.",
@@ -183,6 +187,7 @@ class AiPlanner {
         if (context.carriedTasks > profile.averageCarriedTasks * 1.5 && context.carriedTasks > 2) {
             insights.add(
                 AiRecommendation(
+                    id = "planner_unusual_carryover",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "Unusual Carry-over",
                     message = "You've carried forward ${context.carriedTasks} tasks, which is higher than your usual baseline of ${profile.averageCarriedTasks.toInt()}.",
@@ -198,6 +203,7 @@ class AiPlanner {
         if (context.tasksCompletedToday > profile.averageTasksCompleted && context.tasksCompletedToday >= 3) {
             insights.add(
                 AiRecommendation(
+                    id = "planner_peak_productivity",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "Peak Productivity",
                     message = "You're exceeding your average daily completion rate today. Great job maintaining this momentum!",
@@ -213,6 +219,7 @@ class AiPlanner {
         if (recentEvaluations.any { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }) {
             insights.add(
                 AiRecommendation(
+                    id = "planner_adjustment_planning",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "Planning Adjustment",
                     message = "Nexora noticed recent plans were quite ambitious. I'm adjusting your daily capacity to be more realistic.",
@@ -410,6 +417,7 @@ class AiPlanner {
         if (context.activeGoals.isEmpty()) {
             return listOf(
                 AiRecommendation(
+                    id = "planner_no_goals",
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "No active goals yet",
                     message = "Create a goal and connect tasks to it so Nexora can help guide your progress.",
@@ -438,6 +446,7 @@ class AiPlanner {
 
             recommendations.add(
                 AiRecommendation(
+                    id = "planner_goal_attention_${lowestProgressGoal.id}",
                     type = AiRecommendationType.GOAL_ACTION,
                     title = "Goal needs attention",
                     message = message,
@@ -465,6 +474,7 @@ class AiPlanner {
         if (context.tasksPlannedToday == 0) {
             return listOf(
                 AiRecommendation(
+                    id = "planner_no_plan",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                     title = "Nothing planned yet",
                     message = "Add a few meaningful tasks and Nexora can start learning how your daily workload behaves.",
@@ -482,6 +492,7 @@ class AiPlanner {
             if (completionRate < profile.completionRate * 0.8f) {
                 return listOf(
                     AiRecommendation(
+                        id = "planner_productivity_low",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "Productivity Below Average",
                         message = "Your completion rate is currently ${(completionRate * 100).toInt()}%, which is below your baseline of ${(profile.completionRate * 100).toInt()}%.",
@@ -497,6 +508,7 @@ class AiPlanner {
             completionRate >= 0.8f -> {
                 listOf(
                     AiRecommendation(
+                        id = "planner_momentum",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "You're building momentum",
                         message = "You've completed ${context.tasksCompletedToday} tasks today. You're maintaining a high standard of focus.",
@@ -508,6 +520,7 @@ class AiPlanner {
             completionRate >= 0.5f -> {
                 listOf(
                     AiRecommendation(
+                        id = "planner_solid_progress",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "Solid progress",
                         message = "You're halfway through your plan. Finish the most important remaining task before adding more.",
@@ -519,6 +532,7 @@ class AiPlanner {
             else -> {
                 listOf(
                     AiRecommendation(
+                        id = "planner_focus_needed",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
                         title = "Focus before adding more",
                         message = "Your current completion rate is lower than usual. Try focusing on one task until completion.",

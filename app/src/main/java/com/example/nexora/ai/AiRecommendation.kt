@@ -23,6 +23,7 @@ enum class AiConfidence {
 }
 
 data class AiRecommendation(
+    val id: String = java.util.UUID.randomUUID().toString(),
     val type: AiRecommendationType,
     val title: String,
     val message: String,
