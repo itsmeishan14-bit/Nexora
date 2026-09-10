@@ -40,7 +40,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-
+androidx-compose-material3-windowsizeclass = { group = "androidx.compose.material3", name = "material3-window-size-class" }
 androidx-room-runtime = { group = "androidx.room3", name = "room3-runtime", version.ref = "room" }
 
 androidx-room-compiler = { group = "androidx.room3", name = "room3-compiler", version.ref = "room" }

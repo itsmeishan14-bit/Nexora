@@ -1,12 +1,13 @@
 package com.example.nexora.uii
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.nexora.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,25 +35,26 @@ fun AddGoalScreen(
     val isEditing = existingGoal != null
 
     Scaffold(
-        containerColor = NexoraBackground,
+        containerColor = NexoraBackgroundLight,
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(Color.White)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = NexoraPrimaryText)
+                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = Green10)
                 }
                 TextButton(
                     onClick = {
                         if (goalName.isNotBlank()) {
                             onSave(
                                 goalName.trim(),
-                                category.trim().ifBlank { "Personal" },
-                                targetDate.trim().ifBlank { "No date" },
+                                category.ifBlank { "Personal" },
+                                targetDate.ifBlank { "No date" },
                                 existingGoal?.progress ?: 0f
                             )
                         }
@@ -61,7 +64,7 @@ fun AddGoalScreen(
                     Text(
                         if (isEditing) "Save" else "Create",
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (goalName.isNotBlank()) NexoraPrimaryGreen else NexoraMutedText
+                        color = if (goalName.isNotBlank()) Green60 else Green80
                     )
                 }
             }
@@ -69,72 +72,85 @@ fun AddGoalScreen(
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp)
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp)
         ) {
             Text(
                 text = if (isEditing) "Edit Goal" else "New Goal",
                 style = MaterialTheme.typography.headlineLarge,
-                color = NexoraPrimaryText
+                color = Green10
             )
-            
-            Spacer(modifier = Modifier.height(32.dp))
 
-            // TITLE INPUT
+            // MAIN TITLE INPUT
             TextField(
                 value = goalName,
                 onValueChange = { goalName = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("What's your objective?", style = MaterialTheme.typography.headlineSmall, color = NexoraMutedText) },
+                placeholder = { Text("What's your objective?", style = MaterialTheme.typography.headlineSmall, color = Green80) },
                 textStyle = MaterialTheme.typography.headlineSmall,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = NexoraPrimaryGreen,
-                    unfocusedIndicatorColor = NexoraBorder
+                    focusedIndicatorColor = Green60,
+                    unfocusedIndicatorColor = Gray90
                 ),
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-
-            Spacer(modifier = Modifier.height(40.dp))
 
             // OPTIONS
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 // CATEGORY
-                InputFieldLabel("Category")
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("e.g. Career, Growth") },
-                    shape = NexoraShapes.medium,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NexoraPrimaryGreen,
-                        unfocusedBorderColor = NexoraBorder
+                FormInputField(label = "Category") {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = { category = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Career, Growth, Health...") },
+                        shape = NexoraShapes.medium,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Green60,
+                            unfocusedBorderColor = Gray90
+                        )
                     )
-                )
+                }
 
                 // TARGET DATE
-                InputFieldLabel("Target Date")
-                OutlinedCard(
-                    onClick = { showDatePicker = true },
-                    shape = NexoraShapes.medium,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, NexoraBorder),
-                    colors = CardDefaults.outlinedCardColors(containerColor = Color.Transparent)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                FormInputField(label = "Target Date") {
+                    Surface(
+                        onClick = { showDatePicker = true },
+                        shape = NexoraShapes.medium,
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Gray90),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            targetDate.ifBlank { "Set a deadline" },
-                            color = if (targetDate.isBlank()) NexoraMutedText else NexoraPrimaryText
-                        )
-                        Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = NexoraPrimaryGreen)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = targetDate.ifBlank { "Set a deadline" },
+                                color = if (targetDate.isBlank()) Green40 else Green10
+                            )
+                            Icon(Icons.Default.CalendarMonth, null, tint = Green60)
+                        }
                     }
+                }
+            }
+            
+            // INTELLIGENCE PREVIEW
+            NexoraCard(containerColor = Green95) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBox(Icons.Rounded.AutoAwesome, Green60, Color.White, 24)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "A clear goal helps Nexora prioritize relevant tasks.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Green20
+                    )
                 }
             }
             
@@ -156,7 +172,7 @@ fun AddGoalScreen(
                         showDatePicker = false
                     }
                 ) {
-                    Text("Select", color = NexoraPrimaryGreen, fontWeight = FontWeight.Bold)
+                    Text("Select", color = Green60, fontWeight = FontWeight.Bold)
                 }
             }
         ) {
@@ -166,11 +182,9 @@ fun AddGoalScreen(
 }
 
 @Composable
-private fun InputFieldLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = NexoraMutedText,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
+private fun FormInputField(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = label, style = MaterialTheme.typography.labelLarge, color = Green40)
+        content()
+    }
 }

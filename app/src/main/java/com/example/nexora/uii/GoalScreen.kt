@@ -7,20 +7,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
-import com.example.nexora.ai.AiPersonalContext
-import com.example.nexora.ai.GoalHealthState
+import androidx.compose.ui.unit.sp
+import com.example.nexora.ai.*
 import com.example.nexora.ui.theme.*
 
 @Composable
@@ -35,15 +34,15 @@ fun GoalScreen(
     val completedGoals = remember(goals.toList()) { goals.filter { it.progress >= 1f } }
 
     Scaffold(
-        containerColor = NexoraBackground,
+        containerColor = NexoraBackgroundLight,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddGoal,
-                containerColor = NexoraPrimaryText,
+                containerColor = Green10,
                 contentColor = Color.White,
                 shape = NexoraShapes.medium
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add goal")
+                Icon(Icons.Rounded.Add, contentDescription = null)
             }
         }
     ) { padding ->
@@ -58,7 +57,7 @@ fun GoalScreen(
                 Text(
                     text = "Goals",
                     style = MaterialTheme.typography.headlineLarge,
-                    color = NexoraPrimaryText
+                    color = Green10
                 )
             }
 
@@ -69,9 +68,9 @@ fun GoalScreen(
             } else if (activeGoals.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Strategic focus",
+                        text = "Active Objectives",
                         style = MaterialTheme.typography.titleMedium,
-                        color = NexoraPrimaryText
+                        color = Green10
                     )
                 }
                 items(
@@ -79,7 +78,7 @@ fun GoalScreen(
                     key = { "goal_${it.id}" }
                 ) { goal ->
                     val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
-                    GoalCard(
+                    GoalStrategyCard(
                         goal = goal,
                         healthState = health?.state,
                         onOpen = { onOpenGoal(goal) }
@@ -92,14 +91,14 @@ fun GoalScreen(
                     Text(
                         text = "Achieved",
                         style = MaterialTheme.typography.titleMedium,
-                        color = NexoraMutedText
+                        color = Green40
                     )
                 }
                 items(
                     items = completedGoals,
                     key = { "completed_goal_${it.id}" }
                 ) { goal ->
-                    GoalCard(
+                    GoalStrategyCard(
                         goal = goal,
                         onOpen = { onOpenGoal(goal) }
                     )
@@ -110,59 +109,57 @@ fun GoalScreen(
 }
 
 @Composable
-private fun GoalCard(
+private fun GoalStrategyCard(
     goal: NexoraGoal,
     healthState: GoalHealthState? = null,
     onOpen: () -> Unit
 ) {
     val healthColor = when (healthState) {
-        GoalHealthState.HEALTHY -> NexoraPrimaryGreen
+        GoalHealthState.HEALTHY -> Green60
         GoalHealthState.NEEDS_ATTENTION -> NexoraWarning
         GoalHealthState.AT_RISK -> NexoraError
-        else -> NexoraMutedText
+        else -> Green40
     }
 
-    NexoraCard {
-        Column(
-            modifier = Modifier
-                .clickable { onOpen() }
-                .padding(20.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(NexoraShapes.small)
-                        .background(NexoraSoftGreen),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Flag,
-                        contentDescription = null,
-                        tint = NexoraPrimaryGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
+    NexoraCard(
+        modifier = Modifier.nexoraClickable { onOpen() }
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = goal.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = NexoraPrimaryText
+                        text = goal.category.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Green60,
+                        letterSpacing = 1.sp
                     )
                     Text(
-                        text = "${goal.category} • ${goal.targetDate}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = NexoraMutedText
+                        text = goal.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Green10
                     )
+                    
+                    if (healthState != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(healthColor))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = healthState.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = healthColor
+                            )
+                        }
+                    }
                 }
-
+                
                 Text(
                     text = "${(goal.progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = NexoraPrimaryGreen
+                    style = NumericStyle.copy(fontSize = 24.sp, color = Green60)
                 )
             }
 
@@ -172,29 +169,36 @@ private fun GoalCard(
                 progress = { goal.progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
+                    .height(6.dp)
                     .clip(CircleShape),
-                color = NexoraPrimaryGreen,
-                trackColor = NexoraBorder,
-                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                color = if (healthState == GoalHealthState.AT_RISK) NexoraError else Green60,
+                trackColor = Gray95,
+                strokeCap = StrokeCap.Round
             )
 
-            if (healthState != null) {
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(healthColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    IconBox(Icons.Rounded.Event, Gray95, Green40, 24)
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = healthState.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = healthColor
+                        text = goal.targetDate,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Green40
                     )
                 }
+                
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                    contentDescription = null,
+                    tint = Gray90,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
@@ -202,20 +206,27 @@ private fun GoalCard(
 
 @Composable
 private fun EmptyGoalsState(onAddGoal: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 64.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Aim high.",
-            style = MaterialTheme.typography.titleMedium,
-            color = NexoraMutedText
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        TextButton(onClick = onAddGoal) {
-            Text("Create your first goal", color = NexoraPrimaryGreen)
+    NexoraCard(modifier = Modifier.padding(top = 40.dp)) {
+        Column(
+            modifier = Modifier.padding(32.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Rounded.Flag, null, tint = Gray95, modifier = Modifier.size(64.dp))
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Give Nexora something meaningful to work toward.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = Green40,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = onAddGoal,
+                colors = ButtonDefaults.buttonColors(containerColor = Green60),
+                shape = NexoraShapes.medium
+            ) {
+                Text("Define a Goal")
+            }
         }
     }
 }

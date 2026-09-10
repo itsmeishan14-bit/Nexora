@@ -1,14 +1,11 @@
 package com.example.nexora.uii
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.nexora.ui.theme.*
 
 @Composable
@@ -23,44 +21,38 @@ fun AddTaskScreen(
     onBack: () -> Unit,
     goals: List<NexoraGoal>,
     selectedGoal: NexoraGoal? = null,
-    onSave: (
-        String,
-        String,
-        String,
-        String?,
-        TaskPriority
-    ) -> Unit
+    onSave: (String, String, String, String?, TaskPriority) -> Unit
 ) {
     var taskName by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var duration by remember { mutableStateOf("") }
-
     var chosenGoal by remember { mutableStateOf(selectedGoal) }
+    var chosenPriority by remember { mutableStateOf(TaskPriority.MEDIUM) }
+    
+    var priorityMenuExpanded by remember { mutableStateOf(false) }
     var goalMenuExpanded by remember { mutableStateOf(false) }
 
-    var chosenPriority by remember { mutableStateOf(TaskPriority.MEDIUM) }
-    var priorityMenuExpanded by remember { mutableStateOf(false) }
-
     Scaffold(
-        containerColor = NexoraBackground,
+        containerColor = NexoraBackgroundLight,
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(Color.White)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = NexoraPrimaryText)
+                    Icon(Icons.Rounded.Close, contentDescription = "Cancel", tint = Green10)
                 }
                 TextButton(
                     onClick = {
                         if (taskName.isNotBlank()) {
                             onSave(
                                 taskName.trim(),
-                                category.trim().ifBlank { "Personal" },
-                                duration.trim().ifBlank { "30 min" },
+                                category.ifBlank { "Personal" },
+                                duration.ifBlank { "30 min" },
                                 chosenGoal?.title,
                                 chosenPriority
                             )
@@ -71,7 +63,7 @@ fun AddTaskScreen(
                     Text(
                         "Done",
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (taskName.isNotBlank()) NexoraPrimaryGreen else NexoraMutedText
+                        color = if (taskName.isNotBlank()) Green60 else Green80
                     )
                 }
             }
@@ -79,140 +71,147 @@ fun AddTaskScreen(
     ) { padding ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp)
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp)
         ) {
             Text(
                 text = "New Task",
                 style = MaterialTheme.typography.headlineLarge,
-                color = NexoraPrimaryText
+                color = Green10
             )
-            
-            Spacer(modifier = Modifier.height(32.dp))
 
-            // TITLE INPUT
+            // MAIN TITLE INPUT
             TextField(
                 value = taskName,
                 onValueChange = { taskName = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("What needs to be done?", style = MaterialTheme.typography.headlineSmall, color = NexoraMutedText) },
+                placeholder = { Text("What needs to be done?", style = MaterialTheme.typography.headlineSmall, color = Green80) },
                 textStyle = MaterialTheme.typography.headlineSmall,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = NexoraPrimaryGreen,
-                    unfocusedIndicatorColor = NexoraBorder
+                    focusedIndicatorColor = Green60,
+                    unfocusedIndicatorColor = Gray90
                 ),
+                modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
-
-            // OPTIONS GRID
+            // OPTIONS
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                 // CATEGORY
-                InputFieldLabel("Category")
-                OutlinedTextField(
-                    value = category,
-                    onValueChange = { category = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("e.g. Work, Health") },
-                    shape = NexoraShapes.medium,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NexoraPrimaryGreen,
-                        unfocusedBorderColor = NexoraBorder
+                FormInputField(label = "Category") {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = { category = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Work, Academic, Personal...") },
+                        shape = NexoraShapes.medium,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Green60,
+                            unfocusedBorderColor = Gray90
+                        )
                     )
-                )
+                }
 
                 // DURATION & PRIORITY
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column(modifier = Modifier.weight(1f)) {
-                        InputFieldLabel("Duration")
-                        OutlinedTextField(
-                            value = duration,
-                            onValueChange = { duration = it },
-                            placeholder = { Text("30 min") },
-                            shape = NexoraShapes.medium,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = NexoraPrimaryGreen,
-                                unfocusedBorderColor = NexoraBorder
+                        FormInputField(label = "Duration") {
+                            OutlinedTextField(
+                                value = duration,
+                                onValueChange = { duration = it },
+                                placeholder = { Text("30 min") },
+                                shape = NexoraShapes.medium,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Green60,
+                                    unfocusedBorderColor = Gray90
+                                )
                             )
-                        )
+                        }
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        InputFieldLabel("Priority")
-                        Box {
-                            OutlinedCard(
-                                onClick = { priorityMenuExpanded = true },
-                                shape = NexoraShapes.medium,
-                                border = BorderStroke(1.dp, NexoraBorder),
-                                colors = CardDefaults.outlinedCardColors(containerColor = Color.Transparent)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                        FormInputField(label = "Priority") {
+                            Box {
+                                Surface(
+                                    onClick = { priorityMenuExpanded = true },
+                                    shape = NexoraShapes.medium,
+                                    color = Color.White,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Gray90),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(chosenPriority.name.lowercase().capitalize())
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(chosenPriority.name.lowercase().replaceFirstChar { it.uppercase() })
+                                        Icon(Icons.Rounded.ArrowDropDown, null)
+                                    }
                                 }
-                            }
-                            DropdownMenu(expanded = priorityMenuExpanded, onDismissRequest = { priorityMenuExpanded = false }) {
-                                TaskPriority.values().forEach { priority ->
-                                    DropdownMenuItem(
-                                        text = { Text(priority.name.lowercase().capitalize()) },
-                                        onClick = {
-                                            chosenPriority = priority
-                                            priorityMenuExpanded = false
-                                        }
-                                    )
+                                DropdownMenu(expanded = priorityMenuExpanded, onDismissRequest = { priorityMenuExpanded = false }) {
+                                    TaskPriority.entries.forEach { p ->
+                                        DropdownMenuItem(
+                                            text = { Text(p.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                            onClick = { chosenPriority = p; priorityMenuExpanded = false }
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // GOAL SELECTION
-                InputFieldLabel("Goal")
-                Box {
-                    OutlinedCard(
-                        onClick = { if (goals.isNotEmpty()) goalMenuExpanded = true },
-                        shape = NexoraShapes.medium,
-                        border = BorderStroke(1.dp, NexoraBorder),
-                        colors = CardDefaults.outlinedCardColors(containerColor = Color.Transparent)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                // GOAL
+                FormInputField(label = "Contributes to Goal") {
+                    Box {
+                        Surface(
+                            onClick = { if (goals.isNotEmpty()) goalMenuExpanded = true },
+                            shape = NexoraShapes.medium,
+                            color = Color.White,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Gray90),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                chosenGoal?.title ?: "Select a goal",
-                                color = if (chosenGoal == null) NexoraMutedText else NexoraPrimaryText
-                            )
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-                    }
-                    DropdownMenu(expanded = goalMenuExpanded, onDismissRequest = { goalMenuExpanded = false }) {
-                        goals.forEach { goal ->
-                            DropdownMenuItem(
-                                text = { Text(goal.title) },
-                                onClick = {
-                                    chosenGoal = goal
-                                    goalMenuExpanded = false
-                                }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("No goal", color = NexoraError) },
-                            onClick = {
-                                chosenGoal = null
-                                goalMenuExpanded = false
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = chosenGoal?.title ?: "No Goal selected",
+                                    color = if (chosenGoal == null) Green40 else Green10
+                                )
+                                Icon(Icons.Rounded.ArrowDropDown, null)
                             }
-                        )
+                        }
+                        DropdownMenu(expanded = goalMenuExpanded, onDismissRequest = { goalMenuExpanded = false }) {
+                            goals.forEach { g ->
+                                DropdownMenuItem(
+                                    text = { Text(g.title) },
+                                    onClick = { chosenGoal = g; goalMenuExpanded = false }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Clear Selection", color = NexoraError) },
+                                onClick = { chosenGoal = null; goalMenuExpanded = false }
+                            )
+                        }
                     }
+                }
+            }
+            
+            // INTELLIGENCE PREVIEW
+            NexoraCard(containerColor = Green95) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBox(Icons.Rounded.AutoAwesome, Green60, Color.White, 24)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (chosenGoal != null) "Contributing to goal progress." else "Adding to your personal workload.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Green20
+                    )
                 }
             }
             
@@ -222,13 +221,9 @@ fun AddTaskScreen(
 }
 
 @Composable
-private fun InputFieldLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = NexoraMutedText,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
+private fun FormInputField(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = label, style = MaterialTheme.typography.labelLarge, color = Green40)
+        content()
+    }
 }
-
-private fun String.capitalize() = this.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }

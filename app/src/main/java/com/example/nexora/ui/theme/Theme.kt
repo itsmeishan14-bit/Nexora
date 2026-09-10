@@ -7,39 +7,34 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 private val LightColorScheme = lightColorScheme(
-    primary = NexoraPrimaryGreen,
-    onPrimary = NexoraWhite,
-    secondary = NexoraSoftGreen,
-    onSecondary = NexoraPrimaryText,
-    background = NexoraBackground,
-    onBackground = NexoraPrimaryText,
-    surface = NexoraWhite,
-    onSurface = NexoraPrimaryText,
-    surfaceVariant = NexoraSoftGreen,
-    onSurfaceVariant = NexoraMutedText,
-    outline = NexoraBorder,
-    error = NexoraError,
-    onError = NexoraWhite
+    primary = Green60,
+    onPrimary = Color.White,
+    secondary = Clay60,
+    onSecondary = Color.White,
+    background = NexoraBackgroundLight,
+    onBackground = NexoraPrimaryTextLight,
+    surface = Color.White,
+    onSurface = NexoraPrimaryTextLight,
+    outline = Gray90,
+    error = NexoraError
 )
 
-// Dark mode currently uses a darker version of the same palette
 private val DarkColorScheme = darkColorScheme(
-    primary = NexoraPrimaryGreen,
-    onPrimary = NexoraPrimaryText,
-    secondary = NexoraPrimaryText,
-    onSecondary = NexoraSoftGreen,
-    background = NexoraPrimaryText,
-    onBackground = NexoraBackground,
-    surface = NexoraPrimaryText,
-    onSurface = NexoraBackground,
-    surfaceVariant = NexoraMutedText,
-    onSurfaceVariant = NexoraSoftGreen,
-    outline = NexoraMutedText,
-    error = NexoraError,
-    onError = NexoraWhite
+    primary = Green60,
+    onPrimary = Green10,
+    secondary = Clay60,
+    onSecondary = Clay10,
+    background = NexoraBackgroundDark,
+    onBackground = NexoraPrimaryTextDark,
+    surface = NexoraSurfaceDark,
+    onSurface = NexoraPrimaryTextDark,
+    surfaceVariant = Green30,
+    outline = Green30,
+    error = NexoraError
 )
 
 val NexoraShapes = Shapes(

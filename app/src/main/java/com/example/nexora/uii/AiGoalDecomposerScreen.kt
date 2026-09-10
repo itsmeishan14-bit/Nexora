@@ -1,5 +1,7 @@
 package com.example.nexora.uii
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,12 +13,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,23 +61,28 @@ fun AiGoalDecomposerScreen(
     var showConfirmDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        containerColor = NexoraBackground,
+        containerColor = NexoraBackgroundLight,
         topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = Color.White,
+                border = BorderStroke(1.dp, Gray90)
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = NexoraPrimaryText)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Green10)
+                    }
+                    Text(
+                        text = "Goal Decomposer",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Green10,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
-                Text(
-                    text = "Goal Decomposer",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = NexoraPrimaryText,
-                    modifier = Modifier.weight(1f)
-                )
             }
         }
     ) { padding ->
@@ -95,22 +99,22 @@ fun AiGoalDecomposerScreen(
                     Text(
                         text = "Break down your objective.",
                         style = MaterialTheme.typography.headlineMedium,
-                        color = NexoraPrimaryText
+                        color = Green10
                     )
                 }
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
                         TextField(
                             value = goalTitle,
                             onValueChange = { goalTitle = it },
-                            placeholder = { Text("What's the goal?", style = MaterialTheme.typography.titleLarge, color = NexoraMutedText) },
+                            placeholder = { Text("What's the goal?", style = MaterialTheme.typography.titleLarge, color = Green80) },
                             textStyle = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.fillMaxWidth(),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = NexoraPrimaryGreen,
-                                unfocusedIndicatorColor = NexoraBorder
+                                focusedIndicatorColor = Green60,
+                                unfocusedIndicatorColor = Gray90
                             )
                         )
                         OutlinedTextField(
@@ -120,8 +124,8 @@ fun AiGoalDecomposerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             shape = NexoraShapes.medium,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = NexoraPrimaryGreen,
-                                unfocusedBorderColor = NexoraBorder
+                                focusedBorderColor = Green60,
+                                unfocusedBorderColor = Gray90
                             )
                         )
                         Button(
@@ -129,7 +133,7 @@ fun AiGoalDecomposerScreen(
                             enabled = goalTitle.isNotBlank() && !uiState.isLoading,
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = NexoraShapes.medium,
-                            colors = ButtonDefaults.buttonColors(containerColor = NexoraPrimaryText)
+                            colors = ButtonDefaults.buttonColors(containerColor = Green10)
                         ) {
                             if (uiState.isLoading) {
                                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
@@ -148,12 +152,12 @@ fun AiGoalDecomposerScreen(
                         Text(
                             text = "Nexora's Plan",
                             style = MaterialTheme.typography.headlineMedium,
-                            color = NexoraPrimaryText
+                            color = Green10
                         )
                         Text(
                             text = decomposition.summary,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NexoraMutedText
+                            color = Green40
                         )
                     }
                 }
@@ -172,11 +176,17 @@ fun AiGoalDecomposerScreen(
                         enabled = uiState.selectedSteps.isNotEmpty() && !uiState.isCreatingTasks,
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = NexoraShapes.medium,
-                        colors = ButtonDefaults.buttonColors(containerColor = NexoraPrimaryGreen)
+                        colors = ButtonDefaults.buttonColors(containerColor = Green60)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                         Spacer(Modifier.width(12.dp))
                         Text("Create ${uiState.selectedSteps.size} Tasks")
+                    }
+                }
+                
+                item {
+                    TextButton(onClick = { viewModel.clear() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Start over", color = Green40)
                     }
                 }
             }
@@ -193,12 +203,12 @@ fun AiGoalDecomposerScreen(
                     showConfirmDialog = false
                     viewModel.createTasks(onComplete = onTasksCreated) 
                 }) {
-                    Text("Add Tasks", color = NexoraPrimaryGreen, fontWeight = FontWeight.Bold)
+                    Text("Add Tasks", color = Green60, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showConfirmDialog = false }) {
-                    Text("Cancel", color = NexoraMutedText)
+                    Text("Cancel", color = Green40)
                 }
             },
             containerColor = Color.White,
@@ -214,43 +224,43 @@ private fun StepCard(
     onToggle: () -> Unit
 ) {
     NexoraCard(
-        border = BorderStroke(1.dp, if (isSelected) NexoraPrimaryGreen else NexoraBorder)
+        modifier = Modifier.nexoraClickable { onToggle() },
+        tier = if (isSelected) NexoraCardTier.Elevated else NexoraCardTier.Resting,
+        containerColor = if (isSelected) Green95 else Color.White
     ) {
         Row(
-            modifier = Modifier
-                .clickable { onToggle() }
-                .padding(20.dp),
+            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.Top
         ) {
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = { onToggle() },
-                colors = CheckboxDefaults.colors(checkedColor = NexoraPrimaryGreen)
+                colors = CheckboxDefaults.colors(checkedColor = Green60)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = step.title, style = MaterialTheme.typography.titleSmall, color = NexoraPrimaryText)
+                Text(text = step.title, style = MaterialTheme.typography.titleSmall, color = Green10)
                 if (step.description.isNotBlank()) {
-                    Text(text = step.description, style = MaterialTheme.typography.bodySmall, color = NexoraMutedText)
+                    Text(text = step.description, style = MaterialTheme.typography.bodySmall, color = Green40)
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(color = NexoraSoftGreen, shape = NexoraShapes.small) {
+                    Surface(color = Green90, shape = NexoraShapes.small) {
                         Text(
                             text = step.priority.name,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = NexoraPrimaryGreen
+                            color = Green20
                         )
                     }
-                    Text(text = step.estimatedDuration, style = MaterialTheme.typography.labelSmall, color = NexoraMutedText)
+                    Text(text = step.estimatedDuration, style = MaterialTheme.typography.labelSmall, color = Green40, modifier = Modifier.padding(vertical = 4.dp))
                 }
             }
         }
     }
 }
 
-// VIEWMODEL & UI STATE (Kept to preserve functionality)
+// VIEWMODEL & UI STATE (Restored from previous version to maintain architecture)
 data class AiGoalDecomposerUiState(
     val isLoading: Boolean = false,
     val decomposition: AiGoalDecomposition? = null,
@@ -286,6 +296,10 @@ class AiGoalDecomposerViewModel(
     fun toggleStep(order: Int) {
         val current = _uiState.value.selectedSteps
         _uiState.value = _uiState.value.copy(selectedSteps = if (current.contains(order)) current - order else current + order)
+    }
+
+    fun clear() {
+        _uiState.value = AiGoalDecomposerUiState()
     }
 
     fun createTasks(onComplete: () -> Unit) {
