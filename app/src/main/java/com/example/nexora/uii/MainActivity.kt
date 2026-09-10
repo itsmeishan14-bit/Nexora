@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
@@ -18,16 +17,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nexora.ai.*
 import com.example.nexora.ai.evaluation.AiEvaluationViewModel
-import com.example.nexora.data.DailyProgressEntity
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
 import com.example.nexora.ui.theme.*
-import java.time.LocalDate
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -58,107 +55,29 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                val scope = rememberCoroutineScope()
-                val tasks = remember { mutableStateListOf<PremiumTask>() }
-                val goals = remember { mutableStateListOf<NexoraGoal>() }
-                val progressHistory = remember { mutableStateListOf<DailyProgress>() }
+                val mainViewModel: NexoraMainViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return NexoraMainViewModel(repository) as T
+                        }
+                    }
+                )
 
-                var selectedScreen by remember { mutableStateOf("home") }
-                var selectedGoal by remember { mutableStateOf<NexoraGoal?>(null) }
-                var editingGoal by remember { mutableStateOf<NexoraGoal?>(null) }
-                var taskGoal by remember { mutableStateOf<NexoraGoal?>(null) }
-                var personalContext by remember { mutableStateOf<AiPersonalContext?>(null) }
-                var proactiveSignals by remember { mutableStateOf<List<AiProactiveSignal>>(emptyList()) }
-                var homeProposedAction by remember { mutableStateOf<AiAction?>(null) }
+                val aiViewModel: NexoraAiViewModel = viewModel(
+                    factory = object : ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            return NexoraAiViewModel(aiEngine) as T
+                        }
+                    }
+                )
+
+                val mainState by mainViewModel.uiState.collectAsState()
+                val aiState by aiViewModel.uiState.collectAsState()
 
                 val windowSize = calculateWindowSizeClass(this)
                 val isWide = windowSize.widthSizeClass != WindowWidthSizeClass.Compact
-
-                // DATA LOADING
-                LaunchedEffect(Unit) {
-                    val savedTasks = repository.observeTasks().first()
-                    val savedGoals = repository.observeGoals().first()
-                    val savedProgress = repository.observeDailyProgress().first()
-
-                    tasks.clear()
-                    tasks.addAll(savedTasks)
-                    goals.clear()
-                    goals.addAll(savedGoals)
-                    progressHistory.clear()
-                    progressHistory.addAll(savedProgress.map { item ->
-                        DailyProgress(
-                            date = LocalDate.parse(item.date),
-                            tasksPlanned = item.tasksPlanned,
-                            tasksCompleted = item.tasksCompleted,
-                            focusMinutes = item.focusMinutes,
-                            goalsWorkedOn = item.goalsWorkedOn,
-                            carriedTasks = item.carriedTasks
-                        )
-                    })
-
-                    val context = aiEngine.getContext()
-                    personalContext = context.personalContext
-                    
-                    scope.launch {
-                        val response = aiEngine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
-                        proactiveSignals = response.proactiveSignals
-                        
-                        if (context.incompleteTasks.size >= 8) {
-                            homeProposedAction = AiAction(
-                                type = AiActionType.RESCHEDULE_TASK,
-                                title = "High Workload Detected",
-                                description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
-                                reason = "Too many tasks today reduces focus.",
-                                requiresConfirmation = true
-                            )
-                        }
-                    }
-                }
-
-                fun refreshGoalProgress() {
-                    goals.forEachIndexed { index, goal ->
-                        val progress = calculateGoalProgress(goal = goal, tasks = tasks)
-                        val updatedGoal = goal.copy(progress = progress)
-                        goals[index] = updatedGoal
-                        if (selectedGoal?.id == goal.id) selectedGoal = updatedGoal
-                        scope.launch { repository.updateGoal(updatedGoal) }
-                    }
-                }
-
-                fun updateTodayProgress() {
-                    val today = LocalDate.now()
-                    val completedCount = tasks.count { it.completed }
-                    val totalCount = tasks.size
-                    val goalsWorkedOn = tasks.mapNotNull { it.goalTitle }.distinct().size
-
-                    val todayProgress = DailyProgress(
-                        date = today,
-                        tasksPlanned = totalCount,
-                        tasksCompleted = completedCount,
-                        focusMinutes = 0,
-                        goalsWorkedOn = goalsWorkedOn,
-                        carriedTasks = 0
-                    )
-
-                    val index = progressHistory.indexOfFirst { it.date == today }
-                    if (index >= 0) progressHistory[index] = todayProgress else progressHistory.add(todayProgress)
-
-                    scope.launch {
-                        repository.saveDailyProgress(DailyProgressEntity(
-                            date = today.toString(),
-                            tasksPlanned = totalCount,
-                            tasksCompleted = completedCount,
-                            focusMinutes = 0,
-                            goalsWorkedOn = goalsWorkedOn,
-                            carriedTasks = 0
-                        ))
-
-                        val context = aiEngine.getContext()
-                        personalContext = context.personalContext
-                        val response = aiEngine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
-                        proactiveSignals = response.proactiveSignals
-                    }
-                }
 
                 Row(Modifier.fillMaxSize()) {
                     if (isWide) {
@@ -170,10 +89,10 @@ class MainActivity : ComponentActivity() {
                             }
                         ) {
                             Spacer(Modifier.weight(1f))
-                            NexoraRailItem("Home", Icons.Rounded.Home, selectedScreen == "home") { selectedScreen = "home" }
-                            NexoraRailItem("Tasks", Icons.Rounded.CheckCircle, selectedScreen == "tasks") { selectedScreen = "tasks" }
-                            NexoraRailItem("Goals", Icons.Rounded.Flag, selectedScreen == "goals") { selectedScreen = "goals" }
-                            NexoraRailItem("AI", Icons.Rounded.Insights, selectedScreen == "insights") { selectedScreen = "insights" }
+                            NexoraRailItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
+                            NexoraRailItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
+                            NexoraRailItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
+                            NexoraRailItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
                             Spacer(Modifier.weight(1f))
                         }
                     }
@@ -181,201 +100,120 @@ class MainActivity : ComponentActivity() {
                     Scaffold(
                         containerColor = NexoraBackgroundLight,
                         bottomBar = {
-                            if (!isWide && selectedScreen in listOf("home", "tasks", "goals", "insights")) {
+                            if (!isWide && mainState.selectedScreen in listOf("home", "tasks", "goals", "insights")) {
                                 NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
-                                    NexoraNavItem("Home", Icons.Rounded.Home, selectedScreen == "home") { selectedScreen = "home" }
-                                    NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, selectedScreen == "tasks") { selectedScreen = "tasks" }
-                                    NexoraNavItem("Goals", Icons.Rounded.Flag, selectedScreen == "goals") { selectedScreen = "goals" }
-                                    NexoraNavItem("AI", Icons.Rounded.Insights, selectedScreen == "insights") { selectedScreen = "insights" }
+                                    NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
+                                    NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
+                                    NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
+                                    NexoraNavItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
                                 }
                             }
                         }
                     ) { padding ->
                         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
                             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                                when (selectedScreen) {
+                                when (mainState.selectedScreen) {
                                     "home" -> HomeScreen(
-                                        tasks = tasks,
-                                        goals = goals,
-                                        progressHistory = progressHistory,
-                                        onAddTask = { selectedScreen = "addTask" },
-                                        onToggleTask = { task ->
-                                            val index = tasks.indexOfFirst { it.id == task.id }
-                                            if (index >= 0) {
-                                                tasks[index] = task.copy(completed = !task.completed)
-                                                scope.launch { repository.updateTask(tasks[index]) }
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-                                        },
-                                        proactiveSignals = proactiveSignals,
-                                        proposedAction = homeProposedAction,
+                                        tasks = mainState.tasks.toMutableStateList(),
+                                        goals = mainState.goals.toMutableStateList(),
+                                        progressHistory = mainState.progressHistory,
+                                        onAddTask = { mainViewModel.navigateTo("addTask") },
+                                        onToggleTask = { mainViewModel.toggleTask(it) },
+                                        proactiveSignals = aiState.proactiveSignals,
+                                        proposedAction = aiState.homeProposedAction,
                                         onApproveAction = { action ->
-                                            scope.launch {
-                                                aiEngine.executeAction(action)
-                                                homeProposedAction = null
-                                                tasks.clear()
-                                                tasks.addAll(repository.observeTasks().first())
-                                                updateTodayProgress()
+                                            aiViewModel.executeHomeAction(action) {
+                                                // No explicit data refresh needed here as ViewModel handles it
                                             }
                                         },
-                                        onDismissAction = { homeProposedAction = null }
+                                        onDismissAction = { aiViewModel.dismissHomeAction() }
                                     )
                                     "tasks" -> TasksScreen(
-                                        tasks = tasks,
-                                        onAddTask = { selectedScreen = "addTask" },
-                                        onToggleTask = { task ->
-                                            val index = tasks.indexOfFirst { it.id == task.id }
-                                            if (index >= 0) {
-                                                tasks[index] = task.copy(completed = !task.completed)
-                                                scope.launch { repository.updateTask(tasks[index]) }
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-                                        },
-                                        onAiAction = { selectedScreen = "insights" },
-                                        onDeleteTask = { task ->
-                                            scope.launch {
-                                                repository.deleteTask(task)
-                                                tasks.removeAll { it.id == task.id }
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-                                        }
+                                        tasks = mainState.tasks.toMutableStateList(),
+                                        onAddTask = { mainViewModel.navigateTo("addTask") },
+                                        onToggleTask = { mainViewModel.toggleTask(it) },
+                                        onAiAction = { mainViewModel.navigateTo("insights") },
+                                        onDeleteTask = { mainViewModel.deleteTask(it) }
                                     )
                                     "goals" -> GoalScreen(
-                                        goals = goals,
-                                        personalContext = personalContext,
-                                        onAddGoal = { selectedScreen = "addGoal" },
-                                        onEditGoal = { editingGoal = it; selectedScreen = "addGoal" },
-                                        onOpenGoal = { selectedGoal = it; selectedScreen = "goalDetails" }
+                                        goals = mainState.goals.toMutableStateList(),
+                                        personalContext = aiState.personalContext,
+                                        onAddGoal = { mainViewModel.navigateTo("addGoal") },
+                                        onEditGoal = { mainViewModel.setEditingGoal(it); mainViewModel.navigateTo("addGoal") },
+                                        onOpenGoal = { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") }
                                     )
-                                    "goalDetails" -> selectedGoal?.let { goal ->
+                                    "goalDetails" -> mainState.selectedGoal?.let { goal ->
                                         GoalDetailsScreen(
                                             goal = goal,
-                                            relatedTasks = tasks.filter { it.goalTitle == goal.title },
-                                            personalContext = personalContext,
-                                            onBack = { selectedGoal = null; selectedScreen = "goals" },
-                                            onEdit = { editingGoal = goal; selectedScreen = "addGoal" },
-                                            onDelete = {
-                                                scope.launch {
-                                                    repository.deleteGoal(goal)
-                                                    tasks.forEach { if (it.goalTitle == goal.title) repository.updateTask(it.copy(goalTitle = null)) }
-                                                    goals.removeAll { it.id == goal.id }
-                                                    tasks.replaceAll { if (it.goalTitle == goal.title) it.copy(goalTitle = null) else it }
-                                                    selectedGoal = null
-                                                    updateTodayProgress()
-                                                    selectedScreen = "goals"
-                                                }
-                                            },
-                                            onToggleTask = { task ->
-                                                val index = tasks.indexOfFirst { it.id == task.id }
-                                                if (index >= 0) {
-                                                    tasks[index] = task.copy(completed = !task.completed)
-                                                    scope.launch { repository.updateTask(tasks[index]) }
-                                                    refreshGoalProgress()
-                                                    updateTodayProgress()
-                                                }
-                                            },
-                                            onAddTask = { taskGoal = goal; selectedScreen = "addTask" },
-                                            onDecomposeGoal = { selectedScreen = "aiGoalDecomposer" }
+                                            relatedTasks = mainState.tasks.filter { it.goalTitle == goal.title },
+                                            personalContext = aiState.personalContext,
+                                            onBack = { mainViewModel.setSelectedGoal(null); mainViewModel.navigateTo("goals") },
+                                            onEdit = { mainViewModel.setEditingGoal(goal); mainViewModel.navigateTo("addGoal") },
+                                            onDelete = { mainViewModel.deleteGoal(goal); mainViewModel.navigateTo("goals") },
+                                            onToggleTask = { mainViewModel.toggleTask(it) },
+                                            onAddTask = { mainViewModel.setTaskGoal(goal); mainViewModel.navigateTo("addTask") },
+                                            onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") }
                                         )
                                     }
                                     "insights" -> AiScreen(
                                         engine = aiEngine,
-                                        onOpenGoalDecomposer = { selectedScreen = "aiGoalDecomposer" },
-                                        onOpenAutomations = { selectedScreen = "aiAutomations" },
-                                        onOpenEvaluation = { selectedScreen = "aiBenchmarks" },
+                                        onOpenGoalDecomposer = { mainViewModel.navigateTo("aiGoalDecomposer") },
+                                        onOpenAutomations = { mainViewModel.navigateTo("aiAutomations") },
+                                        onOpenEvaluation = { mainViewModel.navigateTo("aiBenchmarks") },
                                         onRecommendationAction = { rec ->
-                                            rec.relatedGoalId?.let { id -> goals.find { it.id == id }?.let { selectedGoal = it; selectedScreen = "goalDetails" } }
-                                            rec.relatedTaskId?.let { selectedScreen = "tasks" }
+                                            rec.relatedGoalId?.let { id -> mainState.goals.find { it.id == id }?.let { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") } }
+                                            rec.relatedTaskId?.let { mainViewModel.navigateTo("tasks") }
                                         }
                                     )
                                     "aiGoalDecomposer" -> AiGoalDecomposerScreen(
                                         engine = aiEngine,
-                                        onBack = { selectedScreen = "insights" },
+                                        onBack = { mainViewModel.navigateTo("insights") },
                                         onTasksCreated = {
-                                            scope.launch {
-                                                val tasksFromRepo = repository.observeTasks().first()
-                                                tasks.clear()
-                                                tasks.addAll(tasksFromRepo)
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
+                                            // ViewModel should handle internal refresh if needed, 
+                                            // but we might need a signal to reload data.
+                                            // loadData is already reactive if it was using Flows.
+                                            // Since we use Lists in State, we might need a refresh method.
+                                            mainViewModel.refreshAll()
                                         }
                                     )
-                                    "aiAutomations" -> {
-                                        val aiViewModel: NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                                            factory = remember(aiEngine) {
-                                                object : ViewModelProvider.Factory {
-                                                    @Suppress("UNCHECKED_CAST")
-                                                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                                        return NexoraAiViewModel(engine = aiEngine) as T
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        val aiUiState by aiViewModel.uiState.collectAsState()
-                                        AiAutomationScreen(
-                                            rules = aiUiState.automationRules,
-                                            onBack = { selectedScreen = "insights" },
-                                            onToggleRule = { aiViewModel.toggleAutomationRule(it) }
-                                        )
-                                    }
+                                    "aiAutomations" -> AiAutomationScreen(
+                                        rules = aiState.automationRules,
+                                        onBack = { mainViewModel.navigateTo("insights") },
+                                        onToggleRule = { aiViewModel.toggleAutomationRule(it) }
+                                    )
                                     "aiBenchmarks" -> {
-                                        val evaluationViewModel: AiEvaluationViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
-                                            factory = remember(repository, aiEngine) {
-                                                object : ViewModelProvider.Factory {
-                                                    @Suppress("UNCHECKED_CAST")
-                                                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                                        return AiEvaluationViewModel(
-                                                            repository = repository,
-                                                            engine = aiEngine
-                                                        ) as T
-                                                    }
+                                        val evaluationViewModel: AiEvaluationViewModel = viewModel(
+                                            factory = object : ViewModelProvider.Factory {
+                                                @Suppress("UNCHECKED_CAST")
+                                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                                    return AiEvaluationViewModel(repository, aiEngine) as T
                                                 }
                                             }
                                         )
-                                        AiEvaluationScreen(
-                                            viewModel = evaluationViewModel,
-                                            onBack = { selectedScreen = "insights" }
-                                        )
+                                        AiEvaluationScreen(viewModel = evaluationViewModel, onBack = { mainViewModel.navigateTo("insights") })
                                     }
                                     "addTask" -> AddTaskScreen(
-                                        onBack = { taskGoal = null; selectedScreen = "tasks" },
-                                        goals = goals,
-                                        selectedGoal = taskGoal,
+                                        onBack = { mainViewModel.setTaskGoal(null); mainViewModel.navigateTo("tasks") },
+                                        goals = mainState.goals,
+                                        selectedGoal = mainState.taskGoal,
                                         onSave = { name, cat, dur, gt, p ->
-                                            val newTask = PremiumTask(title = name, category = cat, duration = dur, goalTitle = gt, priority = p)
-                                            scope.launch {
-                                                repository.addTask(newTask)
-                                                tasks.clear()
-                                                tasks.addAll(repository.observeTasks().first())
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                            }
-                                            taskGoal = null
-                                            selectedScreen = "tasks"
+                                            mainViewModel.addTask(name, cat, dur, gt, p)
+                                            mainViewModel.setTaskGoal(null)
+                                            mainViewModel.navigateTo("tasks")
                                         }
                                     )
                                     "addGoal" -> AddGoalScreen(
-                                        onBack = { editingGoal = null; selectedScreen = "goals" },
+                                        onBack = { mainViewModel.setEditingGoal(null); mainViewModel.navigateTo("goals") },
                                         onSave = { name, cat, td, _ ->
-                                            scope.launch {
-                                                if (editingGoal == null) {
-                                                    repository.addGoal(NexoraGoal(title = name, category = cat, targetDate = td, progress = 0f))
-                                                } else {
-                                                    repository.updateGoal(editingGoal!!.copy(title = name, category = cat, targetDate = td))
-                                                }
-                                                goals.clear()
-                                                goals.addAll(repository.observeGoals().first())
-                                                editingGoal = null
-                                                refreshGoalProgress()
-                                                updateTodayProgress()
-                                                selectedScreen = "goals"
+                                            if (mainState.editingGoal == null) {
+                                                mainViewModel.addGoal(name, cat, td)
+                                            } else {
+                                                mainViewModel.updateGoal(mainState.editingGoal!!, name, cat, td)
                                             }
+                                            mainViewModel.setEditingGoal(null)
+                                            mainViewModel.navigateTo("goals")
                                         },
-                                        existingGoal = editingGoal
+                                        existingGoal = mainState.editingGoal
                                     )
                                 }
                             }
@@ -419,4 +257,11 @@ private fun NexoraRailItem(label: String, icon: ImageVector, selected: Boolean, 
             indicatorColor = Green95
         )
     )
+}
+
+// Extension to convert List to SnapshotStateList for screens that expect it
+private fun <T> List<T>.toMutableStateList(): androidx.compose.runtime.snapshots.SnapshotStateList<T> {
+    val list = androidx.compose.runtime.mutableStateListOf<T>()
+    list.addAll(this)
+    return list
 }

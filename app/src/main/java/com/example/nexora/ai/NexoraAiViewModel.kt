@@ -30,7 +30,9 @@ data class NexoraAiUiState(
     val lastBrainResponse: AiResponse? = null,
     val currentWorkflow: AgentWorkflow? = null,
     val proactiveSignals: List<AiProactiveSignal> = emptyList(),
-    val automationRules: List<AiAutomationRule> = emptyList()
+    val automationRules: List<AiAutomationRule> = emptyList(),
+    val personalContext: AiPersonalContext? = null,
+    val homeProposedAction: AiAction? = null
 )
 
 class NexoraAiViewModel(
@@ -45,6 +47,49 @@ class NexoraAiViewModel(
     init {
         analyze()
         loadAutomationRules()
+        loadInitialHomeState()
+    }
+
+    private fun loadInitialHomeState() {
+        viewModelScope.launch {
+            try {
+                val context = engine.getContext()
+                val response = engine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
+                
+                var homeAction: AiAction? = null
+                if (context.incompleteTasks.size >= 8) {
+                    homeAction = AiAction(
+                        type = AiActionType.RESCHEDULE_TASK,
+                        title = "High Workload Detected",
+                        description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
+                        reason = "Too many tasks today reduces focus.",
+                        requiresConfirmation = true
+                    )
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    personalContext = context.personalContext,
+                    proactiveSignals = response.proactiveSignals,
+                    homeProposedAction = homeAction
+                )
+            } catch (_: Exception) {
+                // Silent fail for background proactive check
+            }
+        }
+    }
+
+    fun dismissHomeAction() {
+        _uiState.value = _uiState.value.copy(homeProposedAction = null)
+    }
+
+    fun executeHomeAction(action: AiAction, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            engine.executeAction(action)
+            _uiState.value = _uiState.value.copy(homeProposedAction = null)
+            onComplete()
+            analyze()
+            loadInitialHomeState()
+        }
     }
 
     private fun loadAutomationRules() {
