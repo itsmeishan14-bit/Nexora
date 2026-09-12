@@ -180,6 +180,32 @@ fun AiScreen(
                     }
                 }
 
+                // DAILY PLAN
+                uiState.dailyPlan?.let { plan ->
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(
+                                text = "Today's Plan",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Green10,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                            Text(
+                                text = plan.summary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Green40
+                            )
+                        }
+                    }
+
+                    items(items = plan.tasks, key = { "plan_${it.task.id}" }) { plannedTask ->
+                        PlannedTaskPill(
+                            plannedTask = plannedTask,
+                            onClick = { onTaskAction(plannedTask.task.id) }
+                        )
+                    }
+                }
+
                 // AI PROACTIVE SIGNALS
                 if (uiState.proactiveSignals.isNotEmpty()) {
                     items(items = uiState.proactiveSignals, key = { "signal_${it.fingerprint}" }) { signal ->
@@ -423,6 +449,55 @@ private fun RecommendationCard(recommendation: AiRecommendation, onAction: (AiRe
                     modifier = Modifier.clickable { onAction(recommendation) }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PlannedTaskPill(
+    plannedTask: PlannedTask,
+    onClick: () -> Unit
+) {
+    val task = plannedTask.task
+    val priorityColor = when(task.priority) {
+        TaskPriority.URGENT -> NexoraError
+        TaskPriority.HIGH -> Clay60
+        TaskPriority.MEDIUM -> Green60
+        else -> Green90
+    }
+    
+    val contentColor = if (task.priority == TaskPriority.LOW) Green10 else Color.White
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = CircleShape,
+        color = priorityColor,
+        border = if (task.priority == TaskPriority.LOW) BorderStroke(1.dp, Green80) else null
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${plannedTask.recommendedOrder}.",
+                style = NumericStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                color = contentColor.copy(alpha = 0.7f)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = contentColor,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = contentColor.copy(alpha = 0.5f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
