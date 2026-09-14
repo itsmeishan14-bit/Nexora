@@ -39,23 +39,13 @@ import com.example.nexora.ui.theme.*
 
 @Composable
 fun AiScreen(
-    engine: NexoraAiEngine,
+    viewModel: NexoraAiViewModel,
     onOpenGoalDecomposer: () -> Unit,
     onOpenAutomations: () -> Unit,
     onOpenEvaluation: () -> Unit,
     onRecommendationAction: (AiRecommendation) -> Unit,
     onTaskAction: (Long) -> Unit = {}
 ) {
-    val viewModel: NexoraAiViewModel = viewModel(
-        factory = remember(engine) {
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return NexoraAiViewModel(engine = engine) as T
-                }
-            }
-        }
-    )
 
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()

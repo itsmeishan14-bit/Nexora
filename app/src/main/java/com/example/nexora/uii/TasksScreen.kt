@@ -35,7 +35,7 @@ private enum class TaskFilter { Active, Completed }
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TasksScreen(
-    tasks: SnapshotStateList<PremiumTask>,
+    tasks: List<PremiumTask>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     onAiAction: () -> Unit = {},

@@ -24,7 +24,7 @@ import com.example.nexora.ui.theme.*
 
 @Composable
 fun GoalScreen(
-    goals: SnapshotStateList<NexoraGoal>,
+    goals: List<NexoraGoal>,
     personalContext: AiPersonalContext? = null,
     onAddGoal: () -> Unit,
     onEditGoal: (NexoraGoal) -> Unit,

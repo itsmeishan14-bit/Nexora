@@ -31,8 +31,8 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(
-    tasks: SnapshotStateList<PremiumTask>,
-    goals: SnapshotStateList<NexoraGoal>,
+    tasks: List<PremiumTask>,
+    goals: List<NexoraGoal>,
     progressHistory: List<DailyProgress>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,

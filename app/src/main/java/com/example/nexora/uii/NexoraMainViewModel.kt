@@ -75,25 +75,46 @@ class NexoraMainViewModel(
         viewModelScope.launch {
             val updatedTask = task.copy(completed = !task.completed)
             repository.updateTask(updatedTask)
+            
+            // Single update flow
+            val currentTasks = repository.observeTasks().first()
+            val currentGoals = repository.observeGoals().first()
+            
+            // Recalculate goals that might have changed
+            currentGoals.forEach { goal ->
+                val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                if (progress != goal.progress) {
+                    repository.updateGoal(goal.copy(progress = progress))
+                }
+            }
+            
+            updateTodayProgressInternal(currentTasks)
             refreshData()
-            refreshGoalProgress()
-            updateTodayProgress()
         }
     }
 
     fun deleteTask(task: PremiumTask) {
         viewModelScope.launch {
             repository.deleteTask(task)
+            
+            val currentTasks = repository.observeTasks().first()
+            val currentGoals = repository.observeGoals().first()
+            
+            currentGoals.forEach { goal ->
+                val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                if (progress != goal.progress) {
+                    repository.updateGoal(goal.copy(progress = progress))
+                }
+            }
+            
+            updateTodayProgressInternal(currentTasks)
             refreshData()
-            refreshGoalProgress()
-            updateTodayProgress()
         }
     }
 
     fun addGoal(name: String, category: String, targetDate: String) {
         viewModelScope.launch {
             repository.addGoal(NexoraGoal(title = name, category = category, targetDate = targetDate, progress = 0f))
-            refreshData()
             updateTodayProgress()
         }
     }
@@ -101,7 +122,6 @@ class NexoraMainViewModel(
     fun updateGoal(goal: NexoraGoal, name: String, category: String, targetDate: String) {
         viewModelScope.launch {
             repository.updateGoal(goal.copy(title = name, category = category, targetDate = targetDate))
-            refreshData()
             updateTodayProgress()
         }
     }
@@ -112,7 +132,6 @@ class NexoraMainViewModel(
             // Unlink tasks
             val tasks = _uiState.value.tasks.filter { it.goalTitle == goal.title }
             tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
-            refreshData()
             updateTodayProgress()
         }
     }
@@ -121,9 +140,17 @@ class NexoraMainViewModel(
         viewModelScope.launch {
             val newTask = PremiumTask(title = name, category = cat, duration = dur, goalTitle = gt, priority = p)
             repository.addTask(newTask)
-            refreshAll()
-            refreshGoalProgress()
-            updateTodayProgress()
+            
+            val currentTasks = repository.observeTasks().first()
+            if (gt != null) {
+                repository.observeGoals().first().find { it.title == gt }?.let { goal ->
+                    val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                    repository.updateGoal(goal.copy(progress = progress))
+                }
+            }
+            
+            updateTodayProgressInternal(currentTasks)
+            refreshData()
         }
     }
 
@@ -150,26 +177,17 @@ class NexoraMainViewModel(
                     goalsWorkedOn = item.goalsWorkedOn,
                     carriedTasks = item.carriedTasks
                 )
-            }
+            }.sortedByDescending { it.date }
         )
     }
 
-    private suspend fun refreshGoalProgress() {
-        val currentTasks = _uiState.value.tasks
-        val currentGoals = _uiState.value.goals
-        currentGoals.forEach { goal ->
-            val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
-            if (progress != goal.progress) {
-                repository.updateGoal(goal.copy(progress = progress))
-            }
-        }
-        val updatedGoals = repository.observeGoals().first()
-        _uiState.value = _uiState.value.copy(goals = updatedGoals)
+    private suspend fun updateTodayProgress() {
+        updateTodayProgressInternal(repository.observeTasks().first())
+        refreshData()
     }
 
-    private suspend fun updateTodayProgress() {
+    private suspend fun updateTodayProgressInternal(currentTasks: List<PremiumTask>) {
         val today = LocalDate.now()
-        val currentTasks = _uiState.value.tasks
         val completedCount = currentTasks.count { it.completed }
         val totalCount = currentTasks.size
         val goalsWorkedOn = currentTasks.mapNotNull { it.goalTitle }.distinct().size
@@ -184,6 +202,5 @@ class NexoraMainViewModel(
                 carriedTasks = 0
             )
         )
-        refreshData()
     }
 }

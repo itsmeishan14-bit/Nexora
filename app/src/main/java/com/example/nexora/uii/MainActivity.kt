@@ -114,8 +114,8 @@ class MainActivity : ComponentActivity() {
                             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
                                 when (mainState.selectedScreen) {
                                     "home" -> HomeScreen(
-                                        tasks = mainState.tasks.toMutableStateList(),
-                                        goals = mainState.goals.toMutableStateList(),
+                                        tasks = mainState.tasks,
+                                        goals = mainState.goals,
                                         progressHistory = mainState.progressHistory,
                                         onAddTask = { mainViewModel.navigateTo("addTask") },
                                         onToggleTask = { mainViewModel.toggleTask(it) },
@@ -129,14 +129,14 @@ class MainActivity : ComponentActivity() {
                                         onDismissAction = { aiViewModel.dismissHomeAction() }
                                     )
                                     "tasks" -> TasksScreen(
-                                        tasks = mainState.tasks.toMutableStateList(),
+                                        tasks = mainState.tasks,
                                         onAddTask = { mainViewModel.navigateTo("addTask") },
                                         onToggleTask = { mainViewModel.toggleTask(it) },
                                         onAiAction = { mainViewModel.navigateTo("insights") },
                                         onDeleteTask = { mainViewModel.deleteTask(it) }
                                     )
                                     "goals" -> GoalScreen(
-                                        goals = mainState.goals.toMutableStateList(),
+                                        goals = mainState.goals,
                                         personalContext = aiState.personalContext,
                                         onAddGoal = { mainViewModel.navigateTo("addGoal") },
                                         onEditGoal = { mainViewModel.setEditingGoal(it); mainViewModel.navigateTo("addGoal") },
@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                     "insights" -> AiScreen(
-                                        engine = aiEngine,
+                                        viewModel = aiViewModel,
                                         onOpenGoalDecomposer = { mainViewModel.navigateTo("aiGoalDecomposer") },
                                         onOpenAutomations = { mainViewModel.navigateTo("aiAutomations") },
                                         onOpenEvaluation = { mainViewModel.navigateTo("aiBenchmarks") },
@@ -259,9 +259,3 @@ private fun NexoraRailItem(label: String, icon: ImageVector, selected: Boolean, 
     )
 }
 
-// Extension to convert List to SnapshotStateList for screens that expect it
-private fun <T> List<T>.toMutableStateList(): androidx.compose.runtime.snapshots.SnapshotStateList<T> {
-    val list = androidx.compose.runtime.mutableStateListOf<T>()
-    list.addAll(this)
-    return list
-}
