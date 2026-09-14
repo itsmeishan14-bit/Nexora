@@ -163,6 +163,9 @@ class MainActivity : ComponentActivity() {
                                         onRecommendationAction = { rec ->
                                             rec.relatedGoalId?.let { id -> mainState.goals.find { it.id == id }?.let { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") } }
                                             rec.relatedTaskId?.let { mainViewModel.navigateTo("tasks") }
+                                        },
+                                        onTaskAction = { taskId ->
+                                            mainViewModel.navigateTo("tasks")
                                         }
                                     )
                                     "aiGoalDecomposer" -> AiGoalDecomposerScreen(

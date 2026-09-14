@@ -28,7 +28,7 @@ class NexoraAiBrain(
 
     private var lastContext: AiContext? = null
     private var lastContextBuiltAt: Long = 0
-    private val contextCacheDuration = 1000 * 30 // 30 seconds
+    private val contextCacheDuration = 1000 * 2 // 2 seconds for local responsiveness
 
     /**
      * Process a unified AI request.
