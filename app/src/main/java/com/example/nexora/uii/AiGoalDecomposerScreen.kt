@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -59,6 +60,8 @@ fun AiGoalDecomposerScreen(
     var goalTitle by remember { mutableStateOf("") }
     var goalDescription by remember { mutableStateOf("") }
     var showConfirmDialog by remember { mutableStateOf(false) }
+
+    BackHandler { onBack() }
 
     Scaffold(
         containerColor = NexoraBackgroundLight,

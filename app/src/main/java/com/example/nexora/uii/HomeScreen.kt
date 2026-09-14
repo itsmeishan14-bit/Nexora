@@ -240,8 +240,7 @@ private fun HomeTaskCard(task: PremiumTask, onToggle: () -> Unit) {
         Box(
             modifier = Modifier
                 .width(4.dp)
-                .height(48.dp)
-                .align(Alignment.CenterStart)
+                .matchParentSize()
                 .clip(CircleShape)
                 .background(priorityColor)
         )

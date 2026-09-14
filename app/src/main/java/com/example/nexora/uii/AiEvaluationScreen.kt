@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +26,8 @@ fun AiEvaluationScreen(
     onBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    BackHandler { onBack() }
 
     Scaffold(
         containerColor = NexoraBackground,
@@ -92,7 +95,7 @@ fun AiEvaluationScreen(
                         )
                     }
 
-                    items(report.categoryMetrics) { metric ->
+                    items(report.categoryMetrics, key = { it.category }) { metric ->
                         MetricRow(metric)
                     }
 
@@ -104,7 +107,7 @@ fun AiEvaluationScreen(
                         )
                     }
 
-                    items(report.results) { result ->
+                    items(report.results, key = { it.caseId }) { result ->
                         ResultItem(result)
                     }
                 }

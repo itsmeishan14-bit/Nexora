@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -35,6 +36,8 @@ fun GoalDetailsScreen(
 ) {
     val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
     val progress = (goal.progress * 100).toInt()
+
+    BackHandler { onBack() }
 
     Scaffold(
         containerColor = NexoraBackgroundLight,

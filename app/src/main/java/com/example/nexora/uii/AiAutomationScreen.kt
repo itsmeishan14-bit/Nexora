@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,8 @@ fun AiAutomationScreen(
     onBack: () -> Unit,
     onToggleRule: (AiAutomationRule) -> Unit
 ) {
+    BackHandler { onBack() }
+
     Scaffold(
         containerColor = NexoraBackgroundLight,
         topBar = {

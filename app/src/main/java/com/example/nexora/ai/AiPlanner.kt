@@ -568,7 +568,36 @@ class AiPlanner {
 
         val patterns = mutableListOf<AiProductivityPattern>()
 
-        // ... (rest of the logic)
+        val avgCompletion = history.map { it.tasksCompleted.toFloat() / Math.max(1, it.tasksPlanned) }.average().toFloat()
+        
+        if (avgCompletion > 0.8f) {
+            patterns.add(AiProductivityPattern(
+                type = AiPatternType.WORKLOAD_CONSISTENCY,
+                title = "High Execution",
+                description = "You consistently complete over 80% of your planned tasks. Your planning matches your capacity.",
+                confidence = 0.9f
+            ))
+        }
+
+        val highFocusDays = history.count { it.focusMinutes > 120 }
+        if (highFocusDays >= 3) {
+            patterns.add(AiProductivityPattern(
+                type = AiPatternType.FOCUS_TREND,
+                title = "Deep Work Pattern",
+                description = "You have frequent sessions of intense focus. This is your most productive mode.",
+                confidence = 0.85f
+            ))
+        }
+
+        val overloadedDays = history.count { it.tasksPlanned > 8 && it.tasksCompleted < it.tasksPlanned / 2 }
+        if (overloadedDays >= 2) {
+            patterns.add(AiProductivityPattern(
+                type = AiPatternType.COMPLETION_ACCURACY,
+                title = "Planning Overload",
+                description = "Some days have too many tasks, leading to low completion. Try limiting daily plans to 5 key items.",
+                confidence = 0.8f
+            ))
+        }
 
         return AiMemory(
             legacyPatterns = patterns,

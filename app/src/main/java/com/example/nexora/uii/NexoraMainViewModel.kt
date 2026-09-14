@@ -18,7 +18,8 @@ data class NexoraMainUiState(
     val taskGoal: NexoraGoal? = null,
     val tasks: List<PremiumTask> = emptyList(),
     val goals: List<NexoraGoal> = emptyList(),
-    val progressHistory: List<DailyProgress> = emptyList()
+    val progressHistory: List<DailyProgress> = emptyList(),
+    val isProcessing: Boolean = false
 )
 
 class NexoraMainViewModel(
@@ -72,85 +73,127 @@ class NexoraMainViewModel(
     }
 
     fun toggleTask(task: PremiumTask) {
+        if (_uiState.value.isProcessing) return
+        
         viewModelScope.launch {
-            val updatedTask = task.copy(completed = !task.completed)
-            repository.updateTask(updatedTask)
-            
-            // Single update flow
-            val currentTasks = repository.observeTasks().first()
-            val currentGoals = repository.observeGoals().first()
-            
-            // Recalculate goals that might have changed
-            currentGoals.forEach { goal ->
-                val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
-                if (progress != goal.progress) {
-                    repository.updateGoal(goal.copy(progress = progress))
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                val updatedTask = task.copy(completed = !task.completed)
+                repository.updateTask(updatedTask)
+                
+                // Single update flow
+                val currentTasks = repository.observeTasks().first()
+                val currentGoals = repository.observeGoals().first()
+                
+                // Recalculate goals that might have changed
+                currentGoals.forEach { goal ->
+                    val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                    if (progress != goal.progress) {
+                        repository.updateGoal(goal.copy(progress = progress))
+                    }
                 }
+                
+                updateTodayProgressInternal(currentTasks)
+                refreshData()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
             }
-            
-            updateTodayProgressInternal(currentTasks)
-            refreshData()
         }
     }
 
     fun deleteTask(task: PremiumTask) {
+        if (_uiState.value.isProcessing) return
+
         viewModelScope.launch {
-            repository.deleteTask(task)
-            
-            val currentTasks = repository.observeTasks().first()
-            val currentGoals = repository.observeGoals().first()
-            
-            currentGoals.forEach { goal ->
-                val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
-                if (progress != goal.progress) {
-                    repository.updateGoal(goal.copy(progress = progress))
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                repository.deleteTask(task)
+                
+                val currentTasks = repository.observeTasks().first()
+                val currentGoals = repository.observeGoals().first()
+                
+                currentGoals.forEach { goal ->
+                    val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                    if (progress != goal.progress) {
+                        repository.updateGoal(goal.copy(progress = progress))
+                    }
                 }
+                
+                updateTodayProgressInternal(currentTasks)
+                refreshData()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
             }
-            
-            updateTodayProgressInternal(currentTasks)
-            refreshData()
         }
     }
 
     fun addGoal(name: String, category: String, targetDate: String) {
+        if (_uiState.value.isProcessing) return
+
         viewModelScope.launch {
-            repository.addGoal(NexoraGoal(title = name, category = category, targetDate = targetDate, progress = 0f))
-            updateTodayProgress()
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                repository.addGoal(NexoraGoal(title = name, category = category, targetDate = targetDate, progress = 0f))
+                updateTodayProgress()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
+            }
         }
     }
 
     fun updateGoal(goal: NexoraGoal, name: String, category: String, targetDate: String) {
+        if (_uiState.value.isProcessing) return
+
         viewModelScope.launch {
-            repository.updateGoal(goal.copy(title = name, category = category, targetDate = targetDate))
-            updateTodayProgress()
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                repository.updateGoal(goal.copy(title = name, category = category, targetDate = targetDate))
+                updateTodayProgress()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
+            }
         }
     }
 
     fun deleteGoal(goal: NexoraGoal) {
+        if (_uiState.value.isProcessing) return
+
         viewModelScope.launch {
-            repository.deleteGoal(goal)
-            // Unlink tasks
-            val tasks = _uiState.value.tasks.filter { it.goalTitle == goal.title }
-            tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
-            updateTodayProgress()
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                repository.deleteGoal(goal)
+                // Unlink tasks
+                val tasks = _uiState.value.tasks.filter { it.goalTitle == goal.title }
+                tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
+                updateTodayProgress()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
+            }
         }
     }
 
     fun addTask(name: String, cat: String, dur: String, gt: String?, p: TaskPriority) {
+        if (_uiState.value.isProcessing) return
+
         viewModelScope.launch {
-            val newTask = PremiumTask(title = name, category = cat, duration = dur, goalTitle = gt, priority = p)
-            repository.addTask(newTask)
-            
-            val currentTasks = repository.observeTasks().first()
-            if (gt != null) {
-                repository.observeGoals().first().find { it.title == gt }?.let { goal ->
-                    val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
-                    repository.updateGoal(goal.copy(progress = progress))
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                val newTask = PremiumTask(title = name, category = cat, duration = dur, goalTitle = gt, priority = p)
+                repository.addTask(newTask)
+                
+                val currentTasks = repository.observeTasks().first()
+                if (gt != null) {
+                    repository.observeGoals().first().find { it.title == gt }?.let { goal ->
+                        val progress = calculateGoalProgress(goal = goal, tasks = currentTasks)
+                        repository.updateGoal(goal.copy(progress = progress))
+                    }
                 }
+                
+                updateTodayProgressInternal(currentTasks)
+                refreshData()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
             }
-            
-            updateTodayProgressInternal(currentTasks)
-            refreshData()
         }
     }
 

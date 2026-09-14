@@ -1,5 +1,6 @@
 package com.example.nexora.uii
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -33,6 +34,8 @@ fun AddGoalScreen(
     var showDatePicker by remember { mutableStateOf(false) }
 
     val isEditing = existingGoal != null
+
+    BackHandler { onBack() }
 
     Scaffold(
         containerColor = NexoraBackgroundLight,

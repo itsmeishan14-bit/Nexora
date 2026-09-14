@@ -83,9 +83,15 @@ class NexoraAiViewModel(
     }
 
     fun executeHomeAction(action: AiAction, onComplete: () -> Unit) {
+        if (_uiState.value.isLoading) return
+        
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
             engine.executeAction(action)
-            _uiState.value = _uiState.value.copy(homeProposedAction = null)
+            _uiState.value = _uiState.value.copy(
+                homeProposedAction = null,
+                isLoading = false
+            )
             onComplete()
             analyze()
             loadInitialHomeState()
