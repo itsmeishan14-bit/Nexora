@@ -212,9 +212,16 @@ private fun HomeTaskCard(task: PremiumTask, onToggle: () -> Unit) {
         else -> Green60
     }
 
-    Box(modifier = Modifier.fillMaxWidth().nexoraClickable { onToggle() }) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .nexoraClickable { onToggle() }
+    ) {
         NexoraCard(
-            modifier = Modifier.padding(start = 6.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 8.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -230,17 +237,51 @@ private fun HomeTaskCard(task: PremiumTask, onToggle: () -> Unit) {
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(task.title, style = MaterialTheme.typography.titleSmall, color = Green10)
-                    Text(task.category, style = MaterialTheme.typography.labelMedium, color = Green40)
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Green10
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = task.category,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Green40
+                        )
+                        if (task.duration.isNotBlank()) {
+                            Text(" • ", color = Green80)
+                            Text(
+                                text = task.duration,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Green40
+                            )
+                        }
+                    }
+                    if (!task.goalTitle.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Flag,
+                                contentDescription = null,
+                                modifier = Modifier.size(10.dp),
+                                tint = Green60
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = task.goalTitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Green60
+                            )
+                        }
+                    }
                 }
-                Text(task.duration, style = NumericStyle.copy(fontSize = 12.sp), color = Green40)
             }
         }
         // Left edge priority bar
         Box(
             modifier = Modifier
                 .width(4.dp)
-                .matchParentSize()
+                .fillMaxHeight()
                 .clip(CircleShape)
                 .background(priorityColor)
         )

@@ -171,13 +171,23 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
         else -> Green60
     }
 
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
         NexoraCard(
-            modifier = Modifier.padding(start = 6.dp).nexoraClickable { onToggle() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 8.dp)
+                .nexoraClickable { onToggle() },
             containerColor = cardBg
         ) {
             Row(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Scale-Bounce Icon
@@ -191,16 +201,22 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
                         imageVector = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                         contentDescription = null,
                         tint = if (task.completed) Green60 else Green80,
-                        modifier = Modifier.size(24.dp).scale(scale)
+                        modifier = Modifier
+                            .size(24.dp)
+                            .scale(scale)
                     )
                 }
-                
+
                 Spacer(Modifier.width(16.dp))
-                
-                Column(modifier = Modifier.weight(1f).alpha(contentAlpha)) {
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .alpha(contentAlpha)
+                ) {
                     Box {
                         Text(
-                            task.title, 
+                            text = task.title,
                             style = MaterialTheme.typography.titleMedium,
                             color = Green10
                         )
@@ -210,45 +226,68 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
                                 drawLine(
                                     color = Green60,
                                     start = Offset(0f, size.height / 2 + 2.dp.toPx()),
-                                    end = Offset(size.width * completionProgress, size.height / 2 + 2.dp.toPx()),
+                                    end = Offset(
+                                        size.width * completionProgress,
+                                        size.height / 2 + 2.dp.toPx()
+                                    ),
                                     strokeWidth = 2.dp.toPx(),
                                     cap = StrokeCap.Round
                                 )
                             }
                         }
                     }
-                    
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(task.category, style = MaterialTheme.typography.labelMedium, color = Green40)
+                        Text(
+                            text = task.category,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Green40
+                        )
                         if (task.duration.isNotBlank()) {
                             Text(" • ", color = Green80)
-                            Text(task.duration, style = MaterialTheme.typography.labelSmall, color = Green40)
+                            Text(
+                                text = task.duration,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Green40
+                            )
                         }
                     }
-                    
+
                     if (!task.goalTitle.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Flag, null, modifier = Modifier.size(12.dp), tint = Green60)
+                            Icon(
+                                imageVector = Icons.Rounded.Flag,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = Green60
+                            )
                             Spacer(Modifier.width(4.dp))
-                            Text(task.goalTitle, style = MaterialTheme.typography.labelSmall, color = Green60)
+                            Text(
+                                text = task.goalTitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Green60
+                            )
                         }
                     }
                 }
 
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Rounded.DeleteOutline, null, tint = Green80, modifier = Modifier.size(20.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = null,
+                        tint = Green80,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
-        
+
         // Left edge priority bar
         Box(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .matchParentSize()
-                .wrapContentWidth(Alignment.Start)
                 .width(4.dp)
+                .fillMaxHeight()
                 .clip(CircleShape)
                 .background(priorityColor)
         )
