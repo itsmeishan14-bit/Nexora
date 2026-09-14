@@ -108,7 +108,7 @@ fun TasksScreen(
             } else {
                 items(
                     items = filteredTasks,
-                    key = { it.id }
+                    key = { task -> if (task.id != 0L) "task_${task.id}" else "temp_${task.title}" }
                 ) { task ->
                     AnimatedTaskCard(
                         task = task,
@@ -217,7 +217,23 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
                             }
                         }
                     }
-                    Text(task.category, style = MaterialTheme.typography.labelMedium, color = Green40)
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(task.category, style = MaterialTheme.typography.labelMedium, color = Green40)
+                        if (task.duration.isNotBlank()) {
+                            Text(" • ", color = Green80)
+                            Text(task.duration, style = MaterialTheme.typography.labelSmall, color = Green40)
+                        }
+                    }
+                    
+                    if (!task.goalTitle.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Flag, null, modifier = Modifier.size(12.dp), tint = Green60)
+                            Spacer(Modifier.width(4.dp))
+                            Text(task.goalTitle, style = MaterialTheme.typography.labelSmall, color = Green60)
+                        }
+                    }
                 }
 
                 IconButton(onClick = onDelete) {
@@ -229,8 +245,10 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
         // Left edge priority bar
         Box(
             modifier = Modifier
-                .width(4.dp)
+                .align(Alignment.CenterStart)
                 .matchParentSize()
+                .wrapContentWidth(Alignment.Start)
+                .width(4.dp)
                 .clip(CircleShape)
                 .background(priorityColor)
         )
@@ -249,7 +267,7 @@ private fun EmptyTasksState(filter: TaskFilter) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            if (filter == TaskFilter.Active) "No active tasks" else "No completed tasks",
+            if (filter == TaskFilter.Active) "You're all caught up" else "No completed tasks yet",
             style = MaterialTheme.typography.titleMedium, color = Green40
         )
     }
