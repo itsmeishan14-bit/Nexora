@@ -19,7 +19,7 @@ class NexoraAiAgentTest {
     }
 
     @Test
-    fun `test agent handles complete task request in two steps`() = runBlocking {
+    fun `test agent handles complete task request with confirmation`() = runBlocking {
         val task = PremiumTask(id = 42, title = "Study Java", category = "Work", duration = "1 hr")
         toolRegistry.tasks.add(task)
         
@@ -28,13 +28,12 @@ class NexoraAiAgentTest {
         
         val response = agent.execute(request, context)
         
-        assertEquals(AiResponseType.INFORMATION, response.responseType)
-        assertTrue(response.message.contains("completed", ignoreCase = true))
+        assertEquals(AiResponseType.ACTION_PROPOSAL, response.responseType)
+        assertTrue(response.proposedActions.any { it.type == AiActionType.COMPLETE_TASK })
         
-        // Verify steps
-        assertEquals(2, toolRegistry.executionLog.size)
+        // Verify findTask was executed
+        assertEquals(1, toolRegistry.executionLog.size)
         assertEquals("findTask", toolRegistry.executionLog[0])
-        assertEquals("completeTask", toolRegistry.executionLog[1])
     }
 
     @Test

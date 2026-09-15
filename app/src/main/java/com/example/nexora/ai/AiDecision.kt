@@ -16,6 +16,7 @@ enum class AiDecisionType {
     WARNING,
     AMBIGUOUS,
     CLARIFY,
+    CANCEL,
     NO_ACTION
 }
 

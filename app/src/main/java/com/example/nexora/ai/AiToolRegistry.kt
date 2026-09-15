@@ -19,11 +19,14 @@ open class AiToolRegistry(
                 registerTool(CreateTaskTool(exec))
                 registerTool(CompleteTaskTool(exec))
                 registerTool(DeleteTaskTool(exec))
+                registerTool(RescheduleTaskTool(exec))
                 registerTool(ListTasksTool(repo))
                 
                 registerTool(FindGoalTool(repo))
                 registerTool(ListGoalsTool(repo))
                 registerTool(AnalyzeGoalTool(repo))
+                registerTool(UpdateGoalTool(exec))
+                registerTool(DeleteGoalTool(exec))
                 
                 registerTool(CreateDailyPlanTool())
                 registerTool(DecomposeGoalTool(planner))
@@ -40,6 +43,26 @@ open class AiToolRegistry(
     fun getAllTools(): List<AiTool> = tools.values.toList()
 
     // --- TOOL IMPLEMENTATIONS ---
+
+    private class RescheduleTaskTool(private val executor: AiActionExecutor) : AiTool {
+        override val name = "rescheduleTask"
+        override val description = "Reschedules a task (e.g. to tomorrow)."
+        override val riskLevel = ToolRiskLevel.LOW_RISK
+
+        override suspend fun execute(parameters: Map<String, Any>): ToolResult {
+            val taskId = parameters["taskId"]?.toString()?.toLongOrNull() ?: return ToolResult(false, message = "Valid taskId is required")
+            val action = AiAction(
+                type = AiActionType.RESCHEDULE_TASK, 
+                title = "Reschedule Task", 
+                description = "Agent requested rescheduling of task ID: $taskId", 
+                taskId = taskId,
+                parameters = parameters,
+                requiresConfirmation = false
+            )
+            val result = executor.execute(action)
+            return ToolResult(result.success, taskId, result.message, result.error)
+        }
+    }
 
     private class FindTaskTool(private val repository: NexoraRepository) : AiTool {
         override val name = "findTask"
@@ -70,7 +93,8 @@ open class AiToolRegistry(
                 type = AiActionType.CREATE_TASK, 
                 title = "Create Task", 
                 description = "Agent requested creation of task: $title", 
-                parameters = parameters
+                parameters = parameters,
+                requiresConfirmation = false
             )
             val result = executor.execute(action)
             return ToolResult(result.success, result.affectedTaskId, result.message, result.error)
@@ -88,7 +112,8 @@ open class AiToolRegistry(
                 type = AiActionType.COMPLETE_TASK, 
                 title = "Complete Task", 
                 description = "Agent requested completion of task ID: $taskId", 
-                taskId = taskId
+                taskId = taskId,
+                requiresConfirmation = false
             )
             val result = executor.execute(action)
             return ToolResult(result.success, taskId, result.message, result.error)
@@ -106,7 +131,8 @@ open class AiToolRegistry(
                 type = AiActionType.DELETE_TASK, 
                 title = "Delete Task", 
                 description = "Agent requested deletion of task ID: $taskId",
-                taskId = taskId
+                taskId = taskId,
+                requiresConfirmation = false
             )
             val result = executor.execute(action)
             return ToolResult(result.success, taskId, result.message, result.error)
@@ -193,6 +219,45 @@ open class AiToolRegistry(
             val category = parameters["category"]?.toString() ?: "Personal"
             val result = planner.decomposeGoal(title, "", category)
             return ToolResult(true, result, "Decomposed goal into ${result.steps.size} steps.")
+        }
+    }
+
+    private class UpdateGoalTool(private val executor: AiActionExecutor) : AiTool {
+        override val name = "updateGoal"
+        override val description = "Updates an existing goal."
+        override val riskLevel = ToolRiskLevel.LOW_RISK
+
+        override suspend fun execute(parameters: Map<String, Any>): ToolResult {
+            val goalId = parameters["goalId"]?.toString()?.toLongOrNull() ?: return ToolResult(false, message = "Valid goalId is required")
+            val action = AiAction(
+                type = AiActionType.UPDATE_GOAL,
+                title = "Update Goal",
+                description = "Agent requested update of goal ID: $goalId",
+                goalId = goalId,
+                parameters = parameters,
+                requiresConfirmation = false
+            )
+            val result = executor.execute(action)
+            return ToolResult(result.success, goalId, result.message, result.error)
+        }
+    }
+
+    private class DeleteGoalTool(private val executor: AiActionExecutor) : AiTool {
+        override val name = "deleteGoal"
+        override val description = "Permanently deletes a goal."
+        override val riskLevel = ToolRiskLevel.DESTRUCTIVE
+
+        override suspend fun execute(parameters: Map<String, Any>): ToolResult {
+            val goalId = parameters["goalId"]?.toString()?.toLongOrNull() ?: return ToolResult(false, message = "Valid goalId is required")
+            val action = AiAction(
+                type = AiActionType.DELETE_GOAL,
+                title = "Delete Goal",
+                description = "Agent requested deletion of goal ID: $goalId",
+                goalId = goalId,
+                requiresConfirmation = false
+            )
+            val result = executor.execute(action)
+            return ToolResult(result.success, goalId, result.message, result.error)
         }
     }
 }

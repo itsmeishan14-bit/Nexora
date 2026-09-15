@@ -9,7 +9,7 @@ import com.example.nexora.data.NexoraRepository
 class AiEvaluationEngine(
     private val repository: NexoraRepository,
     private val aiService: NexoraAiService,
-    private val actionExecutor: AiActionExecutor,
+    private val actionExecutor: AiActionExecutor? = null,
     private val toolRegistry: AiToolRegistry
 ) {
 
@@ -43,7 +43,6 @@ class AiEvaluationEngine(
         val brain = NexoraAiBrain(
             contextBuilder = mockBuilder,
             aiService = aiService,
-            actionExecutor = actionExecutor,
             toolRegistry = toolRegistry,
             repository = repository
         )

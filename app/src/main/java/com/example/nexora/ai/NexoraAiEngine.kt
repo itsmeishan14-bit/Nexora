@@ -2,7 +2,7 @@ package com.example.nexora.ai
 
 /**
  * Main entry point for Nexora AI capabilities.
- * Now powered by the Nexora AI Brain orchestration layer.
+ * Powered by the Nexora AI Brain orchestration layer.
  */
 class NexoraAiEngine(
     private val contextBuilder: AiContextBuilder,
@@ -14,7 +14,6 @@ class NexoraAiEngine(
     private val brain = NexoraAiBrain(
         contextBuilder = contextBuilder,
         aiService = aiService,
-        actionExecutor = actionExecutor,
         toolRegistry = toolRegistry,
         repository = repository
     )
@@ -26,10 +25,20 @@ class NexoraAiEngine(
         return brain.processRequest(request)
     }
 
-    // Legacy method wrappers to maintain backward compatibility during migration
-
+    /**
+     * Executes a user-confirmed AI action.
+     */
     suspend fun executeAction(action: AiAction): AiActionResult {
-        return actionExecutor.execute(action)
+        brain.invalidateContext()
+        val params = action.parameters.toMutableMap()
+        params["userConfirmed"] = true
+        val authorizedAction = action.copy(
+            requiresConfirmation = false,
+            parameters = params
+        )
+        val result = actionExecutor.execute(authorizedAction)
+        brain.invalidateContext()
+        return result
     }
 
     fun getAutomationRules(): List<AiAutomationRule> {
@@ -60,7 +69,6 @@ class NexoraAiEngine(
     }
 
     suspend fun createDailyPlan(): NexoraDailyPlan {
-        // Daily plan currently returns a specific model used by the UI
         val context = contextBuilder.build()
         return aiService.generateDailyPlan(context)
     }

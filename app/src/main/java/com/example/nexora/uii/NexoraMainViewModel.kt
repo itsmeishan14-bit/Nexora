@@ -35,24 +35,32 @@ class NexoraMainViewModel(
 
     private fun loadData() {
         viewModelScope.launch {
-            val savedTasks = repository.observeTasks().first()
-            val savedGoals = repository.observeGoals().first()
-            val savedProgress = repository.observeDailyProgress().first()
-
-            _uiState.value = _uiState.value.copy(
-                tasks = savedTasks,
-                goals = savedGoals,
-                progressHistory = savedProgress.map { item ->
-                    DailyProgress(
-                        date = LocalDate.parse(item.date),
-                        tasksPlanned = item.tasksPlanned,
-                        tasksCompleted = item.tasksCompleted,
-                        focusMinutes = item.focusMinutes,
-                        goalsWorkedOn = item.goalsWorkedOn,
-                        carriedTasks = item.carriedTasks
+            launch {
+                repository.observeTasks().collect { savedTasks ->
+                    _uiState.value = _uiState.value.copy(tasks = savedTasks)
+                }
+            }
+            launch {
+                repository.observeGoals().collect { savedGoals ->
+                    _uiState.value = _uiState.value.copy(goals = savedGoals)
+                }
+            }
+            launch {
+                repository.observeDailyProgress().collect { savedProgress ->
+                    _uiState.value = _uiState.value.copy(
+                        progressHistory = savedProgress.map { item ->
+                            DailyProgress(
+                                date = LocalDate.parse(item.date),
+                                tasksPlanned = item.tasksPlanned,
+                                tasksCompleted = item.tasksCompleted,
+                                focusMinutes = item.focusMinutes,
+                                goalsWorkedOn = item.goalsWorkedOn,
+                                carriedTasks = item.carriedTasks
+                            )
+                        }.sortedByDescending { it.date }
                     )
                 }
-            )
+            }
         }
     }
 
@@ -163,8 +171,10 @@ class NexoraMainViewModel(
             try {
                 repository.deleteGoal(goal)
                 // Unlink tasks
-                val tasks = _uiState.value.tasks.filter { it.goalTitle == goal.title }
-                tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
+                val currentTasks = repository.observeTasks().first()
+                currentTasks.filter { it.goalTitle == goal.title }.forEach { 
+                    repository.updateTask(it.copy(goalTitle = null)) 
+                }
                 updateTodayProgress()
             } finally {
                 _uiState.value = _uiState.value.copy(isProcessing = false)

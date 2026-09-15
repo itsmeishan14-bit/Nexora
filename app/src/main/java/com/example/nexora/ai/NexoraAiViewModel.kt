@@ -307,6 +307,9 @@ class NexoraAiViewModel(
     }
 
     private fun processBrainResponse(response: AiResponse) {
+        // Clear proposed action if the new response is explicitly CANCEL
+        val isCancellation = response.decision?.type == AiDecisionType.CANCEL
+        
         when (response.responseType) {
             AiResponseType.CLARIFICATION_NEEDED -> {
                 // Conversational state should ideally be in AiResponse, but for now we maintain compatibility
@@ -314,7 +317,8 @@ class NexoraAiViewModel(
             }
             AiResponseType.NO_ACTION, AiResponseType.INFORMATION -> {
                  _uiState.value = _uiState.value.copy(
-                    conversationalState = AiConversationalState()
+                    conversationalState = AiConversationalState(),
+                    proposedAction = if (isCancellation) null else _uiState.value.proposedAction
                 )
             }
             else -> {
@@ -323,7 +327,8 @@ class NexoraAiViewModel(
                 }
                 
                 _uiState.value = _uiState.value.copy(
-                    conversationalState = AiConversationalState()
+                    conversationalState = AiConversationalState(),
+                    proposedAction = if (isCancellation) null else _uiState.value.proposedAction
                 )
             }
         }

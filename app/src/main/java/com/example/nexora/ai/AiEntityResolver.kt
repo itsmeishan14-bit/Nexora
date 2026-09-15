@@ -15,12 +15,17 @@ object AiEntityResolver {
      */
     fun resolveTask(query: String, tasks: List<PremiumTask>): ResolutionResult<PremiumTask> {
         val cleanQuery = normalize(query)
-        if (cleanQuery.isBlank()) return ResolutionResult.NotFound()
+        val rawCleanQuery = normalizeRaw(query)
+        if (cleanQuery.isBlank() && rawCleanQuery.isBlank()) return ResolutionResult.NotFound()
 
-        // Match against all tasks, but we could prioritize incomplete ones if needed.
-        val candidates = tasks.map { 
-            val normalizedTitle = normalize(it.title)
-            it to scoreMatch(cleanQuery, normalizedTitle) 
+        val candidates = tasks.map { task ->
+            val normalizedTitle = normalize(task.title)
+            val rawNormalizedTitle = normalizeRaw(task.title)
+            val score = maxOf(
+                scoreMatch(cleanQuery, normalizedTitle),
+                scoreMatch(rawCleanQuery, rawNormalizedTitle)
+            )
+            task to score
         }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
@@ -32,7 +37,7 @@ object AiEntityResolver {
 
         return when {
             bestMatches.size == 1 -> {
-                val status = if (maxScore == 100) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
+                val status = if (maxScore >= 90) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
                 ResolutionResult.Success(bestMatches.first().first, status)
             }
             bestMatches.size > 1 -> ResolutionResult.Ambiguous(bestMatches.map { it.first })
@@ -45,11 +50,17 @@ object AiEntityResolver {
      */
     fun resolveGoal(query: String, goals: List<NexoraGoal>): ResolutionResult<NexoraGoal> {
         val cleanQuery = normalize(query)
-        if (cleanQuery.isBlank()) return ResolutionResult.NotFound()
+        val rawCleanQuery = normalizeRaw(query)
+        if (cleanQuery.isBlank() && rawCleanQuery.isBlank()) return ResolutionResult.NotFound()
 
-        val candidates = goals.map { 
-            val normalizedTitle = normalize(it.title)
-            it to scoreMatch(cleanQuery, normalizedTitle) 
+        val candidates = goals.map { goal ->
+            val normalizedTitle = normalize(goal.title)
+            val rawNormalizedTitle = normalizeRaw(goal.title)
+            val score = maxOf(
+                scoreMatch(cleanQuery, normalizedTitle),
+                scoreMatch(rawCleanQuery, rawNormalizedTitle)
+            )
+            goal to score
         }
             .filter { it.second > 0 }
             .sortedByDescending { it.second }
@@ -61,7 +72,7 @@ object AiEntityResolver {
 
         return when {
             bestMatches.size == 1 -> {
-                val status = if (maxScore == 100) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
+                val status = if (maxScore >= 90) EntityResolutionStatus.EXACT_MATCH else EntityResolutionStatus.PARTIAL_MATCH
                 ResolutionResult.Success(bestMatches.first().first, status)
             }
             bestMatches.size > 1 -> ResolutionResult.Ambiguous(bestMatches.map { it.first })
@@ -70,11 +81,22 @@ object AiEntityResolver {
     }
 
     /**
-     * Normalizes text for consistent comparison.
+     * Normalizes text by removing filler words for natural language comparison.
      */
     private fun normalize(text: String): String {
         return text.lowercase()
-            .replace(Regex("[^a-z0-9\\s]"), "")
+            .replace(Regex("(?i)\\b(the|my|a|an|task|goal|called|as|complete|mark|delete|update|change|to|for|with)\\b"), " ")
+            .replace(Regex("[^a-z0-9\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    /**
+     * Raw normalization without filler removal (preserves exact title structure).
+     */
+    private fun normalizeRaw(text: String): String {
+        return text.lowercase()
+            .replace(Regex("[^a-z0-9\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
@@ -83,16 +105,19 @@ object AiEntityResolver {
      * Scores how well a query matches a target string.
      */
     private fun scoreMatch(query: String, target: String): Int {
+        if (query.isBlank() || target.isBlank()) return 0
         if (query == target) return 100
-        if (target.startsWith(query)) return 80
-        if (target.contains(query)) return 60
+        if (target.startsWith(query) || query.startsWith(target)) return 80
+        if (target.contains(query) || query.contains(target)) return 60
         
-        val queryWords = query.split(" ").filter { it.length > 2 }
+        val queryWords = query.split(" ").filter { it.length >= 2 }
         val targetWords = target.split(" ").toSet()
+        if (queryWords.isEmpty()) return 0
+        
         val matchingWords = queryWords.count { it in targetWords }
         
         if (matchingWords > 0) {
-            return matchingWords * 20
+            return (matchingWords.toFloat() / queryWords.size * 50).toInt()
         }
         
         return 0

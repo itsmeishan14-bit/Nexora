@@ -11,7 +11,6 @@ import com.example.nexora.uii.TaskPriority
 class NexoraAiBrain(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
-    private val actionExecutor: AiActionExecutor,
     toolRegistry: AiToolRegistry,
     private val repository: NexoraRepository,
     private val intentResolver: LocalAiIntentResolver = LocalAiIntentResolver()
@@ -81,6 +80,11 @@ class NexoraAiBrain(
         }
     }
 
+    fun invalidateContext() {
+        lastContext = null
+        lastContextBuiltAt = 0
+    }
+
     private suspend fun getContext(request: AiRequest): AiContext {
         val now = System.currentTimeMillis()
         
@@ -123,12 +127,9 @@ class NexoraAiBrain(
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""
         
-        // If user says "complete", "finish", "add", "create", etc., they want an action performed.
-        // The agent is better at multi-step action resolution.
-        return msg.contains("complete") || msg.contains("finish") || 
-               msg.contains("add") || msg.contains("create") || msg.contains("goal") || 
-               msg.contains("organize") || msg.contains("clean") || msg.contains("yes") || 
-               msg.contains("approve") || msg.contains("confirm")
+        // Multi-step complex workflow triggers
+        return (msg.contains("goal") && (msg.contains("finish") || msg.contains("help") || msg.contains("work"))) ||
+               msg.contains("organize") || msg.contains("clean")
     }
 
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
@@ -175,7 +176,8 @@ class NexoraAiBrain(
             recommendations = emptyList(), 
             proposedActions = structuredResult.actions,
             relatedTaskId = structuredResult.decision.taskId,
-            relatedGoalId = structuredResult.decision.goalId
+            relatedGoalId = structuredResult.decision.goalId,
+            decision = structuredResult.decision
         )
         
         logResponseRecommendations(response)
@@ -428,21 +430,23 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun executeDirectAction(type: AiActionType, params: Map<String, Any>, taskId: Long? = null, goalId: Long? = null): AiResponse {
+    private fun executeDirectAction(type: AiActionType, params: Map<String, Any>, taskId: Long? = null, goalId: Long? = null): AiResponse {
         val action = AiAction(
             type = type, 
             title = "Direct Action", 
-            description = "", 
+            description = "Execution of $type requested.", 
             parameters = params, 
             taskId = taskId, 
-            goalId = goalId
+            goalId = goalId,
+            requiresConfirmation = true // Direct brain requests default to requiring confirmation
         )
-        val result = actionExecutor.execute(action)
         
+        // If it's a modifying action, we propose it first unless it's explicitly authorized
         return AiResponse(
-            responseType = if (result.success) AiResponseType.INFORMATION else AiResponseType.WARNING,
-            title = if (result.success) "Action Succeeded" else "Action Failed",
-            message = result.message
+            responseType = AiResponseType.ACTION_PROPOSAL,
+            title = "Action Proposal",
+            message = "I can perform this action for you. Should I proceed?",
+            proposedActions = listOf(action)
         )
     }
 
@@ -513,6 +517,7 @@ class NexoraAiBrain(
             AiDecisionType.WARNING -> AiResponseType.WARNING
             AiDecisionType.AMBIGUOUS -> AiResponseType.CLARIFICATION_NEEDED
             AiDecisionType.CLARIFY -> AiResponseType.CLARIFICATION_NEEDED
+            AiDecisionType.CANCEL -> AiResponseType.NO_ACTION
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }

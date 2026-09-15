@@ -42,10 +42,13 @@ object NexoraSecurity {
      */
     fun isAuthorized(action: AiAction): Boolean {
         val risk = getRiskLevel(action.type)
-        return when (risk) {
-            ToolRiskLevel.DESTRUCTIVE -> action.requiresConfirmation
-            ToolRiskLevel.HIGH_RISK -> action.requiresConfirmation
-            else -> true
+        if (risk == ToolRiskLevel.SAFE) return true
+        
+        if (risk == ToolRiskLevel.DESTRUCTIVE) {
+            val userConfirmed = action.parameters["userConfirmed"] as? Boolean ?: false
+            if (!userConfirmed) return false
         }
+
+        return !action.requiresConfirmation
     }
 }

@@ -44,7 +44,8 @@ data class AiResponse(
     val requiresConfirmation: Boolean = false,
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,
-    val workflow: AgentWorkflow? = null
+    val workflow: AgentWorkflow? = null,
+    val decision: AiDecision? = null
 )
 
 enum class AiResponseType {

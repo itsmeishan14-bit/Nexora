@@ -94,7 +94,6 @@ open class AiActionExecutor(
                 val task = repository.getTaskById(taskId)
                 if (task == null) return AiActionResult(false, "Verification failed: Task lost after update.")
                 
-                // Optional: Verify specific fields if they were in parameters
                 val expectedPriority = action.parameters["priority"] as? String
                 if (expectedPriority != null && task.priority.name != expectedPriority) {
                      return AiActionResult(false, "Verification failed: Priority mismatch. Expected $expectedPriority but found ${task.priority.name}")
@@ -106,11 +105,20 @@ open class AiActionExecutor(
                 val task = repository.getTaskById(taskId)
                 if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists after deletion.")
             }
+            AiActionType.CREATE_GOAL -> {
+                val goalId = executionResult.affectedGoalId ?: return executionResult
+                val goal = repository.getGoalById(goalId)
+                if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found in DB after creation.")
+            }
             AiActionType.UPDATE_GOAL -> {
                 val goalId = action.goalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
-                // Basic existence check
                 if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found after update.")
+            }
+            AiActionType.DELETE_GOAL -> {
+                val goalId = action.goalId ?: return executionResult
+                val goal = repository.getGoalById(goalId)
+                if (goal == null) executionResult else AiActionResult(false, "Verification failed: Goal still exists after deletion.")
             }
             else -> executionResult
         }
@@ -135,6 +143,13 @@ open class AiActionExecutor(
 
     private suspend fun createTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val title = action.parameters["title"] as? String ?: action.title
+        
+        // 1. Sanity check for duplicates
+        val tasks = repository.observeTasksOnce()
+        if (tasks.any { it.title.lowercase().trim() == title.lowercase().trim() && !it.completed }) {
+            return AiActionResult(false, "A similar active task already exists: \"$title\"")
+        }
+
         val category = action.parameters["category"] as? String ?: "Personal"
         val duration = action.parameters["duration"] as? String ?: "30 minutes"
         val priorityStr = action.parameters["priority"] as? String ?: "MEDIUM"
@@ -166,6 +181,14 @@ open class AiActionExecutor(
     private suspend fun completeTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
         val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
+
+        if (task.completed) {
+            return AiActionResult(
+                success = true,
+                message = "Task \"${task.title}\" is already completed.",
+                affectedTaskId = taskId
+            )
+        }
 
         val updated = task.copy(completed = true)
         repository.updateTask(updated)
@@ -201,7 +224,7 @@ open class AiActionExecutor(
         
         return AiActionResult(
             success = true,
-            message = "Task updated: ${task.title}",
+            message = "Successfully updated task \"${updated.title}\".",
             affectedTaskId = taskId
         )
     }
@@ -214,13 +237,12 @@ open class AiActionExecutor(
         
         return AiActionResult(
             success = true,
-            message = "Task deleted: ${task.title}",
+            message = "Task \"${task.title}\" has been permanently deleted.",
             affectedTaskId = taskId
         )
     }
 
     private suspend fun rescheduleTask(repository: NexoraRepository, action: AiAction): AiActionResult {
-        // In this simple app, reschedule might just mean changing a parameter or just a confirmation
         return AiActionResult(true, "Task rescheduled: ${action.title}")
     }
 
@@ -267,6 +289,10 @@ open class AiActionExecutor(
     private suspend fun deleteGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
         val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Goal not found.")
+
+        // Unlink tasks before deleting goal
+        val tasks = repository.observeTasksOnce().filter { it.goalTitle == goal.title }
+        tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
 
         repository.deleteGoal(goal)
         

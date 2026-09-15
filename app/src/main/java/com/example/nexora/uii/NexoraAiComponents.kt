@@ -218,6 +218,17 @@ fun ProposedActionCard(
             
             Spacer(modifier = Modifier.height(28.dp))
             
+            val confirmLabel = when (action.type) {
+                AiActionType.CREATE_TASK -> "Create Task"
+                AiActionType.COMPLETE_TASK -> "Complete Task"
+                AiActionType.DELETE_TASK -> "Delete Task"
+                AiActionType.UPDATE_TASK -> "Update Task"
+                AiActionType.CREATE_GOAL -> "Create Goal"
+                AiActionType.UPDATE_GOAL -> "Update Goal"
+                AiActionType.DELETE_GOAL -> "Delete Goal"
+                else -> "Confirm Action"
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = onConfirm,
@@ -226,7 +237,7 @@ fun ProposedActionCard(
                     shape = NexoraShapes.medium,
                     contentPadding = PaddingValues(vertical = 14.dp)
                 ) {
-                    Text("Approve Action", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text(confirmLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 }
                 
                 Button(
@@ -236,7 +247,7 @@ fun ProposedActionCard(
                     shape = NexoraShapes.medium,
                     contentPadding = PaddingValues(vertical = 14.dp)
                 ) {
-                    Text("Not now", style = MaterialTheme.typography.labelLarge)
+                    Text("Cancel", style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

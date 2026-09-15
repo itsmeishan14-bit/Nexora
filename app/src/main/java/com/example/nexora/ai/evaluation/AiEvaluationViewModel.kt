@@ -26,7 +26,6 @@ class AiEvaluationViewModel(
     private val evaluationEngine = AiEvaluationEngine(
         repository = repository,
         aiService = LocalAiServiceAccessor.getService(engine),
-        actionExecutor = LocalAiServiceAccessor.getExecutor(engine),
         toolRegistry = LocalAiServiceAccessor.getRegistry(engine)
     )
 
@@ -53,12 +52,6 @@ object LocalAiServiceAccessor {
         val field = engine.javaClass.getDeclaredField("aiService")
         field.isAccessible = true
         return field.get(engine) as com.example.nexora.ai.NexoraAiService
-    }
-    
-    fun getExecutor(engine: NexoraAiEngine): com.example.nexora.ai.AiActionExecutor {
-        val field = engine.javaClass.getDeclaredField("actionExecutor")
-        field.isAccessible = true
-        return field.get(engine) as com.example.nexora.ai.AiActionExecutor
     }
     
     fun getRegistry(engine: NexoraAiEngine): com.example.nexora.ai.AiToolRegistry {

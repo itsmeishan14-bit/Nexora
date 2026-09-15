@@ -312,9 +312,10 @@ class NexoraAiAgent(
                         nextStep = AgentWorkflowStep(
                             workflowId = workflow.id,
                             order = 1,
-                            description = "Completing task",
+                            description = "Mark \"${task.title}\" as complete",
                             toolName = "completeTask",
-                            parameters = mapOf("taskId" to task.id)
+                            parameters = mapOf("taskId" to task.id),
+                            requiresConfirmation = true
                         )
                     )
                 }
@@ -353,9 +354,10 @@ class NexoraAiAgent(
                 nextStep = AgentWorkflowStep(
                     workflowId = workflow.id,
                     order = 0,
-                    description = "Creating the task",
+                    description = "Create task \"$title\"",
                     toolName = "createTask",
-                    parameters = mapOf("title" to title)
+                    parameters = mapOf("title" to title),
+                    requiresConfirmation = true
                 )
             )
         }

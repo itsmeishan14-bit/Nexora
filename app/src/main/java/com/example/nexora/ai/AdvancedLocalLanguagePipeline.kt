@@ -49,6 +49,9 @@ class AdvancedLocalLanguagePipeline {
 
     private fun detectIntent(text: String): Pair<AiDecisionType, AiConfidence> {
         return when {
+            // Cancel / Stop
+            text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
+
             // Task Actions
             text.contains(Regex("(?i)create|add|new|remind")) && text.contains("task") -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH
             text.contains(Regex("(?i)complete|finish|done|checked off|mark")) -> AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
@@ -66,9 +69,11 @@ class AdvancedLocalLanguagePipeline {
             // Analysis & Info
             text.contains(Regex("(?i)show|list|view")) && text.contains("task") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
             text.contains(Regex("(?i)show|list|view")) && text.contains("goal") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+            text.contains(Regex("(?i)unfinished|incomplete|pending|to do|todo")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
             text.contains(Regex("(?i)productivity|pattern|consistency|how am i doing")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
             text.contains(Regex("(?i)clean|organize|overload")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
-            
+            text.contains(Regex("(?i)highest priority|most important|urgent")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
+
             else -> AiDecisionType.NO_ACTION to AiConfidence.LOW
         }
     }
@@ -77,7 +82,7 @@ class AdvancedLocalLanguagePipeline {
         val entities = mutableMapOf<String, Any>()
         
         // Extract Duration
-        val durationMatch = Regex("(\\d+)\\s*(minute|min|hour|hr)").find(text)
+        val durationMatch = Regex("(\\d+)\\s*(minute|min|hour|hr)s?").find(text)
         if (durationMatch != null) {
             val value = durationMatch.groupValues[1]
             val unit = durationMatch.groupValues[2]
@@ -92,27 +97,37 @@ class AdvancedLocalLanguagePipeline {
             text.contains("medium priority") -> entities["priority"] = "MEDIUM"
         }
 
-        // Extract Task/Goal Title (crude heuristic)
-        // We remove intent-related words to isolate the entity title
-        val title = when (intent) {
+        // Extract Task/Goal Title
+        val rawTitle = when (intent) {
             AiDecisionType.CREATE_TASK -> {
-                text.replace(Regex("(?i)\\b(create|add|new|remind)\\b|\\b(task|todo)\\b|\\b(to|called|a)\\b"), "").trim()
+                text.replace(Regex("(?i)\\b(create|add|new|remind|a|an|task|todo|to|called|for|with)\\b"), " ")
+                    .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
             }
             AiDecisionType.CREATE_GOAL -> {
-                text.replace(Regex("(?i)\\b(create|add|new)\\b|\\b(goal|objective)\\b|\\b(to|called|a)\\b"), "").trim()
+                text.replace(Regex("(?i)\\b(create|add|new|a|an|goal|objective|to|called|for|with)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
             }
             AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK -> {
-                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|delete|remove|destroy|change|update|edit|priority|rename)\\b|\\b(the|task|it)\\b"), "").trim()
+                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|as|delete|remove|destroy|change|update|edit|priority|rename|the|my|a|an|task|it)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
             }
             AiDecisionType.DECOMPOSE_GOAL -> {
-                text.replace(Regex("(?i)\\b(break down|decompose|steps)\\b|\\b(the|goal|objective)\\b"), "").trim()
+                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
             }
             else -> ""
         }
         
-        if (title.isNotBlank()) {
-            entities["title"] = title
-            entities["query"] = title
+        val cleanTitle = if (rawTitle.isNotBlank()) rawTitle.replaceFirstChar { it.uppercase() } else ""
+
+        if (cleanTitle.isNotBlank()) {
+            entities["title"] = cleanTitle
+            entities["query"] = cleanTitle
         }
 
         return entities
@@ -131,9 +146,9 @@ class AdvancedLocalLanguagePipeline {
         val title = entities["title"]?.toString() ?: ""
 
         // Handle "it", "that goal", "that task"
-        val isIt = title.isBlank() || title == "it" || normalizedMessage.contains(Regex("\\bit\\b"))
-        val hasTaskRef = title.contains("that task") || title.contains("the task")
-        val hasGoalRef = title.contains("that goal") || title.contains("the goal")
+        val isIt = title.isBlank() || title == "It" || normalizedMessage.contains(Regex("\\bit\\b"))
+        val hasTaskRef = title.contains("that task", ignoreCase = true) || title.contains("the task", ignoreCase = true)
+        val hasGoalRef = title.contains("that goal", ignoreCase = true) || title.contains("the goal", ignoreCase = true)
 
         if ((isIt || hasTaskRef) && convContext.lastTaskId != null) {
             newEntities["taskId"] = convContext.lastTaskId
@@ -168,7 +183,6 @@ class AdvancedLocalLanguagePipeline {
         when (clarification.missingField) {
             "title" -> entities["title"] = text
             "taskId" -> {
-                // Try to resolve within candidates
                 val tasks = context.tasks.filter { it.id in clarification.candidates }
                 val match = AiEntityResolver.resolveTask(text, tasks)
                 if (match is ResolutionResult.Success) {

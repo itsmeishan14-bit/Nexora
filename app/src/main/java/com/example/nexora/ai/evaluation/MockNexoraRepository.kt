@@ -3,8 +3,6 @@ package com.example.nexora.ai.evaluation
 import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.NexoraGoal
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 
 /**
  * A repository that keeps data in memory for deterministic evaluation.
@@ -16,6 +14,10 @@ class MockNexoraRepository : NexoraRepository(null) {
 
     override suspend fun observeTasksOnce(): List<PremiumTask> = tasks.toList()
     
+    override suspend fun getTaskById(id: Long): PremiumTask? = tasks.find { it.id == id }
+
+    override suspend fun getIncompleteTasksOnce(): List<PremiumTask> = tasks.filter { !it.completed }
+
     override suspend fun addTask(task: PremiumTask): PremiumTask {
         val newTask = task.copy(id = (tasks.size + 1).toLong())
         tasks.add(newTask)
@@ -27,12 +29,27 @@ class MockNexoraRepository : NexoraRepository(null) {
         if (index >= 0) tasks[index] = task
     }
 
+    override suspend fun deleteTask(task: PremiumTask) {
+        tasks.removeAll { it.id == task.id }
+    }
+
     override suspend fun observeGoalsOnce(): List<NexoraGoal> = goals.toList()
+
+    override suspend fun getGoalById(id: Long): NexoraGoal? = goals.find { it.id == id }
 
     override suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
         val newGoal = goal.copy(id = (goals.size + 1).toLong())
         goals.add(newGoal)
         return newGoal
+    }
+
+    override suspend fun updateGoal(goal: NexoraGoal) {
+        val index = goals.indexOfFirst { it.id == goal.id }
+        if (index >= 0) goals[index] = goal
+    }
+
+    override suspend fun deleteGoal(goal: NexoraGoal) {
+        goals.removeAll { it.id == goal.id }
     }
 
     override suspend fun saveMemory(item: com.example.nexora.ai.AiMemoryItem) {

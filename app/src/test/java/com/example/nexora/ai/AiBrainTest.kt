@@ -45,15 +45,16 @@ class AiBrainTest {
     }
 
     @Test
-    fun `test brain handles chat intent for task creation via agent`() = runBlocking {
+    fun `test brain handles chat intent for task creation via proposal`() = runBlocking {
         val context = AiContext()
         val testBrain = createTestBrain(context)
         
         val request = AiRequest(AiRequestType.CHAT, userMessage = "Create a task to buy milk")
         val response = testBrain.processRequest(request)
         
-        // Agent executes it directly and returns INFORMATION
-        assertEquals("Expected INFORMATION response type. Actual: ${response.responseType}, message: ${response.message}", AiResponseType.INFORMATION, response.responseType)
+        // Creating a task proposes an action requiring user confirmation
+        assertEquals(AiResponseType.ACTION_PROPOSAL, response.responseType)
+        assertTrue(response.proposedActions.any { it.type == AiActionType.CREATE_TASK })
     }
 
     @Test
@@ -108,7 +109,6 @@ class AiBrainTest {
         return NexoraAiBrain(
             contextBuilder = mockContextBuilder,
             aiService = fakeService,
-            actionExecutor = AiActionExecutor(null),
             toolRegistry = toolRegistry,
             repository = com.example.nexora.data.NexoraRepository(null)
         )
