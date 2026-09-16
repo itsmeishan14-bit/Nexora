@@ -41,7 +41,7 @@ class AiBrainTest {
         
         val factors = response.evidence.map { it.factor }
         assertTrue("Expected Priority factor in $factors", response.evidence.any { it.factor == "Priority" })
-        assertTrue("Expected Workload Fit factor in $factors", response.evidence.any { it.factor == "Workload Fit" })
+        assertTrue("Expected Focus Fit factor in $factors", response.evidence.any { it.factor == "Focus Fit" })
     }
 
     @Test
@@ -60,7 +60,15 @@ class AiBrainTest {
     @Test
     fun `test brain proactive analysis detects neglected goal`() = runBlocking {
         val goal = NexoraGoal(id = 1, title = "Big Goal", category = "Work", targetDate = "", progress = 0.1f)
-        val context = AiContext(goals = listOf(goal), tasks = emptyList())
+        val context = AiContext(
+            goals = listOf(goal), 
+            tasks = emptyList(),
+            personalContext = AiPersonalContext(
+                goalHealth = listOf(
+                    GoalHealthAssessment(1L, "Big Goal", GoalHealthState.AT_RISK, 0.1f, ActivityLevel.NONE, 5, "Stagnating")
+                )
+            )
+        )
         
         val testBrain = createTestBrain(context)
         
@@ -69,7 +77,7 @@ class AiBrainTest {
         
         assertEquals(AiResponseType.WARNING, response.responseType)
         assertEquals(1L, response.relatedGoalId)
-        assertTrue(response.title.contains("Neglected", ignoreCase = true))
+        assertTrue(response.title.contains("Stagnating", ignoreCase = true))
     }
 
     @Test

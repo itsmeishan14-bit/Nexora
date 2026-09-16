@@ -48,7 +48,7 @@ class AdaptiveIntelligenceTest {
         val workloadWarning = insights.find { it.title.contains("Workload") }
         
         assertNotNull(workloadWarning)
-        assertTrue(workloadWarning?.message?.contains("usually complete around 4") == true)
+        assertTrue(workloadWarning?.message?.contains("capacity is around 4") == true)
         assertEquals(AiConfidence.HIGH, workloadWarning?.confidence)
     }
 
@@ -56,7 +56,8 @@ class AdaptiveIntelligenceTest {
     fun `test personalized daily plan capacity`() {
         val profile = AdaptiveProfile(
             preferredDailyWorkload = 3,
-            confidence = AdaptiveConfidence.MODERATE
+            confidence = AdaptiveConfidence.MODERATE,
+            sampleCount = 5
         )
         val tasks = (1..10).map { 
             PremiumTask(id = it.toLong(), title = "Task $it", category = "Work", duration = "30 min")
@@ -84,14 +85,15 @@ class AdaptiveIntelligenceTest {
         val nextTask = recs.find { it.type == AiRecommendationType.NEXT_TASK }
         
         assertEquals(1L, nextTask?.relatedTaskId) // Short task preferred
-        assertTrue(nextTask?.message?.contains("Fits your preferred task size") == true)
+        assertTrue(nextTask?.message?.contains("Matches your preference for smaller tasks") == true)
     }
 
     @Test
     fun `test productivity below average insight`() {
         val profile = AdaptiveProfile(
             completionRate = 0.9f,
-            confidence = AdaptiveConfidence.HIGH
+            confidence = AdaptiveConfidence.HIGH,
+            sampleCount = 5
         )
         val context = AiContext(
             tasksPlannedToday = 5,
@@ -100,7 +102,7 @@ class AdaptiveIntelligenceTest {
         )
         
         val recs = planner.analyzeProductivity(context)
-        assertTrue(recs.any { it.title.contains("Below Average") })
+        assertTrue(recs.any { it.message.contains("pace is currently below your typical standard") })
     }
 
     private fun calculateProfileManual(history: List<DailyProgressEntity>): AdaptiveProfile {

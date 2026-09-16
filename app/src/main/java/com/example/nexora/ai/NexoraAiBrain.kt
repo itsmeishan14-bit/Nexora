@@ -132,7 +132,7 @@ class NexoraAiBrain(
                msg.contains("organize") || msg.contains("clean")
     }
 
-    private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Check if user is asking about memory/productivity specifically
@@ -180,7 +180,6 @@ class NexoraAiBrain(
             decision = structuredResult.decision
         )
         
-        logResponseRecommendations(response)
         return response
     }
     
@@ -238,7 +237,7 @@ class NexoraAiBrain(
         }
     }
 
-    private suspend fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val plan = planner.createDailyPlan(context)
         val proposedActions = plan.tasks.map { 
             AiAction(
@@ -261,11 +260,10 @@ class NexoraAiBrain(
             proposedActions = proposedActions
         )
         
-        logResponseRecommendations(response)
         return response
     }
 
-    private suspend fun handleGoalAnalysis(context: AiContext): AiResponse {
+    private fun handleGoalAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeGoals(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.NO_ACTION, "Goal Status", "Your goals are currently on track.")
         
@@ -278,11 +276,10 @@ class NexoraAiBrain(
             relatedGoalId = best.relatedGoalId
         )
         
-        logResponseRecommendations(response)
         return response
     }
 
-    private suspend fun handleProductivityAnalysis(context: AiContext): AiResponse {
+    private fun handleProductivityAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeProductivity(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.INFORMATION, "Productivity", "Keep working on your tasks to build your productivity history.")
         
@@ -294,11 +291,10 @@ class NexoraAiBrain(
             evidence = best.evidence
         )
         
-        logResponseRecommendations(response)
         return response
     }
 
-    private suspend fun handleProactiveAnalysis(context: AiContext): AiResponse {
+    private fun handleProactiveAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
         
         // Map signals to recommendations for backward compatibility
@@ -335,7 +331,6 @@ class NexoraAiBrain(
             AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any immediate issues with your workflow.")
         }
         
-        logResponseRecommendations(response)
         return response
     }
 
@@ -387,7 +382,7 @@ class NexoraAiBrain(
         )
     }
 
-    private suspend fun handleGeneralAnalysis(context: AiContext): AiResponse {
+    private fun handleGeneralAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
         val recommendations = signals.map { signal ->
             AiRecommendation(
@@ -419,7 +414,6 @@ class NexoraAiBrain(
             proactiveSignals = signals
         )
         
-        logResponseRecommendations(response)
         return response
     }
 

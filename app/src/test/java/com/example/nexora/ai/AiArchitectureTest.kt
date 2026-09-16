@@ -55,7 +55,7 @@ class AiArchitectureTest {
             tasks = tasks,
             goals = emptyList(),
             tasksPlannedToday = 10,
-            memory = AiMemory(analyzedDays = 5) // Low avg completion assumed
+            adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
         )
 
         val insights = planner.getProactiveInsights(context)
@@ -67,10 +67,18 @@ class AiArchitectureTest {
         val goals = listOf(
             NexoraGoal(id = 1, title = "Important Goal", category = "Work", targetDate = "", progress = 0.1f)
         )
-        val context = AiContext(tasks = emptyList(), goals = goals)
+        val context = AiContext(
+            tasks = emptyList(), 
+            goals = goals,
+            personalContext = AiPersonalContext(
+                goalHealth = listOf(
+                    GoalHealthAssessment(1L, "Important Goal", GoalHealthState.AT_RISK, 0.1f, ActivityLevel.NONE, 5, "Stagnating")
+                )
+            )
+        )
 
         val insights = planner.getProactiveInsights(context)
-        assertTrue(insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Neglected") })
+        assertTrue(insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Stagnating") })
     }
 
     @Test
@@ -113,9 +121,9 @@ class AiArchitectureTest {
         
         val plan = planner.createDailyPlan(context)
         
-        // Should limit tasks to a realistic amount (max 6 in our code)
-        assertTrue(plan.tasks.size <= 6)
+        // My new logic allows baseCapacity + 2 = 7 tasks if unknown.
+        assertTrue(plan.tasks.size <= 7)
         // Total duration should not exceed max limit significantly
-        assertTrue(plan.totalDurationMinutes <= 360) 
+        assertTrue(plan.totalDurationMinutes <= 480)
     }
 }

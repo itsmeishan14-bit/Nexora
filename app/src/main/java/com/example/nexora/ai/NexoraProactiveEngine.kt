@@ -31,11 +31,11 @@ class NexoraProactiveEngine {
         val plannedToday = context.tasksPlannedToday
         val capacity = profile.preferredDailyWorkload
 
-        if (plannedToday > capacity * 1.5) {
+        if (plannedToday > capacity * 1.5 && capacity > 0) {
             signals.add(AiProactiveSignal(
                 type = ProactiveSignalType.OVERLOAD,
                 title = "High Workload Warning",
-                message = "You've planned $plannedToday tasks, but you usually complete around $capacity tasks per day.",
+                message = "You've planned $plannedToday tasks, but your typical capacity is around $capacity tasks.",
                 severity = AiPriority.HIGH,
                 confidence = mapAdaptiveConfidence(profile.confidence),
                 evidence = "Historical capacity: $capacity, Planned today: $plannedToday",
@@ -72,7 +72,7 @@ class NexoraProactiveEngine {
             if (incompleteLinked.isEmpty() && goal.progress < 1.0f) {
                  signals.add(AiProactiveSignal(
                     type = ProactiveSignalType.MISSING_NEXT_ACTION,
-                    title = "Goal Neglected",
+                    title = "Goal Stagnating",
                     message = "\"${goal.title}\" is active but has no tasks planned.",
                     severity = AiPriority.MEDIUM,
                     confidence = AiConfidence.HIGH,
@@ -94,7 +94,7 @@ class NexoraProactiveEngine {
             if (health?.state == GoalHealthState.AT_RISK) {
                 signals.add(AiProactiveSignal(
                     type = ProactiveSignalType.NEGLECTED_GOAL,
-                    title = "Goal Neglected",
+                    title = "Goal Stagnating",
                     message = "\"${goal.title}\" has not received much attention recently.",
                     severity = AiPriority.HIGH,
                     confidence = AiConfidence.HIGH,

@@ -49,15 +49,18 @@ class LocalAiIntelligenceTest {
 
         // Exact match
         val res1 = entityResolver.resolveTask("Buy groceries", tasks)
-        assertTrue(res1 is ResolutionResult.Success && res1.entity.id == 2L)
+        assertTrue(res1 is ResolutionResult.Success)
+        assertEquals(2L, (res1 as ResolutionResult.Success).entity.id)
 
         // Normalized match with symbols and case
         val res2 = entityResolver.resolveTask("FINISH the ANDROID project!!!", tasks)
-        assertTrue(res2 is ResolutionResult.Success && res2.entity.id == 1L)
+        assertTrue(res2 is ResolutionResult.Success)
+        assertEquals(1L, (res2 as ResolutionResult.Success).entity.id)
 
         // Partial match
         val res3 = entityResolver.resolveTask("Android project", tasks)
-        assertTrue(res3 is ResolutionResult.Success && res3.entity.id == 1L)
+        assertTrue(res3 is ResolutionResult.Success)
+        assertEquals(1L, (res3 as ResolutionResult.Success).entity.id)
 
         // Ambiguous match
         val tasksAmbiguous = tasks + PremiumTask(id = 4, title = "Finish the iOS project", category = "Work", duration = "60 min")
@@ -108,9 +111,9 @@ class LocalAiIntelligenceTest {
         // Task completion query
         val res4 = intentResolver.resolve("complete my work task", context)
         // Note: this depends on entity resolver finding a match, but here tasks are empty
-        assertEquals("Decision should be NO_ACTION when task not found. Actual type: ${res4.decision.type}, text: ${res4.textResponse}", 
+        assertEquals("Decision should be NO_ACTION when task not found", 
             AiDecisionType.NO_ACTION, res4.decision.type) 
-        assertTrue("Response should explain task was not found. Actual text: ${res4.textResponse}",
+        assertTrue("Response should explain task was not found",
             res4.textResponse?.contains("couldn't find") == true)
     }
 
@@ -120,11 +123,16 @@ class LocalAiIntelligenceTest {
         val context = AiContext(
             tasks = emptyList(), 
             goals = listOf(goal),
-            tasksPlannedToday = 0
+            tasksPlannedToday = 0,
+            personalContext = AiPersonalContext(
+                goalHealth = listOf(
+                    GoalHealthAssessment(1L, "Fitness Goal", GoalHealthState.AT_RISK, 0.2f, ActivityLevel.NONE, 5, "Stagnating")
+                )
+            )
         )
         
         val insights = planner.getProactiveInsights(context)
         assertTrue("Should detect neglected goal", 
-            insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Neglected") })
+            insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Stagnating") })
     }
 }
