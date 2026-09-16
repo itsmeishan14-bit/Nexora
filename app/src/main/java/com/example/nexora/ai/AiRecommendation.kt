@@ -31,6 +31,6 @@ data class AiRecommendation(
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,
     val actionLabel: String? = null,
-    val evidence: String? = null,
+    val evidence: List<ReasoningFactor> = emptyList(),
     val confidence: AiConfidence = AiConfidence.MEDIUM
 )

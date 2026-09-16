@@ -16,10 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.AiPersonalContext
-import com.example.nexora.ai.GoalHealthState
 import com.example.nexora.ui.theme.*
 
 @Composable
@@ -32,7 +32,8 @@ fun GoalDetailsScreen(
     onDelete: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     onAddTask: () -> Unit,
-    onDecomposeGoal: () -> Unit
+    onDecomposeGoal: () -> Unit,
+    onUpdateProgress: (Float) -> Unit = {}
 ) {
     val health = personalContext?.goalHealth?.find { it.goalId == goal.id }
     val progress = (goal.progress * 100).toInt()
@@ -79,9 +80,9 @@ fun GoalDetailsScreen(
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(32.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // GOAL HEADER
+            // GOAL HEADER & PROGRESS
             item {
                 Column {
                     Text(
@@ -117,10 +118,75 @@ fun GoalDetailsScreen(
                             style = NumericStyle.copy(fontSize = 18.sp, color = Green60)
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // INTERACTIVE PROGRESS CONTROL
+                    Surface(
+                        shape = NexoraShapes.medium,
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Gray90),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Goal Progress",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Green10
+                                )
+                                Text(
+                                    text = "$progress%",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Green60,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Slider(
+                                value = goal.progress,
+                                onValueChange = { onUpdateProgress(it) },
+                                valueRange = 0f..1f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Green60,
+                                    activeTrackColor = Green60,
+                                    inactiveTrackColor = Gray95
+                                )
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                listOf(0f, 0.25f, 0.5f, 0.75f, 1.0f).forEach { pct ->
+                                    val isSelected = kotlin.math.abs(goal.progress - pct) < 0.05f
+                                    Surface(
+                                        onClick = { onUpdateProgress(pct) },
+                                        shape = CircleShape,
+                                        color = if (isSelected) Green60 else Green95,
+                                        contentColor = if (isSelected) Color.White else Green40
+                                    ) {
+                                        Text(
+                                            text = "${(pct * 100).toInt()}%",
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            // AI INSIGHT SECTION (CLAY ACCENT)
+            // AI INSIGHT SECTION
             item {
                 AiSurface {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -144,7 +210,7 @@ fun GoalDetailsScreen(
                         text = "Break down next milestone",
                         style = MaterialTheme.typography.labelLarge,
                         color = Clay60,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable { onDecomposeGoal() }
                     )
                 }

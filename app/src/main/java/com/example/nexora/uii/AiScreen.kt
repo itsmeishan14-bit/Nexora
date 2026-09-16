@@ -430,6 +430,12 @@ private fun RecommendationCard(recommendation: AiRecommendation, onAction: (AiRe
                 color = Green40,
                 lineHeight = 20.sp
             )
+            
+            if (recommendation.evidence.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ReasoningList(factors = recommendation.evidence)
+            }
+
             if (recommendation.actionLabel != null) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(

@@ -135,13 +135,13 @@ class NexoraMainViewModel(
         }
     }
 
-    fun addGoal(name: String, category: String, targetDate: String) {
+    fun addGoal(name: String, category: String, targetDate: String, progress: Float = 0f) {
         if (_uiState.value.isProcessing) return
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
             try {
-                repository.addGoal(NexoraGoal(title = name, category = category, targetDate = targetDate, progress = 0f))
+                repository.addGoal(NexoraGoal(title = name, category = category, targetDate = targetDate, progress = progress.coerceIn(0f, 1f)))
                 updateTodayProgress()
             } finally {
                 _uiState.value = _uiState.value.copy(isProcessing = false)
@@ -149,13 +149,40 @@ class NexoraMainViewModel(
         }
     }
 
-    fun updateGoal(goal: NexoraGoal, name: String, category: String, targetDate: String) {
+    fun updateGoal(goal: NexoraGoal, name: String, category: String, targetDate: String, progress: Float = goal.progress) {
         if (_uiState.value.isProcessing) return
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
             try {
-                repository.updateGoal(goal.copy(title = name, category = category, targetDate = targetDate))
+                val updated = goal.copy(title = name, category = category, targetDate = targetDate, progress = progress.coerceIn(0f, 1f))
+                repository.updateGoal(updated)
+                
+                if (_uiState.value.selectedGoal?.id == goal.id) {
+                    _uiState.value = _uiState.value.copy(selectedGoal = updated)
+                }
+
+                updateTodayProgress()
+            } finally {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
+            }
+        }
+    }
+
+    fun updateGoalProgress(goal: NexoraGoal, newProgress: Float) {
+        if (_uiState.value.isProcessing) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            try {
+                val clamped = newProgress.coerceIn(0f, 1f)
+                val updated = goal.copy(progress = clamped)
+                repository.updateGoal(updated)
+
+                if (_uiState.value.selectedGoal?.id == goal.id) {
+                    _uiState.value = _uiState.value.copy(selectedGoal = updated)
+                }
+
                 updateTodayProgress()
             } finally {
                 _uiState.value = _uiState.value.copy(isProcessing = false)

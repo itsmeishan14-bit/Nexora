@@ -47,11 +47,11 @@ class NexoraAiBrain(
         } else {
             val brainResponse = when (request.type) {
                 AiRequestType.CHAT -> handleChat(request, context, relevantMemory)
-                AiRequestType.NEXT_TASK -> handleNextTask(context, relevantMemory)
+                AiRequestType.NEXT_TASK -> handleNextTask(context)
                 AiRequestType.DAILY_PLAN -> handleDailyPlan(context, relevantMemory)
-                AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context, relevantMemory)
-                AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context, relevantMemory)
-                AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context, relevantMemory)
+                AiRequestType.GOAL_ANALYSIS -> handleGoalAnalysis(context)
+                AiRequestType.PRODUCTIVITY_ANALYSIS -> handleProductivityAnalysis(context)
+                AiRequestType.PROACTIVE_ANALYSIS -> handleProactiveAnalysis(context)
                 AiRequestType.GOAL_DECOMPOSITION -> handleGoalDecomposition(request, context)
                 
                 AiRequestType.CREATE_TASK -> executeDirectAction(AiActionType.CREATE_TASK, request.parameters)
@@ -61,7 +61,7 @@ class NexoraAiBrain(
                 AiRequestType.DELETE_TASK -> executeDirectAction(AiActionType.DELETE_TASK, emptyMap(), request.taskId)
                 AiRequestType.DELETE_GOAL -> executeDirectAction(AiActionType.DELETE_GOAL, emptyMap(), goalId = request.goalId)
                 
-                AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context, relevantMemory)
+                AiRequestType.GENERAL_ANALYSIS -> handleGeneralAnalysis(context)
             }
             logResponseRecommendations(brainResponse)
             brainResponse
@@ -167,7 +167,7 @@ class NexoraAiBrain(
         // 2. Understand Intent
         val structuredResult = intentResolver.resolve(message, context)
         
-        // 2. Map Structured Response to Unified Response
+        // 3. Map Structured Response to Unified Response
         val response = AiResponse(
             responseType = mapDecisionToResponseType(structuredResult.decision.type),
             title = structuredResult.decision.title,
@@ -216,21 +216,17 @@ class NexoraAiBrain(
         }
     }
 
-    private suspend fun handleNextTask(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private fun handleNextTask(context: AiContext): AiResponse {
         val recommendations = planner.analyze(context)
         val nextTaskRec = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
-        val response = if (nextTaskRec != null) {
-            // Context minimized: only the specific task is needed for reasoning
-            val task = context.tasks.find { it.id == nextTaskRec.relatedTaskId }
-            val reasoning = buildTaskReasoning(task, context, relevantMemory)
-            
+        return if (nextTaskRec != null) {
             AiResponse(
                 responseType = AiResponseType.RECOMMENDATION,
                 title = nextTaskRec.title,
                 message = nextTaskRec.message,
                 confidence = nextTaskRec.confidence,
-                evidence = reasoning,
+                evidence = nextTaskRec.evidence,
                 relatedTaskId = nextTaskRec.relatedTaskId
             )
         } else {
@@ -240,9 +236,6 @@ class NexoraAiBrain(
                 message = "Nexora didn't find any urgent tasks requiring immediate attention. You're on top of things!"
             )
         }
-        
-        logResponseRecommendations(response)
-        return response
     }
 
     private suspend fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
@@ -272,7 +265,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleGoalAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleGoalAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeGoals(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.NO_ACTION, "Goal Status", "Your goals are currently on track.")
         
@@ -281,6 +274,7 @@ class NexoraAiBrain(
             title = best.title,
             message = best.message,
             confidence = best.confidence,
+            evidence = best.evidence,
             relatedGoalId = best.relatedGoalId
         )
         
@@ -288,7 +282,7 @@ class NexoraAiBrain(
         return response
     }
 
-    private suspend fun handleProductivityAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleProductivityAnalysis(context: AiContext): AiResponse {
         val recs = planner.analyzeProductivity(context)
         val best = recs.firstOrNull() ?: return AiResponse(AiResponseType.INFORMATION, "Productivity", "Keep working on your tasks to build your productivity history.")
         
@@ -296,14 +290,15 @@ class NexoraAiBrain(
             responseType = AiResponseType.INFORMATION,
             title = best.title,
             message = best.message,
-            confidence = best.confidence
+            confidence = best.confidence,
+            evidence = best.evidence
         )
         
         logResponseRecommendations(response)
         return response
     }
 
-    private suspend fun handleProactiveAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleProactiveAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
         
         // Map signals to recommendations for backward compatibility
@@ -315,7 +310,7 @@ class NexoraAiBrain(
                 message = signal.message,
                 priority = signal.severity,
                 confidence = signal.confidence,
-                evidence = signal.evidence,
+                evidence = emptyList(), // Signals have their own evidence structure in proactively
                 relatedTaskId = signal.relatedTaskId,
                 relatedGoalId = signal.relatedGoalId,
                 actionLabel = signal.suggestedAction?.title
@@ -392,7 +387,7 @@ class NexoraAiBrain(
         )
     }
 
-    private suspend fun handleGeneralAnalysis(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleGeneralAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
         val recommendations = signals.map { signal ->
             AiRecommendation(
@@ -402,9 +397,7 @@ class NexoraAiBrain(
                 message = signal.message,
                 priority = signal.severity,
                 confidence = signal.confidence,
-                evidence = signal.evidence,
-                relatedTaskId = signal.relatedTaskId,
-                relatedGoalId = signal.relatedGoalId
+                evidence = emptyList()
             )
         }
 
@@ -448,56 +441,6 @@ class NexoraAiBrain(
             message = "I can perform this action for you. Should I proceed?",
             proposedActions = listOf(action)
         )
-    }
-
-    // Reasoning Engine Helpers
-
-    private fun buildTaskReasoning(task: PremiumTask?, context: AiContext, relevantMemory: List<AiMemoryItem>): List<ReasoningFactor> {
-        if (task == null) return emptyList()
-        val factors = mutableListOf<ReasoningFactor>()
-
-        // 1. Priority
-        factors.add(ReasoningFactor("Priority", 
-            if (task.priority == com.example.nexora.uii.TaskPriority.URGENT) ReasoningImpact.CRITICAL else ReasoningImpact.POSITIVE,
-            "Task is marked as ${task.priority}."
-        ))
-
-        // 2. Goal Alignment
-        val goal = context.activeGoals.find { it.title == task.goalTitle }
-        if (goal != null) {
-            factors.add(ReasoningFactor("Goal Alignment", ReasoningImpact.POSITIVE, 
-                "Contributes to '${goal.title}' (${(goal.progress * 100).toInt()}% progress)."))
-            
-            if (goal.progress < 0.3f) {
-                factors.add(ReasoningFactor("Goal Momentum", ReasoningImpact.POSITIVE, "This goal needs early momentum."))
-            }
-        }
-
-        // 3. Workload Fit
-        val profile = context.adaptiveProfile
-        val duration = extractDurationMinutes(task.duration)
-        if (profile.confidence != AdaptiveConfidence.UNKNOWN) {
-            if (profile.preferredTaskSize == "Small" && duration <= 30) {
-                factors.add(ReasoningFactor("Workload Fit", ReasoningImpact.POSITIVE, "Fits your pattern of completing smaller tasks."))
-            } else if (profile.preferredTaskSize == "Large" && duration > 60) {
-                factors.add(ReasoningFactor("Workload Fit", ReasoningImpact.POSITIVE, "Matches your deep work preference."))
-            }
-        }
-        
-        // 4. Memory-based reasoning
-        relevantMemory.forEach { memory ->
-            if (memory.category == AiMemoryCategory.TASK_PATTERN && memory.relatedTaskId == task.id) {
-                factors.add(ReasoningFactor("Historical Behavior", ReasoningImpact.NEUTRAL, memory.content))
-            }
-        }
-
-        return factors
-    }
-
-    private fun extractDurationMinutes(duration: String): Int {
-        val value = duration.lowercase().trim()
-        val number = Regex("\\d+").find(value)?.value?.toIntOrNull() ?: return 30
-        return if (value.contains("hour") || value.contains("hr")) number * 60 else number
     }
 
     private fun mapDecisionToResponseType(type: AiDecisionType): AiResponseType {

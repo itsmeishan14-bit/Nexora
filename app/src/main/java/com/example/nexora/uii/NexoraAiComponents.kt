@@ -347,3 +347,51 @@ fun WorkflowCard(workflow: AgentWorkflow) {
         }
     }
 }
+
+@Composable
+fun ReasoningList(factors: List<ReasoningFactor>) {
+    if (factors.isEmpty()) return
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "WHY THIS CHOICE?",
+            style = MaterialTheme.typography.labelSmall,
+            color = Gray90,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+        factors.forEach { factor ->
+            Row(
+                modifier = Modifier.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                val icon = when (factor.impact) {
+                    ReasoningImpact.POSITIVE -> Icons.Rounded.CheckCircle
+                    ReasoningImpact.CRITICAL -> Icons.Rounded.PriorityHigh
+                    ReasoningImpact.NEGATIVE -> Icons.Rounded.RemoveCircle
+                    ReasoningImpact.NEUTRAL -> Icons.Rounded.Info
+                }
+                val color = when (factor.impact) {
+                    ReasoningImpact.POSITIVE -> Green60
+                    ReasoningImpact.CRITICAL -> NexoraError
+                    ReasoningImpact.NEGATIVE -> Clay40
+                    ReasoningImpact.NEUTRAL -> Gray90
+                }
+                
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(14.dp).padding(top = 2.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = factor.evidence,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Green40,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+    }
+}

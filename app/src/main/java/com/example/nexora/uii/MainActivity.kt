@@ -152,7 +152,8 @@ class MainActivity : ComponentActivity() {
                                             onDelete = { mainViewModel.deleteGoal(goal); mainViewModel.navigateTo("goals") },
                                             onToggleTask = { mainViewModel.toggleTask(it) },
                                             onAddTask = { mainViewModel.setTaskGoal(goal); mainViewModel.navigateTo("addTask") },
-                                            onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") }
+                                            onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") },
+                                            onUpdateProgress = { newProgress -> mainViewModel.updateGoalProgress(goal, newProgress) }
                                         )
                                     }
                                     "insights" -> AiScreen(
@@ -207,11 +208,11 @@ class MainActivity : ComponentActivity() {
                                     )
                                     "addGoal" -> AddGoalScreen(
                                         onBack = { mainViewModel.setEditingGoal(null); mainViewModel.navigateTo("goals") },
-                                        onSave = { name, cat, td, _ ->
+                                        onSave = { name, cat, td, prog ->
                                             if (mainState.editingGoal == null) {
-                                                mainViewModel.addGoal(name, cat, td)
+                                                mainViewModel.addGoal(name, cat, td, prog)
                                             } else {
-                                                mainViewModel.updateGoal(mainState.editingGoal!!, name, cat, td)
+                                                mainViewModel.updateGoal(mainState.editingGoal!!, name, cat, td, prog)
                                             }
                                             mainViewModel.setEditingGoal(null)
                                             mainViewModel.navigateTo("goals")

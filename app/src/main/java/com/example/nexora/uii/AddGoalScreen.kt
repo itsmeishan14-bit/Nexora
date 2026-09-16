@@ -2,8 +2,10 @@ package com.example.nexora.uii
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -31,6 +33,7 @@ fun AddGoalScreen(
     var goalName by remember { mutableStateOf(existingGoal?.title ?: "") }
     var category by remember { mutableStateOf(existingGoal?.category ?: "") }
     var targetDate by remember { mutableStateOf(existingGoal?.targetDate ?: "") }
+    var progress by remember { mutableFloatStateOf(existingGoal?.progress ?: 0f) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val isEditing = existingGoal != null
@@ -58,7 +61,7 @@ fun AddGoalScreen(
                                 goalName.trim(),
                                 category.ifBlank { "Personal" },
                                 targetDate.ifBlank { "No date" },
-                                existingGoal?.progress ?: 0f
+                                progress
                             )
                         }
                     },
@@ -139,6 +142,43 @@ fun AddGoalScreen(
                                 color = if (targetDate.isBlank()) Green40 else Green10
                             )
                             Icon(Icons.Default.CalendarMonth, null, tint = Green60)
+                        }
+                    }
+                }
+
+                // PROGRESS SLIDER
+                FormInputField(label = "Goal Progress (${(progress * 100).toInt()}%)") {
+                    Column {
+                        Slider(
+                            value = progress,
+                            onValueChange = { progress = it },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Green60,
+                                activeTrackColor = Green60,
+                                inactiveTrackColor = Gray90
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            listOf(0f, 0.25f, 0.5f, 0.75f, 1.0f).forEach { pct ->
+                                val isSelected = kotlin.math.abs(progress - pct) < 0.05f
+                                Surface(
+                                    onClick = { progress = pct },
+                                    shape = CircleShape,
+                                    color = if (isSelected) Green60 else Green95,
+                                    contentColor = if (isSelected) Color.White else Green40
+                                ) {
+                                    Text(
+                                        text = "${(pct * 100).toInt()}%",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
                         }
                     }
                 }

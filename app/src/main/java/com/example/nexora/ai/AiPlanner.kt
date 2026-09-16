@@ -4,6 +4,8 @@ import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import com.example.nexora.uii.NexoraGoal
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 class AiPlanner {
 
@@ -97,19 +99,29 @@ class AiPlanner {
         val recommendations = mutableListOf<AiRecommendation>()
         
         // NEXT BEST TASK
-        val nextTask: PremiumTask? = chooseNextTask(context)
-        if (nextTask != null) {
-            val scoreResult = improvedTaskScore(nextTask, context)
+        val incompleteTasks = context.incompleteTasks
+        if (incompleteTasks.isEmpty()) return recommendations
+
+        val scoredTasks = incompleteTasks.map { task ->
+            task to improvedTaskScore(task, context)
+        }.sortedByDescending { it.second.first }
+
+        val best = scoredTasks.firstOrNull()
+        if (best != null) {
+            val (task, scoreResult) = best
+            val factors = scoreResult.second
+            
             recommendations.add(
                 AiRecommendation(
-                    id = "planner_next_task_${nextTask.id}",
+                    id = "planner_next_task_${task.id}",
                     type = AiRecommendationType.NEXT_TASK,
-                    title = "Start with this",
-                    message = buildNextTaskMessage(nextTask, context, scoreResult.second),
-                    priority = taskPriorityToAiPriority(nextTask.priority),
-                    relatedTaskId = nextTask.id,
+                    title = "Priority: ${task.title}",
+                    message = buildNextTaskMessage(task, factors),
+                    priority = taskPriorityToAiPriority(task.priority),
+                    relatedTaskId = task.id,
                     actionLabel = "Start task",
-                    evidence = "Nexora scored this task as ${scoreResult.first} based on priority and goal alignment."
+                    evidence = factors,
+                    confidence = if (factors.size >= 3) AiConfidence.HIGH else AiConfidence.MEDIUM
                 )
             )
         }
@@ -120,20 +132,24 @@ class AiPlanner {
     fun getProactiveInsights(context: AiContext): List<AiRecommendation> {
         val insights = mutableListOf<AiRecommendation>()
         val profile = context.adaptiveProfile
+        val personal = context.personalContext
 
         // 1. ADAPTIVE WORKLOAD INTELLIGENCE
         val plannedToday = context.tasksPlannedToday
         val capacity = profile.preferredDailyWorkload
 
-        if (plannedToday > capacity * 1.5) {
+        if (plannedToday > capacity * 1.5 && capacity > 0) {
             val confidence = mapAdaptiveConfidence(profile.confidence)
             insights.add(
                 AiRecommendation(
                     id = "planner_workload_high",
                     type = AiRecommendationType.WARNING,
                     title = "High Workload Warning",
-                    message = "You've planned $plannedToday tasks, but you usually complete around $capacity tasks per day.",
-                    evidence = "Historical capacity: $capacity, Confidence: ${profile.confidence}",
+                    message = "You've planned $plannedToday tasks, but your typical capacity is around $capacity tasks.",
+                    evidence = listOf(
+                        ReasoningFactor("Capacity", ReasoningImpact.NEUTRAL, "Usually complete $capacity tasks per day."),
+                        ReasoningFactor("Workload", ReasoningImpact.CRITICAL, "Currently have $plannedToday tasks in your plan.")
+                    ),
                     priority = AiPriority.HIGH,
                     confidence = confidence,
                     actionLabel = "Review Today's Plan"
@@ -143,7 +159,8 @@ class AiPlanner {
 
         // 2. GOAL INTELLIGENCE
         val neglectedGoal = context.activeGoals.find { goal ->
-            goal.progress < 0.5f && context.tasks.none { it.goalTitle == goal.title && !it.completed }
+            val health = personal.goalHealth.find { it.goalId == goal.id }
+            health?.state == GoalHealthState.AT_RISK && context.tasks.none { it.goalTitle == goal.title && !it.completed }
         }
 
         if (neglectedGoal != null) {
@@ -151,13 +168,16 @@ class AiPlanner {
                 AiRecommendation(
                     id = "planner_neglected_goal_${neglectedGoal.id}",
                     type = AiRecommendationType.GOAL_ACTION,
-                    title = "Goal Neglected",
-                    message = "\"${neglectedGoal.title}\" is falling behind and has no tasks planned today.",
-                    evidence = "Progress: ${(neglectedGoal.progress * 100).toInt()}%. Regular attention builds consistency.",
+                    title = "Goal Stagnating",
+                    message = "\"${neglectedGoal.title}\" is falling behind. No tasks are planned for it today.",
+                    evidence = listOf(
+                        ReasoningFactor("Goal Progress", ReasoningImpact.NEUTRAL, "Progress is at ${(neglectedGoal.progress * 100).toInt()}%."),
+                        ReasoningFactor("Activity", ReasoningImpact.CRITICAL, "No incomplete tasks linked to this goal.")
+                    ),
                     priority = AiPriority.MEDIUM,
-                    confidence = AiConfidence.MEDIUM,
+                    confidence = AiConfidence.HIGH,
                     relatedGoalId = neglectedGoal.id,
-                    actionLabel = "Work on Goal"
+                    actionLabel = "Add Sub-task"
                 )
             )
         }
@@ -172,13 +192,16 @@ class AiPlanner {
                 AiRecommendation(
                     id = "planner_urgent_pending_${urgentIgnored.id}",
                     type = AiRecommendationType.WARNING,
-                    title = "Urgent Task Pending",
-                    message = "\"${urgentIgnored.title}\" is marked as urgent but remains incomplete.",
-                    evidence = "Priority: URGENT. Addressing these early reduces workload pressure.",
+                    title = "Urgent Action Required",
+                    message = "\"${urgentIgnored.title}\" needs immediate attention to reduce workload pressure.",
+                    evidence = listOf(
+                        ReasoningFactor("Priority", ReasoningImpact.CRITICAL, "Marked as URGENT."),
+                        ReasoningFactor("Status", ReasoningImpact.NEUTRAL, "Remains incomplete despite high priority.")
+                    ),
                     priority = AiPriority.CRITICAL,
                     confidence = AiConfidence.HIGH,
                     relatedTaskId = urgentIgnored.id,
-                    actionLabel = "View Task"
+                    actionLabel = "Start Now"
                 )
             )
         }
@@ -189,43 +212,33 @@ class AiPlanner {
                 AiRecommendation(
                     id = "planner_unusual_carryover",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Unusual Carry-over",
-                    message = "You've carried forward ${context.carriedTasks} tasks, which is higher than your usual baseline of ${profile.averageCarriedTasks.toInt()}.",
-                    evidence = "Historical baseline: ${profile.averageCarriedTasks.toInt()}, Today: ${context.carriedTasks}.",
+                    title = "High Carry-over Detected",
+                    message = "You have ${context.carriedTasks} carried-over tasks today, which is unusual for your workflow.",
+                    evidence = listOf(
+                        ReasoningFactor("Carry-over", ReasoningImpact.NEGATIVE, "${context.carriedTasks} tasks unfinished from yesterday."),
+                        ReasoningFactor("Baseline", ReasoningImpact.NEUTRAL, "Your usual carry-over is ${profile.averageCarriedTasks.toInt()}.")
+                    ),
                     priority = AiPriority.MEDIUM,
                     confidence = mapAdaptiveConfidence(profile.confidence),
-                    actionLabel = "Review Workload"
+                    actionLabel = "Clean Up List"
                 )
             )
         }
 
         // 5. MOMENTUM DETECTION
-        if (context.tasksCompletedToday > profile.averageTasksCompleted && context.tasksCompletedToday >= 3) {
+        if (profile.sampleCount >= 3 && context.tasksCompletedToday > profile.averageTasksCompleted && context.tasksCompletedToday >= 3) {
             insights.add(
                 AiRecommendation(
                     id = "planner_peak_productivity",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Peak Productivity",
-                    message = "You're exceeding your average daily completion rate today. Great job maintaining this momentum!",
-                    evidence = "Daily average: ${profile.averageTasksCompleted.toInt()}, Today: ${context.tasksCompletedToday}.",
+                    title = "Peak Momentum",
+                    message = "You're exceeding your average daily completion rate. You're in a highly productive state!",
+                    evidence = listOf(
+                        ReasoningFactor("Momentum", ReasoningImpact.POSITIVE, "Completed ${context.tasksCompletedToday} tasks today."),
+                        ReasoningFactor("Standard", ReasoningImpact.NEUTRAL, "Daily average is ${profile.averageTasksCompleted.toInt()}.")
+                    ),
                     priority = AiPriority.LOW,
                     confidence = mapAdaptiveConfidence(profile.confidence)
-                )
-            )
-        }
-
-        // 6. LEARNING LOOP INSIGHTS
-        val recentEvaluations = context.recentEvaluations
-        if (recentEvaluations.any { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }) {
-            insights.add(
-                AiRecommendation(
-                    id = "planner_adjustment_planning",
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Planning Adjustment",
-                    message = "Nexora noticed recent plans were quite ambitious. I'm adjusting your daily capacity to be more realistic.",
-                    evidence = "Recent evaluations identified 'Plan Too Large' pattern.",
-                    priority = AiPriority.MEDIUM,
-                    confidence = AiConfidence.HIGH
                 )
             )
         }
@@ -243,87 +256,80 @@ class AiPlanner {
         val profile = context.adaptiveProfile
         val personal = context.personalContext
 
-        val incompleteTasks =
-            context.incompleteTasks
-                .map { task ->
-                    val scored = improvedTaskScore(task, context)
-                    task to scored
-                }
-                .sortedByDescending { it.second.first }
-
+        val incompleteTasks = context.incompleteTasks
         if (incompleteTasks.isEmpty()) {
             return NexoraDailyPlan(
                 date = LocalDate.now().toString(),
-                summary = "There are no unfinished tasks in Nexora right now. Use the time to review your goals or plan your next meaningful step."
+                summary = "All caught up! You have no unfinished tasks. It's a great time to review your long-term goals."
             )
         }
 
-        // Realistic workload limit: Based on profile if available, else 300 minutes
-        var totalMinutes = 0
-        val maxMinutes = 360
-        
-        // Learning Loop: Adjust workload based on recent evaluations
+        val scoredTasks = incompleteTasks.map { task ->
+            task to improvedTaskScore(task, context)
+        }.sortedByDescending { it.second.first }
+
+        // Determine realistic capacity
         val recentEvaluations = context.recentEvaluations
         val tooAmbitiousCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
-        val realisticCount = recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC }
         
-        var adaptiveMaxTasks = when {
-            tooAmbitiousCount >= 2 -> Math.max(3, profile.preferredDailyWorkload - 1)
-            realisticCount >= 3 -> profile.preferredDailyWorkload + 1
-            else -> profile.preferredDailyWorkload
-        }
+        var baseCapacity = if (profile.sampleCount >= 3) profile.preferredDailyWorkload else 5
+        if (tooAmbitiousCount >= 2) baseCapacity = Math.max(2, baseCapacity - 1)
         
-        // Dynamic Context Adjustment: if already overloaded, reduce max tasks
-        if (personal.workload.state == WorkloadState.VERY_HIGH) {
-            adaptiveMaxTasks = Math.max(2, adaptiveMaxTasks - 2)
-        } else if (personal.workload.state == WorkloadState.HIGH) {
-            adaptiveMaxTasks = Math.max(3, adaptiveMaxTasks - 1)
-        }
-        
-        val maxTasks = if (profile.confidence != AdaptiveConfidence.UNKNOWN) adaptiveMaxTasks else 6
-        
-        val selectedPlannedTasks = mutableListOf<PlannedTask>()
+        // Adjust for current workload
+        if (personal.workload.state == WorkloadState.VERY_HIGH) baseCapacity = Math.max(2, baseCapacity - 2)
+        else if (personal.workload.state == WorkloadState.HIGH) baseCapacity = Math.max(3, baseCapacity - 1)
 
-        for ((task, scoreResult) in incompleteTasks) {
-            val duration = extractDurationMinutes(task.duration)
-            val reason = scoreResult.second
+        val maxMinutes = 480 // 8 hours max focus estimate
+        var currentMinutes = 0
+        val selectedTasks = mutableListOf<PlannedTask>()
 
-            // Always take top 2 regardless of duration, then fit others
-            if (selectedPlannedTasks.size < 2 || (totalMinutes + duration <= maxMinutes)) {
-                selectedPlannedTasks.add(
+        for ((task, scoreResult) in scoredTasks) {
+            val duration = extractDurationMinutes(task.duration).let { if (it <= 0) 30 else it }
+            
+            // Criteria: Fit within task count capacity OR always take top 2 high-priority items
+            val isHighPriority = task.priority == TaskPriority.URGENT || task.priority == TaskPriority.HIGH
+            val fitsCapacity = selectedTasks.size < baseCapacity
+            val fitsTime = currentMinutes + duration <= maxMinutes
+
+            if ((fitsCapacity || (isHighPriority && selectedTasks.size < 4)) && fitsTime) {
+                selectedTasks.add(
                     PlannedTask(
                         task = task,
-                        reason = reason,
-                        recommendedOrder = selectedPlannedTasks.size + 1
+                        reason = scoreResult.second.firstOrNull()?.evidence ?: "Consistent progress",
+                        recommendedOrder = selectedTasks.size + 1
                     )
                 )
-                totalMinutes += if (duration > 0) duration else 30 
+                currentMinutes += duration
             }
             
-            if (selectedPlannedTasks.size >= maxTasks) break
+            if (selectedTasks.size >= baseCapacity + 2) break
         }
 
         val summary = buildString {
-            if (selectedPlannedTasks.size >= maxTasks * 0.7) {
-                append("You have a productive day ahead. This plan fits your typical workload and focuses on your highest priorities.")
+            if (selectedTasks.size <= 3) {
+                append("Your plan is highly focused. ")
+            } else if (selectedTasks.size >= 7) {
+                append("You have a demanding day ahead. ")
             } else {
-                append("Today's plan is focused and achievable. Completing these tasks will build great momentum.")
+                append("Today's plan is balanced and achievable. ")
             }
             
-            if (personal.workload.state == WorkloadState.VERY_HIGH) {
-                append(" I've kept the plan light because your total workload is currently very high.")
+            append("Nexora prioritized ${selectedTasks.size} tasks based on your priority settings, goal deadlines, and typical capacity.")
+            
+            if (tooAmbitiousCount >= 2) {
+                append(" I've slightly reduced the plan size to match your recent completion patterns.")
             }
             
-            val atRisk = personal.goalHealth.find { it.state == GoalHealthState.AT_RISK }
-            if (atRisk != null) {
-                append(" I've prioritized tasks for \"${atRisk.goalTitle}\" as it needs attention.")
+            val urgentCount = selectedTasks.count { it.task.priority == TaskPriority.URGENT }
+            if (urgentCount > 0) {
+                append(" $urgentCount urgent tasks are prioritized first.")
             }
         }
 
         return NexoraDailyPlan(
             date = LocalDate.now().toString(),
-            tasks = selectedPlannedTasks,
-            totalDurationMinutes = totalMinutes,
+            tasks = selectedTasks,
+            totalDurationMinutes = currentMinutes,
             summary = summary
         )
     }
@@ -331,79 +337,106 @@ class AiPlanner {
     private fun improvedTaskScore(
         task: PremiumTask,
         context: AiContext
-    ): Pair<Int, String> {
+    ): Pair<Int, List<ReasoningFactor>> {
         var score = 0
-        val reasons = mutableListOf<String>()
+        val factors = mutableListOf<ReasoningFactor>()
         val profile = context.adaptiveProfile
 
-        // 1. Priority Base
+        // 1. PRIORITY (Base Score)
         when (task.priority) {
             TaskPriority.URGENT -> {
                 score += 150
-                reasons.add("Urgent priority")
+                factors.add(ReasoningFactor("Priority", ReasoningImpact.CRITICAL, "Marked as URGENT priority."))
             }
             TaskPriority.HIGH -> {
                 score += 80
-                reasons.add("High priority")
+                factors.add(ReasoningFactor("Priority", ReasoningImpact.POSITIVE, "High priority task."))
             }
             TaskPriority.MEDIUM -> score += 40
-            TaskPriority.LOW -> score += 10
+            TaskPriority.LOW -> {
+                score += 10
+                factors.add(ReasoningFactor("Priority", ReasoningImpact.NEUTRAL, "Low priority task."))
+            }
         }
 
-        // 2. Goal Alignment
+        // 2. GOAL RELATIONSHIP
         val linkedGoal = context.activeGoals.find { it.title == task.goalTitle }
         if (linkedGoal != null) {
             score += 50
-            reasons.add("Linked to active goal '${linkedGoal.title}'")
+            factors.add(ReasoningFactor("Goal Alignment", ReasoningImpact.POSITIVE, "Directly supports your goal: \"${linkedGoal.title}\"."))
 
-            // Dynamic Context: Neglected Goal Boost
-            val personal = context.personalContext
-            val health = personal.goalHealth.find { it.goalId == linkedGoal.id }
+            // Progress-based fine-tuning
+            if (linkedGoal.progress < 0.2f) {
+                score += 30
+                factors.add(ReasoningFactor("Goal Momentum", ReasoningImpact.POSITIVE, "This goal needs early momentum to succeed."))
+            } else if (linkedGoal.progress > 0.85f) {
+                score += 25
+                factors.add(ReasoningFactor("Goal Completion", ReasoningImpact.POSITIVE, "You are near the finish line for this goal."))
+            }
+            
+            // Goal Deadline / Target Date
+            val daysToDeadline = parseTargetDateDaysRemaining(linkedGoal.targetDate)
+            if (daysToDeadline != null) {
+                if (daysToDeadline <= 3) {
+                    score += 70
+                    factors.add(ReasoningFactor("Deadline", ReasoningImpact.CRITICAL, "The goal target date is in $daysToDeadline days."))
+                } else if (daysToDeadline <= 7) {
+                    score += 30
+                    factors.add(ReasoningFactor("Deadline", ReasoningImpact.POSITIVE, "Goal target date is approaching (under a week)."))
+                }
+            }
+            
+            // Goal Health
+            val health = context.personalContext.goalHealth.find { it.goalId == linkedGoal.id }
             if (health?.state == GoalHealthState.AT_RISK) {
                 score += 60
-                reasons.add("This goal is at risk and needs attention")
-            } else if (health?.state == GoalHealthState.NEEDS_ATTENTION) {
-                score += 30
-                reasons.add("Goal needs more activity")
-            }
-
-            // Progress-based boost
-            if (linkedGoal.progress < 0.3f) {
-                score += 30
-                reasons.add("Goal needs early momentum")
-            } else if (linkedGoal.progress > 0.8f) {
-                score += 20
-                reasons.add("Goal is near completion")
+                factors.add(ReasoningFactor("Goal Health", ReasoningImpact.CRITICAL, "This goal is stagnating and needs activity."))
             }
         }
 
-        // 3. Adaptive duration boost
+        // 3. DURATION & WORKLOAD FIT
         val duration = extractDurationMinutes(task.duration)
-        if (profile.preferredTaskSize == "Small" && duration <= 30) {
+        if (duration > 0) {
+            if (profile.preferredTaskSize == "Small" && duration <= 30) {
+                score += 20
+                factors.add(ReasoningFactor("Duration Fit", ReasoningImpact.POSITIVE, "Matches your preference for smaller tasks."))
+            } else if (profile.preferredTaskSize == "Large" && duration >= 60) {
+                score += 20
+                factors.add(ReasoningFactor("Focus Fit", ReasoningImpact.POSITIVE, "Matches your pattern for deep work sessions."))
+            }
+            
+            // Quick Win detection
+            if (duration <= 20 && (context.incompleteTasks.size > 6 || context.personalContext.workload.state == WorkloadState.VERY_HIGH)) {
+                score += 25
+                factors.add(ReasoningFactor("Quick Win", ReasoningImpact.POSITIVE, "Small enough to finish quickly despite heavy workload."))
+            }
+        }
+
+        // 4. HISTORICAL REINFORCEMENT
+        if (profile.sampleCount >= 5 && profile.completionRate > 0.7f) {
+            score += 15
+            factors.add(ReasoningFactor("History", ReasoningImpact.NEUTRAL, "Reinforced by your high completion pattern."))
+        }
+        
+        // 5. CARRIED WORK
+        val memory = context.memory.items.find { it.category == AiMemoryCategory.TASK_PATTERN && it.relatedTaskId == task.id }
+        if (memory != null && memory.content.contains("carried", ignoreCase = true)) {
             score += 20
-            reasons.add("Fits your preferred task size")
-        } else if (profile.preferredTaskSize == "Large" && duration > 60) {
-            score += 20
-            reasons.add("Fits your deep work preference")
+            factors.add(ReasoningFactor("Persistence", ReasoningImpact.POSITIVE, "This task has been carried forward; finishing it now clears focus."))
         }
 
-        // 4. Efficiency boost for small tasks when list is long or workload is high
-        val personal = context.personalContext
-        if ((context.incompleteTasks.size > 5 || personal.workload.state == WorkloadState.VERY_HIGH) && duration in 1..30) {
-            score += 25
-            reasons.add("Quick win to reduce pressure")
-        }
+        return Pair(score, factors)
+    }
 
-        // 5. Learning Loop: Success-based reinforcement
-        val recentOutcomes = context.recentOutcomes
-        val recentSuccessCount = recentOutcomes.count { it.type == AiOutcomeType.SUCCESS }
-        if (recentSuccessCount >= 5) {
-            score += 10
-            reasons.add("Refined by your recent success pattern")
+    private fun parseTargetDateDaysRemaining(targetDate: String): Long? {
+        return try {
+            val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
+            val date = LocalDate.parse(targetDate, formatter)
+            val today = LocalDate.now()
+            ChronoUnit.DAYS.between(today, date)
+        } catch (e: Exception) {
+            null
         }
-
-        val primaryReason = reasons.lastOrNull() ?: "Consistent progress step"
-        return Pair(score, primaryReason)
     }
 
     // ================================================================
@@ -419,42 +452,45 @@ class AiPlanner {
                 AiRecommendation(
                     id = "planner_no_goals",
                     type = AiRecommendationType.GOAL_ACTION,
-                    title = "No active goals yet",
-                    message = "Create a goal and connect tasks to it so Nexora can help guide your progress.",
+                    title = "Define your Objectives",
+                    message = "Create a goal and link tasks to it. This allows Nexora to guide you with structured progress and priority scoring.",
                     priority = AiPriority.LOW,
                     confidence = AiConfidence.LOW,
-                    actionLabel = "Create a goal"
+                    actionLabel = "Create Goal"
                 )
             )
         }
 
         val recommendations = mutableListOf<AiRecommendation>()
         
-        val lowestProgressGoal = context.activeGoals.minByOrNull { it.progress }
-        if (lowestProgressGoal != null) {
-            val personal = context.personalContext
-            val health = personal.goalHealth.find { it.goalId == lowestProgressGoal.id }
-            
-            // Hallucination Prevention: Check if goal actually has tasks before recommending focus
-            val taskCount = context.tasks.count { it.goalTitle == lowestProgressGoal.title }
-            
-            val message = if (taskCount == 0) {
-                "\"${lowestProgressGoal.title}\" has no linked tasks. Add some sub-tasks to start making progress."
-            } else {
-                "\"${lowestProgressGoal.title}\" has only ${(lowestProgressGoal.progress * 100).toInt()}% progress. Choose one concrete task that moves this goal forward."
+        // Identify most critical goal
+        val personal = context.personalContext
+        val criticalGoalHealth = personal.goalHealth.find { it.state == GoalHealthState.AT_RISK }
+        val criticalGoal = criticalGoalHealth?.let { health -> context.activeGoals.find { it.id == health.goalId } }
+            ?: context.activeGoals.minByOrNull { it.progress }
+
+        if (criticalGoal != null) {
+            val taskCount = context.tasks.count { it.goalTitle == criticalGoal.title && !it.completed }
+            val message = when {
+                taskCount == 0 -> "\"${criticalGoal.title}\" has no actionable sub-tasks. Add some concrete steps to start making progress."
+                criticalGoal.progress < 0.1f -> "\"${criticalGoal.title}\" is waiting to start. Completing just one task will build initial momentum."
+                else -> "Focusing on \"${criticalGoal.title}\" today will maximize your meaningful progress."
             }
 
             recommendations.add(
                 AiRecommendation(
-                    id = "planner_goal_attention_${lowestProgressGoal.id}",
+                    id = "planner_goal_focus_${criticalGoal.id}",
                     type = AiRecommendationType.GOAL_ACTION,
-                    title = "Goal needs attention",
+                    title = "Goal Progress",
                     message = message,
-                    priority = AiPriority.MEDIUM,
-                    confidence = if (health != null) AiConfidence.HIGH else AiConfidence.MEDIUM,
-                    relatedGoalId = lowestProgressGoal.id,
-                    evidence = "Goal identified via progress tracking. Linked tasks: $taskCount.",
-                    actionLabel = if (taskCount == 0) "Add Tasks" else "Take the next step"
+                    priority = if (criticalGoalHealth?.state == GoalHealthState.AT_RISK) AiPriority.HIGH else AiPriority.MEDIUM,
+                    confidence = AiConfidence.HIGH,
+                    relatedGoalId = criticalGoal.id,
+                    evidence = listOf(
+                        ReasoningFactor("Progress", ReasoningImpact.NEUTRAL, "Current progress: ${(criticalGoal.progress * 100).toInt()}%."),
+                        ReasoningFactor("Attention", ReasoningImpact.POSITIVE, "Highest value focus area identified.")
+                    ),
+                    actionLabel = if (taskCount == 0) "Add Tasks" else "View Goal"
                 )
             )
         }
@@ -474,70 +510,67 @@ class AiPlanner {
         if (context.tasksPlannedToday == 0) {
             return listOf(
                 AiRecommendation(
-                    id = "planner_no_plan",
+                    id = "planner_no_tasks_today",
                     type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Nothing planned yet",
-                    message = "Add a few meaningful tasks and Nexora can start learning how your daily workload behaves.",
+                    title = "Set Today's Agenda",
+                    message = "Nexora hasn't detected any tasks in your daily plan. Adding focus items helps refine your capacity patterns.",
                     priority = AiPriority.LOW,
-                    actionLabel = "Plan your day"
+                    actionLabel = "Plan Day"
                 )
             )
         }
 
-        val completionRate = context.tasksCompletedToday.toFloat() / context.tasksPlannedToday.toFloat()
-        val evidence = "Completed: ${context.tasksCompletedToday}, Planned: ${context.tasksPlannedToday}."
-        
-        // Personalized insight if baseline exists
-        if (profile.confidence != AdaptiveConfidence.UNKNOWN && profile.completionRate > 0) {
-            if (completionRate < profile.completionRate * 0.8f) {
-                return listOf(
-                    AiRecommendation(
-                        id = "planner_productivity_low",
-                        type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                        title = "Productivity Below Average",
-                        message = "Your completion rate is currently ${(completionRate * 100).toInt()}%, which is below your baseline of ${(profile.completionRate * 100).toInt()}%.",
-                        evidence = evidence,
-                        priority = AiPriority.MEDIUM,
-                        confidence = mapAdaptiveConfidence(profile.confidence)
-                    )
-                )
-            }
-        }
+        val completionRate = if (context.tasksPlannedToday > 0) 
+            context.tasksCompletedToday.toFloat() / context.tasksPlannedToday.toFloat() else 0f
+            
+        val factors = listOf(
+            ReasoningFactor("Planned", ReasoningImpact.NEUTRAL, "${context.tasksPlannedToday} tasks in agenda."),
+            ReasoningFactor("Completed", ReasoningImpact.POSITIVE, "${context.tasksCompletedToday} tasks finished.")
+        )
 
         return when {
-            completionRate >= 0.8f -> {
+            completionRate >= 0.85f -> {
                 listOf(
                     AiRecommendation(
-                        id = "planner_momentum",
+                        id = "planner_high_momentum",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                        title = "You're building momentum",
-                        message = "You've completed ${context.tasksCompletedToday} tasks today. You're maintaining a high standard of focus.",
-                        evidence = evidence,
-                        priority = AiPriority.LOW
+                        title = "Exceptional Focus",
+                        message = "You've completed ${context.tasksCompletedToday} tasks today. Your Standard of Excellence is very high right now.",
+                        evidence = factors,
+                        priority = AiPriority.LOW,
+                        confidence = AiConfidence.HIGH
                     )
                 )
             }
             completionRate >= 0.5f -> {
                 listOf(
                     AiRecommendation(
-                        id = "planner_solid_progress",
+                        id = "planner_on_track",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                        title = "Solid progress",
-                        message = "You're halfway through your plan. Finish the most important remaining task before adding more.",
-                        evidence = evidence,
-                        priority = AiPriority.MEDIUM
+                        title = "Solid Daily Progress",
+                        message = "You're halfway through your planned tasks. Maintain this pace to finish strong.",
+                        evidence = factors,
+                        priority = AiPriority.MEDIUM,
+                        confidence = AiConfidence.HIGH
                     )
                 )
             }
             else -> {
+                val workloadMessage = if (profile.sampleCount >= 3 && completionRate < profile.completionRate * 0.7f) {
+                    "Your pace is currently below your typical standard. Consider focusing on one small 'Quick Win' to rebuild momentum."
+                } else {
+                    "You've completed ${(completionRate * 100).toInt()}% of your plan. Focus on your top urgent item next."
+                }
+                
                 listOf(
                     AiRecommendation(
-                        id = "planner_focus_needed",
+                        id = "planner_pace_alert",
                         type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                        title = "Focus before adding more",
-                        message = "Your current completion rate is lower than usual. Try focusing on one task until completion.",
-                        evidence = evidence,
-                        priority = AiPriority.MEDIUM
+                        title = "Maintain Momentum",
+                        message = workloadMessage,
+                        evidence = factors,
+                        priority = AiPriority.MEDIUM,
+                        confidence = mapAdaptiveConfidence(profile.confidence)
                     )
                 )
             }
@@ -557,8 +590,8 @@ class AiPlanner {
                 legacyPatterns = listOf(
                     AiProductivityPattern(
                         type = AiPatternType.INSUFFICIENT_DATA,
-                        title = "Building intelligence",
-                        description = "Keep using Nexora. Your productivity patterns will appear as more history builds.",
+                        title = "Learning Phase",
+                        description = "Nexora is observing your workflow. Your unique productivity patterns will appear once more history is recorded.",
                         confidence = 1.0f
                     )
                 ),
@@ -573,28 +606,18 @@ class AiPlanner {
         if (avgCompletion > 0.8f) {
             patterns.add(AiProductivityPattern(
                 type = AiPatternType.WORKLOAD_CONSISTENCY,
-                title = "High Execution",
-                description = "You consistently complete over 80% of your planned tasks. Your planning matches your capacity.",
+                title = "High Execution Pattern",
+                description = "You consistently complete over 80% of your planned work. This indicates strong planning accuracy.",
                 confidence = 0.9f
             ))
         }
 
-        val highFocusDays = history.count { it.focusMinutes > 120 }
-        if (highFocusDays >= 3) {
-            patterns.add(AiProductivityPattern(
-                type = AiPatternType.FOCUS_TREND,
-                title = "Deep Work Pattern",
-                description = "You have frequent sessions of intense focus. This is your most productive mode.",
-                confidence = 0.85f
-            ))
-        }
-
-        val overloadedDays = history.count { it.tasksPlanned > 8 && it.tasksCompleted < it.tasksPlanned / 2 }
+        val overloadedDays = history.count { it.tasksPlanned > 7 && it.tasksCompleted < it.tasksPlanned / 2 }
         if (overloadedDays >= 2) {
             patterns.add(AiProductivityPattern(
                 type = AiPatternType.COMPLETION_ACCURACY,
-                title = "Planning Overload",
-                description = "Some days have too many tasks, leading to low completion. Try limiting daily plans to 5 key items.",
+                title = "Over-planning Trend",
+                description = "Nexora noticed some days have too many tasks, reducing total completion. Aim for 3-5 high-value items.",
                 confidence = 0.8f
             ))
         }
@@ -606,31 +629,8 @@ class AiPlanner {
     }
 
     // ================================================================
-    // TASK SELECTION & MESSAGES
+    // HELPERS
     // ================================================================
-
-    private fun chooseNextTask(context: AiContext): PremiumTask? {
-        return context.incompleteTasks.maxByOrNull { taskScore(it, context) }
-    }
-
-    private fun taskScore(task: PremiumTask, context: AiContext): Int {
-        var score = 0
-        score += when (task.priority) {
-            TaskPriority.URGENT -> 100
-            TaskPriority.HIGH -> 70
-            TaskPriority.MEDIUM -> 40
-            TaskPriority.LOW -> 20
-        }
-        if (task.goalTitle != null && context.activeGoals.any { it.title == task.goalTitle }) {
-            score += 30
-        }
-        val durationMinutes = extractDurationMinutes(task.duration)
-        if (context.incompleteTasks.size >= 6 && durationMinutes in 1..30) {
-            score += 15
-        }
-        if (task.completed) score -= 1000
-        return score
-    }
 
     private fun extractDurationMinutes(duration: String): Int {
         val value = duration.lowercase().trim()
@@ -647,8 +647,9 @@ class AiPlanner {
         }
     }
 
-    private fun buildNextTaskMessage(task: PremiumTask, context: AiContext, reason: String): String {
-        return "Nexora recommends starting \"${task.title}\". $reason."
+    private fun buildNextTaskMessage(task: PremiumTask, factors: List<ReasoningFactor>): String {
+        val primaryFactor = factors.firstOrNull()?.evidence ?: "it matches your current focus needs"
+        return "Nexora identifies \"${task.title}\" as your best next step because $primaryFactor."
     }
 
     private fun mapAdaptiveConfidence(confidence: AdaptiveConfidence): AiConfidence {
