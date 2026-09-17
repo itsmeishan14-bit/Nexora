@@ -136,23 +136,32 @@ class NexoraAiBrain(
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Check if user is asking about memory/productivity specifically
-        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation"))
+        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation|falling behind|why"))
         if (isMemoryQuery) {
             val personal = context.personalContext
-            val statusSummary = buildString {
-                append("Here is your current Nexora status:\n\n")
-                append("- Workload: ${personal.workload.state} (${personal.workload.taskCount} tasks)\n")
-                append("- Day State: ${personal.dayState}\n")
-                append("- Productivity Trend: ${personal.productivityTrend}\n")
-                
-                val atRisk = personal.goalHealth.filter { it.state == GoalHealthState.AT_RISK }
-                if (atRisk.isNotEmpty()) {
-                    append("- Goal Risks: ${atRisk.joinToString { it.goalTitle }}\n")
-                }
-                
-                if (relevantMemory.isNotEmpty()) {
-                    val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
-                    append("\nHistorical Patterns:\n$memorySummary")
+            val hasHistory = context.memory.analyzedDays > 0 || relevantMemory.isNotEmpty()
+            
+            val statusSummary = if (!hasHistory) {
+                "I'm still learning your productivity style. Once you've completed more tasks and goals, I'll be able to show your consistency patterns and workload trends."
+            } else {
+                buildString {
+                    append("Based on what I've learned about your behavior:\n\n")
+                    append("- Workload: ${personal.workload.state} (${personal.workload.taskCount} active tasks)\n")
+                    append("- Productivity Trend: ${personal.productivityTrend}\n")
+                    
+                    val atRisk = personal.goalHealth.filter { it.state == GoalHealthState.AT_RISK }
+                    if (atRisk.isNotEmpty()) {
+                        append("- Stagnating Goals: ${atRisk.joinToString { it.goalTitle }}\n")
+                    }
+                    
+                    if (relevantMemory.isNotEmpty()) {
+                        val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+                        append("\nHistorical Observations:\n$memorySummary")
+                    }
+                    
+                    if (personal.productivityTrend == ProductivityTrend.DECLINING || personal.workload.state == WorkloadState.VERY_HIGH) {
+                        append("\n\nTip: You seem to be under heavy pressure lately. Consider focusing on just 1-2 small tasks to rebuild momentum.")
+                    }
                 }
             }
 
@@ -199,12 +208,15 @@ class NexoraAiBrain(
             )
         }
         
-        // Log the main recommendation if it's a recommendation type
-        if (response.responseType == AiResponseType.RECOMMENDATION) {
+        // Log the main recommendation or action if relevant
+        if (response.responseType == AiResponseType.RECOMMENDATION || response.responseType == AiResponseType.ACTION_PROPOSAL) {
+            val type = if (response.responseType == AiResponseType.RECOMMENDATION) 
+                AiRecommendationType.NEXT_TASK else AiRecommendationType.GENERAL
+            
             repository.logRecommendation(
                 AiRecommendationHistory(
                     id = java.util.UUID.randomUUID().toString(),
-                    type = AiRecommendationType.NEXT_TASK, // Default for next task
+                    type = type,
                     title = response.title,
                     message = response.message,
                     relatedTaskId = response.relatedTaskId,

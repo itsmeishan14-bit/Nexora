@@ -31,7 +31,15 @@ open class AiContextBuilder(
         val recentEvaluations = if (shouldLoadHistory(request)) repository.getRecentEvaluations(10) else emptyList()
         
         val planner = AiPlanner()
-        val memory = if (shouldLoadMemory(request)) planner.detectPatterns(history) else AiMemory()
+        val detectedMemory = if (shouldLoadMemory(request)) planner.detectPatterns(history) else AiMemory()
+        
+        // Load stored memories if requested
+        val storedMemoryItems = if (shouldLoadMemory(request) && request != null) {
+            AiMemoryRetriever(repository).retrieveRelevantMemory(request)
+        } else emptyList()
+        
+        val combinedMemory = detectedMemory.copy(items = (detectedMemory.items + storedMemoryItems).distinctBy { it.id })
+        
         val adaptiveProfile = if (shouldLoadAdaptive(request)) calculateAdaptiveProfile(history, tasks) else AdaptiveProfile()
 
         val personalContextBuilder = AiPersonalContextBuilder()
@@ -41,7 +49,7 @@ open class AiContextBuilder(
             todayProgress = todayProgress,
             history = history,
             adaptiveProfile = adaptiveProfile,
-            memory = memory
+            memory = combinedMemory
         ) else AiPersonalContext()
 
         return AiContext(
@@ -52,7 +60,7 @@ open class AiContextBuilder(
             focusMinutesToday = todayProgress?.focusMinutes ?: 0,
             goalsWorkedOnToday = todayProgress?.goalsWorkedOn ?: 0,
             carriedTasks = todayProgress?.carriedTasks ?: 0,
-            memory = memory,
+            memory = combinedMemory,
             adaptiveProfile = adaptiveProfile,
             recentOutcomes = recentOutcomes,
             recentEvaluations = recentEvaluations,

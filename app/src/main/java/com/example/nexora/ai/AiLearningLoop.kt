@@ -27,7 +27,7 @@ class AiLearningLoop(
         
         // 1. Evaluate Task-Specific Recommendations
         recentRecommendations.filter { it.relatedTaskId != null }.forEach { rec ->
-            val existingOutcome = (repository as? com.example.nexora.data.NexoraRepository)?.getRecentOutcomes(100)?.find { it.recommendationId == rec.id }
+            val existingOutcome = repository.getRecentOutcomes(100).find { it.recommendationId == rec.id }
             if (existingOutcome == null) {
                 detectTaskOutcome(rec, tasks)
             }
@@ -37,50 +37,119 @@ class AiLearningLoop(
         evaluateRecentDailyPlans()
 
         // 3. Generate Structured Memories
-        generateMemories()
+        generateMemories(tasks)
     }
 
-    private suspend fun generateMemories() {
-        val evaluations = repository.getRecentEvaluations(10)
+    private suspend fun generateMemories(allTasks: List<PremiumTask>) {
+        val evaluations = repository.getRecentEvaluations(20)
         val allMemory = repository.getAllMemory()
+        val history = repository.getHistoricalProgress(30)
 
-        // Workload Memory
+        // Pattern 1: Workload Capacity
         val tooLargeCount = evaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
         if (tooLargeCount >= 3) {
-            val existing = allMemory.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN && it.title == "Workload Capacity" }
-            val content = "Recent history shows daily plans often exceed your completed workload. A limit of 3-4 priority tasks seems most effective."
+            updateOrSaveMemory(
+                category = AiMemoryCategory.WORKLOAD_PATTERN,
+                title = "Workload Capacity",
+                content = "Your daily plans often exceed your completed workload. A target of 3-4 key tasks per day is most effective for you.",
+                confidence = AiMemoryConfidence.HIGH,
+                importance = AiMemoryImportance.HIGH
+            )
+        }
+        
+        // Pattern 2: Task-Size Preference
+        val completedTasks = allTasks.filter { it.completed }
+        if (completedTasks.size >= 5) {
+            val shortTasks = completedTasks.filter { extractDurationMinutes(it.duration) <= 30 }
+            val longTasks = completedTasks.filter { extractDurationMinutes(it.duration) > 60 }
             
-            if (existing == null) {
-                repository.saveMemory(AiMemoryItem(
-                    category = AiMemoryCategory.WORKLOAD_PATTERN,
-                    title = "Workload Capacity",
-                    content = content,
-                    confidence = AiMemoryConfidence.HIGH,
-                    importance = AiMemoryImportance.HIGH
-                ))
-            } else if (existing.content != content) {
-                repository.saveMemory(existing.copy(content = content, lastUsedAt = System.currentTimeMillis()))
+            if (shortTasks.size > longTasks.size * 2) {
+                 updateOrSaveMemory(
+                    category = AiMemoryCategory.TASK_SIZE_PATTERN,
+                    title = "Quick Win Preference",
+                    content = "You complete shorter tasks (under 30m) much more consistently than longer sessions.",
+                    confidence = AiMemoryConfidence.MEDIUM,
+                    importance = AiMemoryImportance.MEDIUM
+                )
+            } else if (longTasks.size >= 3 && longTasks.size > shortTasks.size) {
+                 updateOrSaveMemory(
+                    category = AiMemoryCategory.TASK_SIZE_PATTERN,
+                    title = "Deep Work Pattern",
+                    content = "You show a strong ability to finish complex, high-duration tasks once they are started.",
+                    confidence = AiMemoryConfidence.MEDIUM,
+                    importance = AiMemoryImportance.MEDIUM
+                )
             }
         }
         
-        // Task Pattern Memory - repeated carry-over
-        val outcomes = repository.getRecentOutcomes(20)
-        val carriedForward = outcomes.filter { it.type == AiOutcomeType.NOT_COMPLETED }
-        
-        carriedForward.groupBy { it.relatedTaskId }.forEach { (taskId, carryEvents) ->
-            if (carryEvents.size >= 2 && taskId != null) {
-                val existing = allMemory.find { it.relatedTaskId == taskId && it.category == AiMemoryCategory.TASK_PATTERN }
-                if (existing == null) {
-                    repository.saveMemory(AiMemoryItem(
-                        category = AiMemoryCategory.TASK_PATTERN,
-                        title = "Recurring Carry-over",
-                        content = "This task has been carried forward multiple times. Consider decomposing it into smaller steps.",
-                        relatedTaskId = taskId,
-                        confidence = AiMemoryConfidence.MEDIUM,
-                        importance = AiMemoryImportance.MEDIUM
-                    ))
+        // Pattern 3: Goal Consistency
+        val outcomes = repository.getRecentOutcomes(50)
+        val goalOutcomes = outcomes.filter { it.relatedGoalId != null }
+        goalOutcomes.groupBy { it.relatedGoalId }.forEach { (goalId, goalEvents) ->
+            if (goalId != null) {
+                val successRate = goalEvents.count { it.type == AiOutcomeType.SUCCESS }.toFloat() / goalEvents.size
+                if (successRate < 0.3f && goalEvents.size >= 3) {
+                     updateOrSaveMemory(
+                        category = AiMemoryCategory.GOAL_PATTERN,
+                        title = "Goal Stagnation",
+                        content = "Progress on this goal has been inconsistent. It may need smaller, more manageable sub-tasks.",
+                        relatedGoalId = goalId,
+                        confidence = AiMemoryConfidence.HIGH,
+                        importance = AiMemoryImportance.HIGH
+                    )
                 }
             }
+        }
+
+        // Pattern 4: Task Carry-over
+        val carriedForward = outcomes.filter { it.type == AiOutcomeType.NOT_COMPLETED }
+        carriedForward.groupBy { it.relatedTaskId }.forEach { (taskId, carryEvents) ->
+            if (carryEvents.size >= 2 && taskId != null) {
+                updateOrSaveMemory(
+                    category = AiMemoryCategory.TASK_PATTERN,
+                    title = "Recurring Carry-over",
+                    content = "This specific task is frequently carried forward. It might be blocked or poorly defined.",
+                    relatedTaskId = taskId,
+                    confidence = AiMemoryConfidence.MEDIUM,
+                    importance = AiMemoryImportance.MEDIUM
+                )
+            }
+        }
+    }
+
+    private suspend fun updateOrSaveMemory(
+        category: AiMemoryCategory,
+        title: String,
+        content: String,
+        confidence: AiMemoryConfidence,
+        importance: AiMemoryImportance,
+        relatedTaskId: Long? = null,
+        relatedGoalId: Long? = null
+    ) {
+        val allMemory = repository.getAllMemory()
+        val existing = allMemory.find { 
+            it.category == category && 
+            it.title == title && 
+            it.relatedTaskId == relatedTaskId && 
+            it.relatedGoalId == relatedGoalId 
+        }
+        
+        if (existing == null) {
+            repository.saveMemory(AiMemoryItem(
+                category = category,
+                title = title,
+                content = content,
+                confidence = confidence,
+                importance = importance,
+                relatedTaskId = relatedTaskId,
+                relatedGoalId = relatedGoalId
+            ))
+        } else if (existing.content != content) {
+            repository.saveMemory(existing.copy(
+                content = content, 
+                confidence = confidence,
+                lastUsedAt = System.currentTimeMillis()
+            ))
         }
     }
 
@@ -88,7 +157,6 @@ class AiLearningLoop(
         val task = tasks.find { it.id == rec.relatedTaskId }
         
         if (task == null) {
-            // Task might have been deleted
             saveOutcome(rec, AiOutcomeType.REJECTED, evidence = "Task no longer exists.")
             return
         }
@@ -101,7 +169,6 @@ class AiLearningLoop(
                 evidence = "Task state in database is completed."
             )
         } else {
-            // Check if it's been several days since recommendation
             val daysOld = (System.currentTimeMillis() - rec.timestamp) / (1000 * 60 * 60 * 24)
             if (daysOld >= 1) {
                 saveOutcome(
@@ -140,8 +207,7 @@ class AiLearningLoop(
 
         history.forEach { progress ->
             val date = progress.date
-            // Check if we already evaluated this day
-            val evaluations = repository.getRecentEvaluations(10)
+            val evaluations = repository.getRecentEvaluations(20)
             if (evaluations.any { it.title.contains(date) }) return@forEach
 
             val planned = progress.tasksPlanned
@@ -171,5 +237,11 @@ class AiLearningLoop(
                 repository.saveEvaluation(evaluation)
             }
         }
+    }
+
+    private fun extractDurationMinutes(duration: String): Int {
+        val value = duration.lowercase().trim()
+        val number = Regex("\\d+").find(value)?.value?.toIntOrNull() ?: return 0
+        return if (value.contains("hour") || value.contains("hr")) number * 60 else number
     }
 }

@@ -203,6 +203,21 @@ fun AiScreen(
                     }
                 }
 
+                // AI MEMORY / PATTERNS
+                if (uiState.memory.items.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Learned Intelligence",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Green10,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    items(items = uiState.memory.items.take(3), key = { "memory_${it.id}" }) { memoryItem ->
+                        MemoryItemCard(item = memoryItem, onDelete = { viewModel.deleteMemory(memoryItem.id) })
+                    }
+                }
+
                 // RECOMMENDATIONS
                 if (uiState.recommendations.isNotEmpty()) {
                     items(items = uiState.recommendations, key = { it.id }) { recommendation ->
@@ -494,6 +509,52 @@ private fun PlannedTaskPill(
                 tint = contentColor.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun MemoryItemCard(item: AiMemoryItem, onDelete: () -> Unit) {
+    NexoraCard(tier = NexoraCardTier.Resting) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            IconBox(
+                icon = when (item.category) {
+                    AiMemoryCategory.PRODUCTIVITY_PATTERN -> Icons.Rounded.Insights
+                    AiMemoryCategory.WORKLOAD_PATTERN -> Icons.Rounded.Speed
+                    AiMemoryCategory.GOAL_PATTERN -> Icons.Rounded.Flag
+                    AiMemoryCategory.TASK_SIZE_PATTERN -> Icons.Rounded.Splitscreen
+                    else -> Icons.Rounded.AutoAwesome
+                },
+                containerColor = Green98,
+                contentColor = Green60,
+                size = 28
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Green10
+                    )
+                    IconButton(onClick = onDelete, modifier = Modifier.size(20.dp)) {
+                        Icon(Icons.Rounded.Close, null, tint = Gray90, modifier = Modifier.size(14.dp))
+                    }
+                }
+                Text(
+                    text = item.content,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Green40,
+                    lineHeight = 16.sp
+                )
+            }
         }
     }
 }

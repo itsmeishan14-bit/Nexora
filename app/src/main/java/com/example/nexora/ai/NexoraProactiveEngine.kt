@@ -166,7 +166,30 @@ class NexoraProactiveEngine {
             ))
         }
 
+        // Memory-based patterns
+        context.memory.items.forEach { item ->
+            if (item.category == AiMemoryCategory.TASK_SIZE_PATTERN && item.title == "Quick Win Preference") {
+                signals.add(AiProactiveSignal(
+                    type = ProactiveSignalType.PRODUCTIVITY_IMPROVEMENT, // Using existing type for momentum
+                    title = item.title,
+                    message = item.content,
+                    severity = AiPriority.LOW,
+                    confidence = mapMemoryConfidence(item.confidence),
+                    evidence = "Derived from historical task completion size.",
+                    fingerprint = "memory_task_size_${item.id}"
+                ))
+            }
+        }
+
         return signals
+    }
+
+    private fun mapMemoryConfidence(confidence: AiMemoryConfidence): AiConfidence {
+        return when (confidence) {
+            AiMemoryConfidence.VERY_HIGH, AiMemoryConfidence.HIGH -> AiConfidence.HIGH
+            AiMemoryConfidence.MEDIUM -> AiConfidence.MEDIUM
+            else -> AiConfidence.LOW
+        }
     }
 
     private fun mapAdaptiveConfidence(confidence: AdaptiveConfidence): AiConfidence {
