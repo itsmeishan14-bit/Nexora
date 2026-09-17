@@ -72,12 +72,44 @@ class AiLearningLoopTest {
         assertTrue(savedEvaluation?.title?.contains(date) == true)
     }
 
+    @Test
+    fun testMemoryGenerationFromWorkloadPattern() = runBlocking {
+        // Mock evaluations showing plan is too large
+        repository.evaluations = listOf(
+            AiEvaluation(id="1", title="Day 1", whatWasExpected="", whatActuallyHappened="", outcome=AiOutcomeType.PLAN_TOO_LARGE, confidence=AiConfidence.HIGH),
+            AiEvaluation(id="2", title="Day 2", whatWasExpected="", whatActuallyHappened="", outcome=AiOutcomeType.PLAN_TOO_LARGE, confidence=AiConfidence.HIGH),
+            AiEvaluation(id="3", title="Day 3", whatWasExpected="", whatActuallyHappened="", outcome=AiOutcomeType.PLAN_TOO_LARGE, confidence=AiConfidence.HIGH)
+        )
+
+        learningLoop.evaluateOutcomes()
+
+        val savedMemory = repository.savedMemories.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN }
+        assertNotNull(savedMemory)
+        assertTrue(savedMemory?.content?.contains("exceed your completed workload") == true)
+    }
+
+    @Test
+    fun testTaskSizePreferenceMemory() = runBlocking {
+        // Mock many short completed tasks
+        repository.tasks = (1..6).map { 
+            PremiumTask(id = it.toLong(), title = "Task $it", category = "Work", duration = "15 min", completed = true)
+        }
+
+        learningLoop.evaluateOutcomes()
+
+        val savedMemory = repository.savedMemories.find { it.category == AiMemoryCategory.TASK_SIZE_PATTERN }
+        assertNotNull(savedMemory)
+        assertEquals("Quick Win Preference", savedMemory?.title)
+    }
+
     private class FakeNexoraRepository : NexoraRepository(null) {
         var recommendations = emptyList<AiRecommendationHistory>()
         var tasks = emptyList<PremiumTask>()
         var history = emptyList<com.example.nexora.data.DailyProgressEntity>()
+        var evaluations = emptyList<AiEvaluation>()
         val savedOutcomes = mutableListOf<AiOutcome>()
         val savedEvaluations = mutableListOf<AiEvaluation>()
+        val savedMemories = mutableListOf<AiMemoryItem>()
 
         override suspend fun getRecentRecommendations(limit: Int) = recommendations
         override suspend fun observeTasksOnce() = tasks
@@ -86,9 +118,14 @@ class AiLearningLoopTest {
             savedOutcomes.add(outcome)
         }
         override suspend fun getHistoricalProgress(limit: Int) = history
-        override suspend fun getRecentEvaluations(limit: Int) = emptyList<AiEvaluation>()
+        override suspend fun getRecentEvaluations(limit: Int) = evaluations
         override suspend fun saveEvaluation(evaluation: AiEvaluation) {
             savedEvaluations.add(evaluation)
+        }
+        override suspend fun getAllMemory() = savedMemories
+        override suspend fun saveMemory(item: AiMemoryItem) {
+            savedMemories.removeAll { it.title == item.title && it.category == item.category }
+            savedMemories.add(item)
         }
     }
 }

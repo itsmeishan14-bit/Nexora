@@ -392,6 +392,12 @@ class AiPlanner {
                 score += 60
                 factors.add(ReasoningFactor("Goal Health", ReasoningImpact.CRITICAL, "This goal is stagnating and needs activity."))
             }
+
+            val stagnationMemory = context.memory.items.find { it.category == AiMemoryCategory.GOAL_PATTERN && it.relatedGoalId == linkedGoal.id && it.title == "Goal Stagnation" }
+            if (stagnationMemory != null) {
+                score += 30
+                factors.add(ReasoningFactor("Behavior", ReasoningImpact.CRITICAL, "Progress has been inconsistent lately; this task helps rebuild momentum."))
+            }
         }
 
         // 3. DURATION & WORKLOAD FIT
@@ -416,6 +422,18 @@ class AiPlanner {
         if (profile.sampleCount >= 5 && profile.completionRate > 0.7f) {
             score += 15
             factors.add(ReasoningFactor("History", ReasoningImpact.NEUTRAL, "Reinforced by your high completion pattern."))
+        }
+
+        context.memory.items.forEach { item ->
+            if (item.category == AiMemoryCategory.TASK_SIZE_PATTERN) {
+                if (item.title == "Quick Win Preference" && duration in 1..30) {
+                    score += 20
+                    factors.add(ReasoningFactor("Behavior", ReasoningImpact.POSITIVE, "Matches your historical 'Quick Win' success pattern."))
+                } else if (item.title == "Deep Work Pattern" && duration >= 60) {
+                    score += 20
+                    factors.add(ReasoningFactor("Behavior", ReasoningImpact.POSITIVE, "Matches your historical 'Deep Work' success pattern."))
+                }
+            }
         }
         
         // 5. CARRIED WORK
