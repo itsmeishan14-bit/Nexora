@@ -88,11 +88,8 @@ class AiPlanner {
     }
 
     fun analyze(context: AiContext): List<AiRecommendation> {
-        val proactive = getProactiveInsights(context)
         val basic = getBasicRecommendations(context)
-        
-        return (proactive + basic).distinctBy { it.title + it.type }
-            .sortedByDescending { it.priority }
+        return basic.sortedByDescending { it.priority }
     }
 
     private fun getBasicRecommendations(context: AiContext): List<AiRecommendation> {
@@ -129,122 +126,7 @@ class AiPlanner {
         return recommendations
     }
 
-    fun getProactiveInsights(context: AiContext): List<AiRecommendation> {
-        val insights = mutableListOf<AiRecommendation>()
-        val profile = context.adaptiveProfile
-        val personal = context.personalContext
 
-        // 1. ADAPTIVE WORKLOAD INTELLIGENCE
-        val plannedToday = context.tasksPlannedToday
-        val capacity = profile.preferredDailyWorkload
-
-        if (plannedToday > capacity * 1.5 && capacity > 0) {
-            val confidence = mapAdaptiveConfidence(profile.confidence)
-            insights.add(
-                AiRecommendation(
-                    id = "planner_workload_high",
-                    type = AiRecommendationType.WARNING,
-                    title = "High Workload Warning",
-                    message = "You've planned $plannedToday tasks, but your typical capacity is around $capacity tasks.",
-                    evidence = listOf(
-                        ReasoningFactor("Capacity", ReasoningImpact.NEUTRAL, "Usually complete $capacity tasks per day."),
-                        ReasoningFactor("Workload", ReasoningImpact.CRITICAL, "Currently have $plannedToday tasks in your plan.")
-                    ),
-                    priority = AiPriority.HIGH,
-                    confidence = confidence,
-                    actionLabel = "Review Today's Plan"
-                )
-            )
-        }
-
-        // 2. GOAL INTELLIGENCE
-        val neglectedGoal = context.activeGoals.find { goal ->
-            val health = personal.goalHealth.find { it.goalId == goal.id }
-            health?.state == GoalHealthState.AT_RISK && context.tasks.none { it.goalTitle == goal.title && !it.completed }
-        }
-
-        if (neglectedGoal != null) {
-            insights.add(
-                AiRecommendation(
-                    id = "planner_neglected_goal_${neglectedGoal.id}",
-                    type = AiRecommendationType.GOAL_ACTION,
-                    title = "Goal Stagnating",
-                    message = "\"${neglectedGoal.title}\" is falling behind. No tasks are planned for it today.",
-                    evidence = listOf(
-                        ReasoningFactor("Goal Progress", ReasoningImpact.NEUTRAL, "Progress is at ${(neglectedGoal.progress * 100).toInt()}%."),
-                        ReasoningFactor("Activity", ReasoningImpact.CRITICAL, "No incomplete tasks linked to this goal.")
-                    ),
-                    priority = AiPriority.MEDIUM,
-                    confidence = AiConfidence.HIGH,
-                    relatedGoalId = neglectedGoal.id,
-                    actionLabel = "Add Sub-task"
-                )
-            )
-        }
-
-        // 3. TASK INTELLIGENCE - URGENT
-        val urgentIgnored = context.incompleteTasks.find { 
-            it.priority == TaskPriority.URGENT 
-        }
-        
-        if (urgentIgnored != null) {
-            insights.add(
-                AiRecommendation(
-                    id = "planner_urgent_pending_${urgentIgnored.id}",
-                    type = AiRecommendationType.WARNING,
-                    title = "Urgent Action Required",
-                    message = "\"${urgentIgnored.title}\" needs immediate attention to reduce workload pressure.",
-                    evidence = listOf(
-                        ReasoningFactor("Priority", ReasoningImpact.CRITICAL, "Marked as URGENT."),
-                        ReasoningFactor("Status", ReasoningImpact.NEUTRAL, "Remains incomplete despite high priority.")
-                    ),
-                    priority = AiPriority.CRITICAL,
-                    confidence = AiConfidence.HIGH,
-                    relatedTaskId = urgentIgnored.id,
-                    actionLabel = "Start Now"
-                )
-            )
-        }
-
-        // 4. CARRY-OVER INTELLIGENCE
-        if (context.carriedTasks > profile.averageCarriedTasks * 1.5 && context.carriedTasks > 2) {
-            insights.add(
-                AiRecommendation(
-                    id = "planner_unusual_carryover",
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "High Carry-over Detected",
-                    message = "You have ${context.carriedTasks} carried-over tasks today, which is unusual for your workflow.",
-                    evidence = listOf(
-                        ReasoningFactor("Carry-over", ReasoningImpact.NEGATIVE, "${context.carriedTasks} tasks unfinished from yesterday."),
-                        ReasoningFactor("Baseline", ReasoningImpact.NEUTRAL, "Your usual carry-over is ${profile.averageCarriedTasks.toInt()}.")
-                    ),
-                    priority = AiPriority.MEDIUM,
-                    confidence = mapAdaptiveConfidence(profile.confidence),
-                    actionLabel = "Clean Up List"
-                )
-            )
-        }
-
-        // 5. MOMENTUM DETECTION
-        if (profile.sampleCount >= 3 && context.tasksCompletedToday > profile.averageTasksCompleted && context.tasksCompletedToday >= 3) {
-            insights.add(
-                AiRecommendation(
-                    id = "planner_peak_productivity",
-                    type = AiRecommendationType.PRODUCTIVITY_INSIGHT,
-                    title = "Peak Momentum",
-                    message = "You're exceeding your average daily completion rate. You're in a highly productive state!",
-                    evidence = listOf(
-                        ReasoningFactor("Momentum", ReasoningImpact.POSITIVE, "Completed ${context.tasksCompletedToday} tasks today."),
-                        ReasoningFactor("Standard", ReasoningImpact.NEUTRAL, "Daily average is ${profile.averageTasksCompleted.toInt()}.")
-                    ),
-                    priority = AiPriority.LOW,
-                    confidence = mapAdaptiveConfidence(profile.confidence)
-                )
-            )
-        }
-
-        return insights.sortedByDescending { it.priority }
-    }
 
     // ================================================================
     // DAILY PLAN

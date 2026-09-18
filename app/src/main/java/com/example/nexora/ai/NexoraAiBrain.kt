@@ -135,17 +135,28 @@ class NexoraAiBrain(
     private fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
-        // 1. Check if user is asking about memory/productivity specifically
-        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation|falling behind|why"))
+        // 1. Check if user is asking about memory/productivity or recent proactive alerts
+        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation|falling behind|why|warning|alert|notice"))
         if (isMemoryQuery) {
             val personal = context.personalContext
             val hasHistory = context.memory.analyzedDays > 0 || relevantMemory.isNotEmpty()
             
-            val statusSummary = if (!hasHistory) {
+            // Check for active proactive signals that might explain a warning
+            val activeSignals = proactiveEngine.detectSignals(context)
+            
+            val statusSummary = if (!hasHistory && activeSignals.isEmpty()) {
                 "I'm still learning your productivity style. Once you've completed more tasks and goals, I'll be able to show your consistency patterns and workload trends."
             } else {
                 buildString {
-                    append("Based on what I've learned about your behavior:\n\n")
+                    append("Based on my latest analysis of your behavior and workload:\n\n")
+                    
+                    if (activeSignals.isNotEmpty()) {
+                        activeSignals.forEach { signal ->
+                            append("• ${signal.title}: ${signal.message} (Reason: ${signal.evidence})\n")
+                        }
+                        append("\n")
+                    }
+
                     append("- Workload: ${personal.workload.state} (${personal.workload.taskCount} active tasks)\n")
                     append("- Productivity Trend: ${personal.productivityTrend}\n")
                     
@@ -155,12 +166,12 @@ class NexoraAiBrain(
                     }
                     
                     if (relevantMemory.isNotEmpty()) {
-                        val memorySummary = relevantMemory.joinToString("\n") { "- ${it.title}: ${it.content}" }
+                        val memorySummary = relevantMemory.joinToString("\n") { "• ${it.title}: ${it.content}" }
                         append("\nHistorical Observations:\n$memorySummary")
                     }
                     
                     if (personal.productivityTrend == ProductivityTrend.DECLINING || personal.workload.state == WorkloadState.VERY_HIGH) {
-                        append("\n\nTip: You seem to be under heavy pressure lately. Consider focusing on just 1-2 small tasks to rebuild momentum.")
+                        append("\n\nTip: You seem to be under heavy pressure lately. Focus on finishing one high-priority task before adding anything new.")
                     }
                 }
             }
@@ -306,11 +317,12 @@ class NexoraAiBrain(
         return response
     }
 
-    private fun handleProactiveAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleProactiveAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
+        val filteredSignals = filterProactiveSignals(signals)
         
         // Map signals to recommendations for backward compatibility
-        val recommendations = signals.map { signal ->
+        val recommendations = filteredSignals.map { signal ->
             AiRecommendation(
                 id = signal.fingerprint,
                 type = mapSignalTypeToRecType(signal.type),
@@ -318,14 +330,14 @@ class NexoraAiBrain(
                 message = signal.message,
                 priority = signal.severity,
                 confidence = signal.confidence,
-                evidence = emptyList(), // Signals have their own evidence structure in proactively
+                evidence = emptyList(), 
                 relatedTaskId = signal.relatedTaskId,
                 relatedGoalId = signal.relatedGoalId,
                 actionLabel = signal.suggestedAction?.title
             )
         }
 
-        val criticalSignal = signals.find { it.severity == AiPriority.CRITICAL } ?: signals.firstOrNull()
+        val criticalSignal = filteredSignals.find { it.severity == AiPriority.CRITICAL } ?: filteredSignals.firstOrNull()
         
         val response = if (criticalSignal != null) {
             AiResponse(
@@ -334,13 +346,13 @@ class NexoraAiBrain(
                 message = criticalSignal.message,
                 confidence = criticalSignal.confidence,
                 recommendations = recommendations,
-                proactiveSignals = signals,
+                proactiveSignals = filteredSignals,
                 relatedTaskId = criticalSignal.relatedTaskId,
                 relatedGoalId = criticalSignal.relatedGoalId,
                 proposedActions = listOfNotNull(criticalSignal.suggestedAction)
             )
         } else {
-            AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any immediate issues with your workflow.")
+            AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any new immediate issues with your workflow.")
         }
         
         return response
@@ -348,15 +360,50 @@ class NexoraAiBrain(
 
     private fun mapSignalTypeToRecType(type: ProactiveSignalType): AiRecommendationType {
         return when (type) {
-            ProactiveSignalType.OVERLOAD -> AiRecommendationType.WARNING
-            ProactiveSignalType.NEGLECTED_GOAL -> AiRecommendationType.GOAL_ACTION
-            ProactiveSignalType.REPEATED_CARRY_FORWARD -> AiRecommendationType.PRODUCTIVITY_INSIGHT
-            ProactiveSignalType.MISSING_NEXT_ACTION -> AiRecommendationType.GOAL_ACTION
-            ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> AiRecommendationType.WARNING
-            ProactiveSignalType.PRODUCTIVITY_DROP -> AiRecommendationType.PRODUCTIVITY_INSIGHT
-            ProactiveSignalType.PRODUCTIVITY_IMPROVEMENT -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            ProactiveSignalType.WORKLOAD_RISK, 
+            ProactiveSignalType.OVERLOAD, 
+            ProactiveSignalType.PLAN_MISMATCH -> AiRecommendationType.WARNING
+            
+            ProactiveSignalType.NEGLECTED_GOAL, 
+            ProactiveSignalType.GOAL_NEGLECT, 
+            ProactiveSignalType.GOAL_STAGNATION,
+            ProactiveSignalType.MISSING_NEXT_ACTION,
+            ProactiveSignalType.GOAL_PROGRESS_OPPORTUNITY -> AiRecommendationType.GOAL_ACTION
+            
+            ProactiveSignalType.REPEATED_CARRY_FORWARD,
+            ProactiveSignalType.CARRY_FORWARD_PATTERN,
+            ProactiveSignalType.PRODUCTIVITY_DROP,
+            ProactiveSignalType.PRODUCTIVITY_IMPROVEMENT,
             ProactiveSignalType.WORKLOAD_BALANCED -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            
+            ProactiveSignalType.HIGH_PRIORITY_CONFLICT -> AiRecommendationType.WARNING
+            ProactiveSignalType.TASK_TOO_LARGE -> AiRecommendationType.WARNING
+            
             else -> AiRecommendationType.GENERAL
+        }
+    }
+
+    private suspend fun filterProactiveSignals(signals: List<AiProactiveSignal>): List<AiProactiveSignal> {
+        val recentRecs = repository.getRecentRecommendations(100)
+        val now = System.currentTimeMillis()
+        val cooldownMillis = 1000 * 60 * 60 * 6 // 6 hours cooldown for most signals
+        val criticalCooldownMillis = 1000 * 60 * 60 * 1 // 1 hour for critical signals
+
+        return signals.filter { signal ->
+            val cooldown = if (signal.severity == AiPriority.CRITICAL) criticalCooldownMillis else cooldownMillis
+            val recentlyShown = recentRecs.any { rec ->
+                val sameType = rec.type == mapSignalTypeToRecType(signal.type)
+                val sameTask = rec.relatedTaskId == signal.relatedTaskId
+                val sameGoal = rec.relatedGoalId == signal.relatedGoalId
+                
+                // If it has no related entities, match by title
+                val sameContext = if (signal.relatedTaskId == null && signal.relatedGoalId == null) {
+                    rec.title == signal.title
+                } else true
+
+                rec.timestamp > (now - cooldown) && sameType && sameTask && sameGoal && sameContext
+            }
+            !recentlyShown
         }
     }
 
@@ -394,9 +441,11 @@ class NexoraAiBrain(
         )
     }
 
-    private fun handleGeneralAnalysis(context: AiContext): AiResponse {
+    private suspend fun handleGeneralAnalysis(context: AiContext): AiResponse {
         val signals = proactiveEngine.detectSignals(context)
-        val recommendations = signals.map { signal ->
+        val filteredSignals = filterProactiveSignals(signals)
+        
+        val recommendations = filteredSignals.map { signal ->
             AiRecommendation(
                 id = signal.fingerprint,
                 type = mapSignalTypeToRecType(signal.type),
@@ -416,14 +465,14 @@ class NexoraAiBrain(
         val personal = context.personalContext
         summary.add("Workload: ${personal.workload.state}. Goal Health: ${personal.goalHealth.count { it.state == GoalHealthState.HEALTHY }} healthy.")
 
-        if (signals.isNotEmpty()) summary.add("Detected ${signals.size} proactive items.")
+        if (filteredSignals.isNotEmpty()) summary.add("Detected ${filteredSignals.size} new proactive items.")
         
         val response = AiResponse(
             responseType = AiResponseType.INFORMATION,
             title = "Nexora Analysis",
             message = if (summary.isEmpty()) "Your workspace is clear." else summary.joinToString("\n"),
             recommendations = recommendations,
-            proactiveSignals = signals
+            proactiveSignals = filteredSignals
         )
         
         return response

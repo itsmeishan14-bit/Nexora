@@ -58,8 +58,9 @@ class AiArchitectureTest {
             adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
         )
 
-        val insights = planner.getProactiveInsights(context)
-        assertTrue(insights.any { it.type == AiRecommendationType.WARNING && it.title.contains("Workload") })
+        val proactiveEngine = NexoraProactiveEngine()
+        val insights = proactiveEngine.detectSignals(context)
+        assertTrue(insights.any { it.type == ProactiveSignalType.WORKLOAD_RISK && it.title.contains("Workload") })
     }
 
     @Test
@@ -77,8 +78,9 @@ class AiArchitectureTest {
             )
         )
 
-        val insights = planner.getProactiveInsights(context)
-        assertTrue(insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Stagnating") })
+        val proactiveEngine = NexoraProactiveEngine()
+        val insights = proactiveEngine.detectSignals(context)
+        assertTrue(insights.any { it.type == ProactiveSignalType.GOAL_NEGLECT && it.title.contains("Stagnating") })
     }
 
     @Test

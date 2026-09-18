@@ -47,9 +47,9 @@ class NexoraAutomationSystem {
             }
             
             val signal = when (rule.name) {
-                "Workload Manager" -> signals.find { it.type == ProactiveSignalType.OVERLOAD }
-                "Goal Progress Guard" -> signals.find { it.type == ProactiveSignalType.NEGLECTED_GOAL || it.type == ProactiveSignalType.MISSING_NEXT_ACTION }
-                "Task Breakdown Assistant" -> signals.find { it.type == ProactiveSignalType.REPEATED_CARRY_FORWARD }
+                "Workload Manager" -> signals.find { it.type == ProactiveSignalType.WORKLOAD_RISK || it.type == ProactiveSignalType.OVERLOAD }
+                "Goal Progress Guard" -> signals.find { it.type == ProactiveSignalType.GOAL_NEGLECT || it.type == ProactiveSignalType.NEGLECTED_GOAL || it.type == ProactiveSignalType.MISSING_NEXT_ACTION }
+                "Task Breakdown Assistant" -> signals.find { it.type == ProactiveSignalType.CARRY_FORWARD_PATTERN || it.type == ProactiveSignalType.REPEATED_CARRY_FORWARD }
                 "Urgent Conflict Detector" -> signals.find { it.type == ProactiveSignalType.HIGH_PRIORITY_CONFLICT }
                 else -> null
             }

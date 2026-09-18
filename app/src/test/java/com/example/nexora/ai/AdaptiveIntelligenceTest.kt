@@ -44,7 +44,8 @@ class AdaptiveIntelligenceTest {
             adaptiveProfile = profile
         )
         
-        val insights = planner.getProactiveInsights(context)
+        val proactiveEngine = NexoraProactiveEngine()
+        val insights = proactiveEngine.detectSignals(context)
         val workloadWarning = insights.find { it.title.contains("Workload") }
         
         assertNotNull(workloadWarning)

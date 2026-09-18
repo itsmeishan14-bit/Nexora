@@ -132,7 +132,14 @@ class AiBrainTest {
         override suspend fun decomposeGoal(goalTitle: String, goalDescription: String, category: String): AiGoalDecomposition = AiGoalDecomposition("", "", emptyList())
         override suspend fun askNexora(context: AiContext, userMessage: String): AiModelStructuredResponse = AiModelStructuredResponse(AiDecision(AiDecisionType.NO_ACTION, "", ""), modelName = "fake")
         override suspend fun generateProactiveInsights(context: AiContext): List<AiRecommendation> {
-            return AiPlanner().getProactiveInsights(context)
+            return NexoraProactiveEngine().detectSignals(context).map { signal ->
+                AiRecommendation(
+                    id = signal.fingerprint,
+                    type = AiRecommendationType.GENERAL,
+                    title = signal.title,
+                    message = signal.message
+                )
+            }
         }
     }
 }

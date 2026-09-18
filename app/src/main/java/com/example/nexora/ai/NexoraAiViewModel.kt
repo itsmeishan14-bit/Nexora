@@ -36,7 +36,8 @@ data class NexoraAiUiState(
 )
 
 class NexoraAiViewModel(
-    private val engine: NexoraAiEngine
+    private val engine: NexoraAiEngine,
+    private val applicationContext: android.content.Context? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NexoraAiUiState())
@@ -72,6 +73,15 @@ class NexoraAiViewModel(
                     proactiveSignals = response.proactiveSignals,
                     homeProposedAction = homeAction
                 )
+
+                // Trigger notifications for new high-priority signals
+                applicationContext?.let { appContext ->
+                    response.proactiveSignals.forEach { signal ->
+                        if (signal.severity >= AiPriority.HIGH) {
+                            com.example.nexora.util.NexoraNotificationManager.showProactiveNotification(appContext, signal)
+                        }
+                    }
+                }
             } catch (_: Exception) {
                 // Silent fail for background proactive check
             }
@@ -132,6 +142,15 @@ class NexoraAiViewModel(
                     currentWorkflow = response.workflow,
                     proactiveSignals = response.proactiveSignals
                 )
+
+                // Trigger notifications for new high-priority signals
+                applicationContext?.let { appContext ->
+                    response.proactiveSignals.forEach { signal ->
+                        if (signal.severity >= AiPriority.HIGH) {
+                            com.example.nexora.util.NexoraNotificationManager.showProactiveNotification(appContext, signal)
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

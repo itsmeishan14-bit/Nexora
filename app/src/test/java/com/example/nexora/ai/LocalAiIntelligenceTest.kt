@@ -131,8 +131,8 @@ class LocalAiIntelligenceTest {
             )
         )
         
-        val insights = planner.getProactiveInsights(context)
+        val insights = NexoraProactiveEngine().detectSignals(context)
         assertTrue("Should detect neglected goal", 
-            insights.any { it.type == AiRecommendationType.GOAL_ACTION && it.title.contains("Stagnating") })
+            insights.any { it.type == ProactiveSignalType.GOAL_NEGLECT && it.title.contains("Stagnating") })
     }
 }

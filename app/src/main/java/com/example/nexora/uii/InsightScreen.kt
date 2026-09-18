@@ -22,12 +22,13 @@ import com.example.nexora.ui.theme.*
 fun InsightScreen(
     engine: NexoraAiEngine
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val viewModel: NexoraAiViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         factory = remember(engine) {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return NexoraAiViewModel(engine = engine) as T
+                    return NexoraAiViewModel(engine, context.applicationContext) as T
                 }
             }
         }

@@ -5,12 +5,11 @@ class LocalNexoraAiService(
 ) : NexoraAiService {
 
     private val planner = AiPlanner()
+    private val proactiveEngine = NexoraProactiveEngine()
 
     override suspend fun generateRecommendations(
         context: AiContext
     ): List<AiRecommendation> {
-        // We can still use the planner for basic recommendations
-        // or route through the provider for "reasoned" recommendations
         return planner.analyze(context)
     }
 
@@ -57,6 +56,41 @@ class LocalNexoraAiService(
     override suspend fun generateProactiveInsights(
         context: AiContext
     ): List<AiRecommendation> {
-        return planner.getProactiveInsights(context)
+        val signals = proactiveEngine.detectSignals(context)
+        return signals.map { signal ->
+             AiRecommendation(
+                id = signal.fingerprint,
+                type = mapSignalToRecType(signal.type),
+                title = signal.title,
+                message = signal.message,
+                priority = signal.severity,
+                confidence = signal.confidence,
+                evidence = emptyList(),
+                relatedTaskId = signal.relatedTaskId,
+                relatedGoalId = signal.relatedGoalId,
+                actionLabel = signal.suggestedAction?.title
+            )
+        }
+    }
+
+    private fun mapSignalToRecType(type: ProactiveSignalType): AiRecommendationType {
+        return when (type) {
+            ProactiveSignalType.WORKLOAD_RISK, 
+            ProactiveSignalType.PLAN_MISMATCH -> AiRecommendationType.WARNING
+            
+            ProactiveSignalType.GOAL_NEGLECT, 
+            ProactiveSignalType.MISSING_NEXT_ACTION,
+            ProactiveSignalType.GOAL_PROGRESS_OPPORTUNITY -> AiRecommendationType.GOAL_ACTION
+            
+            ProactiveSignalType.CARRY_FORWARD_PATTERN,
+            ProactiveSignalType.PRODUCTIVITY_DROP,
+            ProactiveSignalType.PRODUCTIVITY_IMPROVEMENT,
+            ProactiveSignalType.WORKLOAD_BALANCED -> AiRecommendationType.PRODUCTIVITY_INSIGHT
+            
+            ProactiveSignalType.HIGH_PRIORITY_CONFLICT,
+            ProactiveSignalType.TASK_TOO_LARGE -> AiRecommendationType.WARNING
+            
+            else -> AiRecommendationType.GENERAL
+        }
     }
 }
