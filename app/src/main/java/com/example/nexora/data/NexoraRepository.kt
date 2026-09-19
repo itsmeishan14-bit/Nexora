@@ -123,6 +123,14 @@ open class NexoraRepository(
         )
     }
 
+    open suspend fun deleteAllTasks() {
+        taskDao?.deleteAll()
+    }
+
+    open suspend fun completeAllTasks() {
+        taskDao?.markAllCompleted()
+    }
+
     // ─────────────────────────────────────
     // GOALS
     // ─────────────────────────────────────

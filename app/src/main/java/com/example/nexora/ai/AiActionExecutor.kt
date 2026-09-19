@@ -51,6 +51,8 @@ open class AiActionExecutor(
                 AiActionType.SHOW_INSIGHT -> AiActionResult(true, "Insight displayed.")
                 AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
                 AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
+                AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
+                AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
             }
 
             // 3. Verification Layer
@@ -119,6 +121,14 @@ open class AiActionExecutor(
                 val goalId = action.goalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
                 if (goal == null) executionResult else AiActionResult(false, "Verification failed: Goal still exists after deletion.")
+            }
+            AiActionType.DELETE_ALL_TASKS -> {
+                val tasks = repository.observeTasksOnce()
+                if (tasks.isEmpty()) executionResult else AiActionResult(false, "Verification failed: Tasks still exist after bulk delete.")
+            }
+            AiActionType.COMPLETE_ALL_TASKS -> {
+                val incomplete = repository.getIncompleteTasksOnce()
+                if (incomplete.isEmpty()) executionResult else AiActionResult(false, "Verification failed: Some tasks are still incomplete.")
             }
             else -> executionResult
         }
@@ -301,5 +311,15 @@ open class AiActionExecutor(
             message = "Goal deleted: ${goal.title}",
             affectedGoalId = goalId
         )
+    }
+
+    private suspend fun deleteAllTasks(repository: NexoraRepository, action: AiAction): AiActionResult {
+        repository.deleteAllTasks()
+        return AiActionResult(true, "All tasks have been successfully deleted.")
+    }
+
+    private suspend fun completeAllTasks(repository: NexoraRepository, action: AiAction): AiActionResult {
+        repository.completeAllTasks()
+        return AiActionResult(true, "All pending tasks have been marked as complete.")
     }
 }

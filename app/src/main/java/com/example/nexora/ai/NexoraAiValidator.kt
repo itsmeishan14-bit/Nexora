@@ -21,7 +21,9 @@ class NexoraAiValidator(
             AiActionType.CREATE_TASK -> validateCreateTask(action)
             AiActionType.CREATE_GOAL -> validateCreateGoal(action)
             
-            AiActionType.SHOW_INSIGHT -> ValidationResult.Valid
+            AiActionType.SHOW_INSIGHT,
+            AiActionType.DELETE_ALL_TASKS,
+            AiActionType.COMPLETE_ALL_TASKS -> ValidationResult.Valid
         }
     }
 

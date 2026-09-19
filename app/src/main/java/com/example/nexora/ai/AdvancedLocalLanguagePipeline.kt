@@ -52,6 +52,10 @@ class AdvancedLocalLanguagePipeline {
             // Cancel / Stop
             text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
 
+            // Bulk Actions (Check these before single actions)
+            text.contains(Regex("(?i)delete|remove|clear")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
+            text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
+
             // Task Actions
             text.contains(Regex("(?i)create|add|new|remind")) && text.contains("task") -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH
             text.contains(Regex("(?i)complete|finish|done|checked off|mark")) -> AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
@@ -120,6 +124,7 @@ class AdvancedLocalLanguagePipeline {
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
+            AiDecisionType.DELETE_ALL_TASKS, AiDecisionType.COMPLETE_ALL_TASKS -> ""
             else -> ""
         }
         

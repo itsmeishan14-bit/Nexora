@@ -17,6 +17,8 @@ enum class AiDecisionType {
     AMBIGUOUS,
     CLARIFY,
     CANCEL,
+    DELETE_ALL_TASKS,
+    COMPLETE_ALL_TASKS,
     NO_ACTION
 }
 

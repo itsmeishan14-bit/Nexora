@@ -14,7 +14,9 @@ enum class AiActionType {
     DECOMPOSE_GOAL,
     SHOW_INSIGHT,
     OPEN_TASK,
-    OPEN_GOAL
+    OPEN_GOAL,
+    DELETE_ALL_TASKS,
+    COMPLETE_ALL_TASKS
 }
 
 data class AiAction(

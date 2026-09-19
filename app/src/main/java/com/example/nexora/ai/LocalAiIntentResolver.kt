@@ -32,6 +32,8 @@ class LocalAiIntentResolver {
             AiDecisionType.UPDATE_GOAL -> decomposeGoal(query, context)
             AiDecisionType.CLARIFY -> handleClarify(langResult)
             AiDecisionType.CANCEL -> handleCancel()
+            AiDecisionType.DELETE_ALL_TASKS -> handleDeleteAllTasks(context)
+            AiDecisionType.COMPLETE_ALL_TASKS -> handleCompleteAllTasks(context)
             else -> noAction(query, context, AiPlanner())
         }
 
@@ -276,6 +278,53 @@ class LocalAiIntentResolver {
             is ResolutionResult.Ambiguous -> ambiguousResult("Multiple tasks match \"$title\". Which one should I delete?", resolution.candidates.map { it.id })
             else -> notFoundResult("I couldn't find a task matching \"$title\".")
         }
+    }
+
+    private fun handleDeleteAllTasks(context: AiContext): AiModelStructuredResponse {
+        val count = context.tasks.size
+        if (count == 0) return notFoundResult("There are no tasks to delete.")
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.DELETE_ALL_TASKS,
+                title = "Delete All Tasks",
+                reason = "Permanently delete all $count tasks."
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.DELETE_ALL_TASKS,
+                    title = "Delete All Tasks",
+                    description = "I found $count tasks. This will permanently delete all of them. Are you sure you want to continue?",
+                    priority = AiPriority.CRITICAL,
+                    requiresConfirmation = true
+                )
+            ),
+            textResponse = "I can delete all $count tasks for you. This cannot be undone. Should I proceed?",
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleCompleteAllTasks(context: AiContext): AiModelStructuredResponse {
+        val incompleteCount = context.incompleteTasks.size
+        if (incompleteCount == 0) return notFoundResult("All tasks are already completed.")
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.COMPLETE_ALL_TASKS,
+                title = "Complete All Tasks",
+                reason = "Mark all $incompleteCount incomplete tasks as finished."
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.COMPLETE_ALL_TASKS,
+                    title = "Complete All Tasks",
+                    description = "Mark all $incompleteCount incomplete tasks as complete?",
+                    requiresConfirmation = true
+                )
+            ),
+            textResponse = "I found $incompleteCount incomplete tasks. Should I mark them all as complete?",
+            modelName = "local-heuristic"
+        )
     }
 
     private fun handleClarify(langResult: AiLanguageResult): AiModelStructuredResponse {

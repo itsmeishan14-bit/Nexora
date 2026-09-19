@@ -551,6 +551,8 @@ class NexoraAiBrain(
             AiDecisionType.AMBIGUOUS -> AiResponseType.CLARIFICATION_NEEDED
             AiDecisionType.CLARIFY -> AiResponseType.CLARIFICATION_NEEDED
             AiDecisionType.CANCEL -> AiResponseType.NO_ACTION
+            AiDecisionType.DELETE_ALL_TASKS -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.COMPLETE_ALL_TASKS -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }
