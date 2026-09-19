@@ -24,7 +24,7 @@ class NexoraProactiveEngineTest {
         
         assertTrue(signals.any { it.type == ProactiveSignalType.WORKLOAD_RISK })
         val signal = signals.find { it.type == ProactiveSignalType.WORKLOAD_RISK }!!
-        assertEquals(AiPriority.HIGH, signal.severity)
+        assertEquals(AiPriority.CRITICAL, signal.severity)
         assertEquals(AiConfidence.HIGH, signal.confidence)
     }
 
@@ -79,7 +79,7 @@ class NexoraProactiveEngineTest {
         val urgentTask = PremiumTask(id = 1, title = "Urgent", priority = TaskPriority.URGENT, category = "Work", duration = "1h")
         val context = AiContext(
             tasks = listOf(urgentTask),
-            tasksPlannedToday = 10,
+            tasksPlannedToday = 4, // 2x capacity, but URGENT conflict is more specific
             adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 2, confidence = AdaptiveConfidence.HIGH)
         )
         

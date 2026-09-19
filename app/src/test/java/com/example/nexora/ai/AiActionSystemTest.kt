@@ -19,7 +19,8 @@ class AiActionSystemTest {
     fun setup() {
         repository = MockNexoraRepository()
         val contextBuilder = AiContextBuilder(repository)
-        val providerManager = AiProviderManager(localProvider = LocalAiProvider())
+        val localProvider = LocalAiProvider()
+        val providerManager = AiProviderManager(localProvider = localProvider)
         aiService = LocalNexoraAiService(providerManager = providerManager)
         actionExecutor = AiActionExecutor(repository)
         toolRegistry = AiToolRegistry(repository, actionExecutor)
@@ -27,6 +28,7 @@ class AiActionSystemTest {
         engine = NexoraAiEngine(
             contextBuilder = contextBuilder,
             aiService = aiService,
+            providerManager = providerManager,
             actionExecutor = actionExecutor,
             toolRegistry = toolRegistry,
             repository = repository

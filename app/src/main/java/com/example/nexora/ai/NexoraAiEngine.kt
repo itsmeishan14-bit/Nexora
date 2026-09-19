@@ -7,6 +7,7 @@ package com.example.nexora.ai
 class NexoraAiEngine(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
+    private val providerManager: AiProviderManager,
     private val actionExecutor: AiActionExecutor,
     toolRegistry: AiToolRegistry,
     private val repository: com.example.nexora.data.NexoraRepository
@@ -14,6 +15,7 @@ class NexoraAiEngine(
     private val brain = NexoraAiBrain(
         contextBuilder = contextBuilder,
         aiService = aiService,
+        providerManager = providerManager,
         toolRegistry = toolRegistry,
         repository = repository
     )

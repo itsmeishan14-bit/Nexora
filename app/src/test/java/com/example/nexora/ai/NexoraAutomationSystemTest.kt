@@ -20,14 +20,14 @@ class NexoraAutomationSystemTest {
         
         val signals = automationSystem.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
         
-        assertTrue(signals.any { it.type == ProactiveSignalType.OVERLOAD })
+        assertTrue(signals.any { it.type == ProactiveSignalType.WORKLOAD_RISK })
     }
 
     @Test
     fun `test automation cooldown prevents repeated firing`() {
         val context = AiContext(
             tasksPlannedToday = 15,
-            adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5)
+            adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
         )
         
         // First trigger
@@ -44,12 +44,12 @@ class NexoraAutomationSystemTest {
     fun `test automation fires task breakdown assistant on carry forward`() {
         val context = AiContext(
             carriedTasks = 5,
-            adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5)
+            adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
         )
         
         val signals = automationSystem.evaluateTriggers(AutomationTriggerType.TASK_CARRIED_FORWARD, context)
         
-        assertTrue(signals.any { it.type == ProactiveSignalType.REPEATED_CARRY_FORWARD })
+        assertTrue(signals.any { it.type == ProactiveSignalType.CARRY_FORWARD_PATTERN })
     }
 
     @Test
@@ -59,7 +59,7 @@ class NexoraAutomationSystemTest {
         
         system.updateRule(rule.copy(enabled = false))
         
-        val context = AiContext(tasksPlannedToday = 20, adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 2))
+        val context = AiContext(tasksPlannedToday = 20, adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 2, confidence = AdaptiveConfidence.HIGH))
         
         val signals = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
         assertEquals(0, signals.size)

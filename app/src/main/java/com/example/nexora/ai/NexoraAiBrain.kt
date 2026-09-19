@@ -11,9 +11,9 @@ import com.example.nexora.uii.TaskPriority
 class NexoraAiBrain(
     private val contextBuilder: AiContextBuilder,
     private val aiService: NexoraAiService,
+    private val providerManager: AiProviderManager,
     toolRegistry: AiToolRegistry,
-    private val repository: NexoraRepository,
-    private val intentResolver: LocalAiIntentResolver = LocalAiIntentResolver()
+    private val repository: NexoraRepository
 ) {
     private val planner = AiPlanner()
     private val learningLoop = AiLearningLoop(repository)
@@ -132,7 +132,7 @@ class NexoraAiBrain(
                msg.contains("organize") || msg.contains("clean")
     }
 
-    private fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Check if user is asking about memory/productivity or recent proactive alerts
@@ -184,20 +184,25 @@ class NexoraAiBrain(
             )
         }
 
-        // 2. Understand Intent
-        val structuredResult = intentResolver.resolve(message, context)
+        // 2. Resolve using Provider Manager (Cloud with Local Fallback)
+        val prompt = AiPromptBuilder.buildContextPrompt(context) + "\n\nUser Message: $message"
+        val structuredResult = providerManager.generateStructuredResponse(prompt, context)
         
-        // 3. Map Structured Response to Unified Response
+        // 3. Grounding & Factual Verification
+        // If the LLM claims a fact that contradicts the DB, we prefer the DB.
+        val groundedResponse = groundResponse(structuredResult, context)
+
+        // 4. Map Structured Response to Unified Response
         val response = AiResponse(
-            responseType = mapDecisionToResponseType(structuredResult.decision.type),
-            title = structuredResult.decision.title,
-            message = structuredResult.textResponse ?: structuredResult.decision.reason,
-            confidence = mapPriorityToConfidence(structuredResult.decision.priority),
+            responseType = mapDecisionToResponseType(groundedResponse.decision.type),
+            title = groundedResponse.decision.title,
+            message = groundedResponse.textResponse ?: groundedResponse.decision.reason,
+            confidence = mapPriorityToConfidence(groundedResponse.decision.priority),
             recommendations = emptyList(), 
-            proposedActions = structuredResult.actions,
-            relatedTaskId = structuredResult.decision.taskId,
-            relatedGoalId = structuredResult.decision.goalId,
-            decision = structuredResult.decision
+            proposedActions = groundedResponse.actions,
+            relatedTaskId = groundedResponse.decision.taskId,
+            relatedGoalId = groundedResponse.decision.goalId,
+            decision = groundedResponse.decision
         )
         
         return response
@@ -260,7 +265,7 @@ class NexoraAiBrain(
         }
     }
 
-    private fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleDailyPlan(context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val plan = planner.createDailyPlan(context)
         val proposedActions = plan.tasks.map { 
             AiAction(
@@ -271,9 +276,20 @@ class NexoraAiBrain(
             )
         }
 
+        // Use Provider for a natural explanation of the plan if available
+        val prompt = "Explain why this daily plan is effective: ${plan.summary}. " +
+                     "Tasks: ${plan.tasks.joinToString { it.task.title }}"
+        
+        val llmResponse = try {
+            providerManager.generateResponse(prompt, context)
+        } catch (e: Exception) {
+            null
+        }
+
         // Add memory insights to the message if relevant
         val memoryInsight = relevantMemory.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN }?.content
-        val finalMessage = if (memoryInsight != null) "${plan.summary}\n\nNote: $memoryInsight" else plan.summary
+        val baseMessage = llmResponse?.text ?: plan.summary
+        val finalMessage = if (memoryInsight != null) "$baseMessage\n\nNote: $memoryInsight" else baseMessage
 
         val response = AiResponse(
             responseType = AiResponseType.PLAN,
@@ -416,26 +432,45 @@ class NexoraAiBrain(
             return AiResponse(AiResponseType.CLARIFICATION_NEEDED, "Identify Goal", "I couldn't find which goal to decompose. Please specify a goal title.")
         }
 
-        val result = aiService.decomposeGoal(goal.title, "", goal.category)
-        val actions = result.steps.map { step ->
-            AiAction(
-                type = AiActionType.CREATE_TASK,
-                title = "Create Task: ${step.title}",
-                description = step.description,
-                parameters = mapOf(
-                    "title" to step.title,
-                    "duration" to step.estimatedDuration,
-                    "priority" to step.priority.name,
-                    "goalTitle" to goal.title,
-                    "category" to goal.category
+        // Use Provider for advanced decomposition if available
+        val prompt = "Decompose the goal \"${goal.title}\" into actionable sub-tasks. " +
+                     "Return a structured list of tasks with titles and estimated durations."
+        
+        val structuredResult = providerManager.generateStructuredResponse(prompt, context)
+        
+        val actions = if (structuredResult.actions.isNotEmpty()) {
+            // LLM provided specific actions (task creation proposals)
+            structuredResult.actions.map { action ->
+                if (action.type == AiActionType.CREATE_TASK) {
+                    val params = action.parameters.toMutableMap()
+                    params["goalTitle"] = goal.title
+                    params["category"] = goal.category
+                    action.copy(parameters = params)
+                } else action
+            }
+        } else {
+            // Fallback to deterministic decomposition from planner
+            val result = aiService.decomposeGoal(goal.title, "", goal.category)
+            result.steps.map { step ->
+                AiAction(
+                    type = AiActionType.CREATE_TASK,
+                    title = "Create Task: ${step.title}",
+                    description = step.description,
+                    parameters = mapOf(
+                        "title" to step.title,
+                        "duration" to step.estimatedDuration,
+                        "priority" to step.priority.name,
+                        "goalTitle" to goal.title,
+                        "category" to goal.category
+                    )
                 )
-            )
+            }
         }
 
         return AiResponse(
             responseType = AiResponseType.ACTION_PROPOSAL,
             title = "Goal Decomposed",
-            message = result.summary,
+            message = structuredResult.textResponse ?: "I've broken down \"${goal.title}\" into several actionable steps.",
             proposedActions = actions,
             relatedGoalId = goal.id
         )
@@ -518,6 +553,39 @@ class NexoraAiBrain(
             AiDecisionType.CANCEL -> AiResponseType.NO_ACTION
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
+    }
+
+    private fun groundResponse(
+        response: AiModelStructuredResponse,
+        context: AiContext
+    ): AiModelStructuredResponse {
+        val decision = response.decision
+        
+        // 1. Verify IDs exist in context
+        val validTaskId = decision.taskId?.takeIf { id -> context.tasks.any { it.id == id } }
+        val validGoalId = decision.goalId?.takeIf { id -> context.goals.any { it.id == id } }
+        
+        // 2. Cross-reference claims (Simple heuristic: if it claims a state, check it)
+        val msg = response.textResponse?.lowercase() ?: ""
+        val refinedText = if (msg.contains("you have") || msg.contains("there are")) {
+            val taskCount = context.incompleteTasks.size
+            if (msg.contains("$taskCount tasks") || msg.contains("no tasks") && taskCount == 0) {
+                response.textResponse
+            } else {
+                // If LLM hallucinates count, inject factual correction
+                response.textResponse + " (Actual status: you have $taskCount incomplete tasks remaining.)"
+            }
+        } else {
+            response.textResponse
+        }
+
+        return response.copy(
+            decision = decision.copy(
+                taskId = validTaskId,
+                goalId = validGoalId
+            ),
+            textResponse = refinedText
+        )
     }
 
     private fun mapPriorityToConfidence(priority: AiPriority): AiConfidence {

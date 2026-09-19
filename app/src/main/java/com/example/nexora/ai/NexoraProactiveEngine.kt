@@ -42,8 +42,8 @@ class NexoraProactiveEngine {
         if (capacity > 0 && plannedToday > capacity * 1.5) {
             signals.add(AiProactiveSignal(
                 type = ProactiveSignalType.WORKLOAD_RISK,
-                title = "High Workload Risk",
-                message = "You have $plannedToday tasks planned, but your typical capacity is $capacity. You may be over-committing.",
+                title = "High Workload Warning",
+                message = "You've planned $plannedToday tasks, but your typical capacity is around $capacity tasks per day.",
                 severity = if (plannedToday > capacity * 2) AiPriority.CRITICAL else AiPriority.HIGH,
                 confidence = mapAdaptiveConfidence(profile.confidence),
                 evidence = "Planned: $plannedToday, Typical Capacity: $capacity",
@@ -108,8 +108,8 @@ class NexoraProactiveEngine {
             if (health?.state == GoalHealthState.AT_RISK) {
                 signals.add(AiProactiveSignal(
                     type = ProactiveSignalType.GOAL_NEGLECT,
-                    title = "Goal at Risk",
-                    message = "\"${goal.title}\" has not received enough attention recently. Progress is declining.",
+                    title = "Goal Stagnating",
+                    message = "\"${goal.title}\" has not received much attention recently.",
                     severity = AiPriority.HIGH,
                     confidence = AiConfidence.HIGH,
                     evidence = health.evidence,

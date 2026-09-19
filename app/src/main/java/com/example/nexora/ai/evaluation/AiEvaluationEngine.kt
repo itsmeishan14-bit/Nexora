@@ -39,10 +39,15 @@ class AiEvaluationEngine(
         val mockBuilder = MockAiContextBuilder()
         mockBuilder.fixedContext = case.testContext
 
+        val providerManager = AiProviderManager(
+            localProvider = LocalAiProvider()
+        )
+
         // Create a brain instance for this specific run
         val brain = NexoraAiBrain(
             contextBuilder = mockBuilder,
             aiService = aiService,
+            providerManager = providerManager,
             toolRegistry = toolRegistry,
             repository = repository
         )

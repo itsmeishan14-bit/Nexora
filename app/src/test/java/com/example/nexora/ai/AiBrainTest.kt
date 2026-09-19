@@ -117,6 +117,7 @@ class AiBrainTest {
         return NexoraAiBrain(
             contextBuilder = mockContextBuilder,
             aiService = fakeService,
+            providerManager = AiProviderManager(localProvider = LocalAiProvider()),
             toolRegistry = toolRegistry,
             repository = com.example.nexora.data.NexoraRepository(null)
         )
