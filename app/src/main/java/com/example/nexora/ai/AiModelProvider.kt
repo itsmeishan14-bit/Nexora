@@ -17,13 +17,10 @@ interface AiModelProvider {
         context: AiContext
     ): AiModelResponse
 
-    /**
-     * Generate a structured response from the model.
-     * This is used when Nexora needs the model to decide on an action.
-     */
     suspend fun generateStructuredResponse(
         prompt: String,
-        context: AiContext
+        context: AiContext,
+        conversationContext: AiConversationContext? = null
     ): AiModelStructuredResponse
     
     /**
@@ -45,7 +42,8 @@ data class AiModelStructuredResponse(
     val modelName: String,
     val usage: AiModelUsage? = null,
     val candidateTaskIds: List<Long> = emptyList(),
-    val candidateGoalIds: List<Long> = emptyList()
+    val candidateGoalIds: List<Long> = emptyList(),
+    val conversationContext: AiConversationContext? = null
 )
 
 data class AiModelUsage(

@@ -33,6 +33,16 @@ class MockNexoraRepository : NexoraRepository(null) {
         tasks.removeAll { it.id == task.id }
     }
 
+    override suspend fun deleteAllTasks() {
+        tasks.clear()
+    }
+
+    override suspend fun completeAllTasks() {
+        val updated = tasks.map { it.copy(completed = true) }
+        tasks.clear()
+        tasks.addAll(updated)
+    }
+
     override suspend fun observeGoalsOnce(): List<NexoraGoal> = goals.toList()
 
     override suspend fun getGoalById(id: Long): NexoraGoal? = goals.find { it.id == id }

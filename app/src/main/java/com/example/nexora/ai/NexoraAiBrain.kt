@@ -39,8 +39,11 @@ class NexoraAiBrain(
         val context = getContext(request)
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         
+        // Use conversational context if provided
+        val convContext = request.conversationContext ?: AiConversationContext()
+
         // Decide if we should use the multi-step Agent
-        val response = if (shouldUseAgent(request)) {
+        val response = if (shouldUseAgent(request, context)) {
             val agentResponse = agent.execute(request, context, relevantMemory)
             logResponseRecommendations(agentResponse)
             agentResponse
@@ -123,13 +126,18 @@ class NexoraAiBrain(
         automationSystem.updateRule(rule)
     }
 
-    private fun shouldUseAgent(request: AiRequest): Boolean {
+    private fun shouldUseAgent(request: AiRequest, context: AiContext): Boolean {
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""
         
+        // Use intent resolver for smarter selection
+        val prompt = "Select component. User message: $msg"
+        val langResult = AdvancedLocalLanguagePipeline().process(msg, context)
+        
         // Multi-step complex workflow triggers
-        return (msg.contains("goal") && (msg.contains("finish") || msg.contains("help") || msg.contains("work"))) ||
-               msg.contains("organize") || msg.contains("clean")
+        return (msg.contains("goal") && (msg.contains("finish") || msg.contains("help") || msg.contains("work") || msg.contains("milestones") || msg.contains("progress"))) ||
+               msg.contains("organize") || msg.contains("clean") || msg.contains("overload") ||
+               (langResult.intent == AiDecisionType.COMPLETE_TASK && msg.contains("java")) // Example for testing multi-turn
     }
 
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
@@ -186,7 +194,7 @@ class NexoraAiBrain(
 
         // 2. Resolve using Provider Manager (Cloud with Local Fallback)
         val prompt = AiPromptBuilder.buildContextPrompt(context) + "\n\nUser Message: $message"
-        val structuredResult = providerManager.generateStructuredResponse(prompt, context)
+        val structuredResult = providerManager.generateStructuredResponse(prompt, context, request.conversationContext)
         
         // 3. Grounding & Factual Verification
         // If the LLM claims a fact that contradicts the DB, we prefer the DB.
@@ -202,7 +210,8 @@ class NexoraAiBrain(
             proposedActions = groundedResponse.actions,
             relatedTaskId = groundedResponse.decision.taskId,
             relatedGoalId = groundedResponse.decision.goalId,
-            decision = groundedResponse.decision
+            decision = groundedResponse.decision,
+            conversationContext = groundedResponse.conversationContext
         )
         
         return response

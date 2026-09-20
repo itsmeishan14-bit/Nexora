@@ -25,13 +25,14 @@ class LocalAiProvider(
 
     override suspend fun generateStructuredResponse(
         prompt: String,
-        context: AiContext
+        context: AiContext,
+        conversationContext: AiConversationContext?
     ): AiModelStructuredResponse {
         val userMessage = prompt.split("\n\nUser Message: ").lastOrNull() ?: 
                           prompt.split("\n\nDecision Query: ").lastOrNull() ?: 
                           prompt
 
-        val result = intentResolver.resolve(userMessage, context)
+        val result = intentResolver.resolve(userMessage, context, conversationContext)
         
         if (result.decision.type != AiDecisionType.NO_ACTION) {
             return result

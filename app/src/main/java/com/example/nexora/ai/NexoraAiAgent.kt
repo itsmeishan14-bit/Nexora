@@ -159,6 +159,16 @@ class NexoraAiAgent(
                 handleCreateTaskReasoning(request, context, workflow, langResult)
             }
 
+            // Case: Task Update
+            langResult.intent == AiDecisionType.UPDATE_TASK -> {
+                handleUpdateTaskReasoning(request, context, workflow, langResult)
+            }
+
+            // Case: Goal Progress / Info
+            langResult.intent == AiDecisionType.SHOW_INSIGHT && msg.contains("goal") -> {
+                handleGoalInfoReasoning(request, context, workflow, langResult)
+            }
+
             // Case: Clean up / Organize
             msg.contains("clean") || msg.contains("organize") || msg.contains("overload") -> {
                 handleCleanupWorkflow(request, context, workflow)
@@ -364,6 +374,96 @@ class NexoraAiAgent(
         
         if (lastStep.toolName == "createTask") {
             return AgentReasoning(status = WorkflowStatus.COMPLETED, finalMessage = lastStep.result?.message ?: "Task created.")
+        }
+
+        return AgentReasoning(status = WorkflowStatus.COMPLETED)
+    }
+
+    private fun handleUpdateTaskReasoning(
+        request: AiRequest,
+        context: AiContext,
+        workflow: AgentWorkflow,
+        langResult: AiLanguageResult
+    ): AgentReasoning {
+        val lastStep = workflow.steps.lastOrNull()
+        val taskQuery = langResult.entities["title"]?.toString() ?: ""
+        
+        if (lastStep == null) {
+            return AgentReasoning(
+                nextStep = AgentWorkflowStep(
+                    workflowId = workflow.id,
+                    order = 0,
+                    description = "Finding task to update",
+                    toolName = "findTask",
+                    parameters = mapOf("query" to taskQuery)
+                )
+            )
+        }
+        
+        if (lastStep.toolName == "findTask") {
+            if (lastStep.result?.success == true) {
+                val task = lastStep.result.data as? com.example.nexora.uii.PremiumTask
+                if (task != null) {
+                    val updateParams = langResult.entities.toMutableMap()
+                    updateParams["taskId"] = task.id
+                    
+                    return AgentReasoning(
+                        nextStep = AgentWorkflowStep(
+                            workflowId = workflow.id,
+                            order = 1,
+                            description = "Update \"${task.title}\"",
+                            toolName = "updateTask",
+                            parameters = updateParams,
+                            requiresConfirmation = true
+                        )
+                    )
+                }
+            }
+        }
+        
+        return AgentReasoning(status = WorkflowStatus.COMPLETED)
+    }
+
+    private fun handleGoalInfoReasoning(
+        request: AiRequest,
+        context: AiContext,
+        workflow: AgentWorkflow,
+        langResult: AiLanguageResult
+    ): AgentReasoning {
+        val lastStep = workflow.steps.lastOrNull()
+        val goalQuery = langResult.entities["title"]?.toString() ?: ""
+        
+        if (lastStep == null) {
+            return AgentReasoning(
+                nextStep = AgentWorkflowStep(
+                    workflowId = workflow.id,
+                    order = 0,
+                    description = "Finding the goal",
+                    toolName = "findGoal",
+                    parameters = mapOf("query" to goalQuery)
+                )
+            )
+        }
+        
+        if (lastStep.toolName == "findGoal") {
+            if (lastStep.result?.success == true) {
+                val goal = lastStep.result.data as? com.example.nexora.uii.NexoraGoal
+                if (goal != null) {
+                    return AgentReasoning(
+                        nextStep = AgentWorkflowStep(
+                            workflowId = workflow.id,
+                            order = 1,
+                            description = "Analyzing goal progress",
+                            toolName = "analyzeGoal",
+                            parameters = mapOf("goalId" to goal.id)
+                        )
+                    )
+                }
+            }
+        }
+        
+        if (lastStep?.toolName == "analyzeGoal") {
+            return AgentReasoning(status = WorkflowStatus.COMPLETED, finalMessage = lastStep.result?.message)
         }
 
         return AgentReasoning(status = WorkflowStatus.COMPLETED)

@@ -9,7 +9,8 @@ data class AiRequest(
     val taskId: Long? = null,
     val goalId: Long? = null,
     val parameters: Map<String, Any> = emptyMap(),
-    val source: String = "unknown"
+    val source: String = "unknown",
+    val conversationContext: AiConversationContext? = null
 )
 
 enum class AiRequestType {
@@ -45,7 +46,8 @@ data class AiResponse(
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,
     val workflow: AgentWorkflow? = null,
-    val decision: AiDecision? = null
+    val decision: AiDecision? = null,
+    val conversationContext: AiConversationContext? = null
 )
 
 enum class AiResponseType {

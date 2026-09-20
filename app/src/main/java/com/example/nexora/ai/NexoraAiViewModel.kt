@@ -299,7 +299,11 @@ class NexoraAiViewModel(
                 }
 
                 // 2. AI Brain Reasoned Request
-                val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = text))
+                val response = engine.processRequest(AiRequest(
+                    type = AiRequestType.CHAT, 
+                    userMessage = text,
+                    conversationContext = currentState.toConversationContext()
+                ))
                 
                 val aiMessage = NexoraChatMessage(
                     text = response.message,
@@ -311,7 +315,8 @@ class NexoraAiViewModel(
                     isChatLoading = false,
                     lastBrainResponse = response,
                     currentWorkflow = response.workflow,
-                    proactiveSignals = response.proactiveSignals
+                    proactiveSignals = response.proactiveSignals,
+                    conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState()
                 )
 
                 processBrainResponse(response)
@@ -342,13 +347,19 @@ class NexoraAiViewModel(
             }
             else -> {
                 if (response.proposedActions.isNotEmpty()) {
-                    proposeAction(response.proposedActions.first())
+                    val action = response.proposedActions.first()
+                    proposeAction(action)
+                    
+                    // Also store in conversational state for confirmation flow
+                    _uiState.value = _uiState.value.copy(
+                        conversationalState = _uiState.value.conversationalState.copy(pendingAction = action)
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
+                        proposedAction = if (isCancellation) null else _uiState.value.proposedAction
+                    )
                 }
-                
-                _uiState.value = _uiState.value.copy(
-                    conversationalState = AiConversationalState(),
-                    proposedAction = if (isCancellation) null else _uiState.value.proposedAction
-                )
             }
         }
     }

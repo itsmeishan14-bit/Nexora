@@ -11,35 +11,88 @@ class LocalAiIntentResolver {
      * Resolves natural language queries into structured AI responses using local heuristics.
      * Operates entirely offline without external APIs.
      */
-    fun resolve(query: String, context: AiContext): AiModelStructuredResponse {
+    fun resolve(query: String, context: AiContext, externalConvContext: AiConversationContext? = null): AiModelStructuredResponse {
+        // Use external context if provided, otherwise fallback to local persistence
+        val effectiveConvContext = externalConvContext ?: conversationContext
+        
         // Refresh context if expired
-        if (conversationContext.isExpired()) {
+        if (effectiveConvContext.isExpired()) {
             conversationContext = AiConversationContext()
+        } else {
+            conversationContext = effectiveConvContext
         }
 
         val langResult = pipeline.process(query, context, conversationContext)
         
-        val response = when (langResult.intent) {
-            AiDecisionType.SHOW_INSIGHT -> handleShowInsight(langResult, context)
-            AiDecisionType.CREATE_TASK -> handleCreateTask(langResult, context)
-            AiDecisionType.COMPLETE_TASK -> handleCompleteTask(langResult, context)
-            AiDecisionType.DELETE_TASK -> handleDeleteTask(langResult, context)
-            AiDecisionType.UPDATE_TASK -> handleUpdateTask(langResult, context)
-            AiDecisionType.CREATE_GOAL -> handleCreateGoal(langResult, context)
-            AiDecisionType.DECOMPOSE_GOAL -> handleDecomposeGoal(langResult, context)
-            AiDecisionType.DAILY_PLAN -> planDay(context, AiPlanner())
-            AiDecisionType.START_TASK -> nextTask(context, AiPlanner())
-            AiDecisionType.UPDATE_GOAL -> decomposeGoal(query, context)
-            AiDecisionType.CLARIFY -> handleClarify(langResult)
-            AiDecisionType.CANCEL -> handleCancel()
-            AiDecisionType.DELETE_ALL_TASKS -> handleDeleteAllTasks(context)
-            AiDecisionType.COMPLETE_ALL_TASKS -> handleCompleteAllTasks(context)
-            else -> noAction(query, context, AiPlanner())
+        val response = when {
+            langResult.isConfirmation && conversationContext.pendingAction != null -> {
+                handleConfirmation(conversationContext.pendingAction!!, context)
+            }
+            langResult.isCancellation -> handleCancel()
+            else -> when (langResult.intent) {
+                AiDecisionType.SHOW_INSIGHT -> handleShowInsight(langResult, context)
+                AiDecisionType.CREATE_TASK -> handleCreateTask(langResult, context)
+                AiDecisionType.COMPLETE_TASK -> handleCompleteTask(langResult, context)
+                AiDecisionType.DELETE_TASK -> handleDeleteTask(langResult, context)
+                AiDecisionType.UPDATE_TASK -> handleUpdateTask(langResult, context)
+                AiDecisionType.CREATE_GOAL -> handleCreateGoal(langResult, context)
+                AiDecisionType.DECOMPOSE_GOAL -> handleDecomposeGoal(langResult, context)
+                AiDecisionType.DAILY_PLAN -> planDay(context, AiPlanner())
+                AiDecisionType.START_TASK -> nextTask(context, AiPlanner())
+                AiDecisionType.UPDATE_GOAL -> decomposeGoal(query, context)
+                AiDecisionType.CLARIFY -> handleClarify(langResult)
+                AiDecisionType.CANCEL -> handleCancel()
+                AiDecisionType.DELETE_ALL_TASKS -> handleDeleteAllTasks(context)
+                AiDecisionType.COMPLETE_ALL_TASKS -> handleCompleteAllTasks(context)
+                else -> noAction(query, context, AiPlanner())
+            }
         }
 
         updateConversationContext(langResult, response)
-        return response
+        return response.copy(conversationContext = conversationContext)
     }
+
+    private fun handleConfirmation(action: AiAction, context: AiContext): AiModelStructuredResponse {
+        // We mark it as authorized by setting userConfirmed = true in parameters
+        val authorizedParams = action.parameters.toMutableMap()
+        authorizedParams["userConfirmed"] = true
+        
+        val authorizedAction = action.copy(
+            requiresConfirmation = false,
+            parameters = authorizedParams
+        )
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = mapActionToDecision(action.type),
+                title = "Executing Action",
+                reason = "Executing previously proposed action after confirmation."
+            ),
+            actions = listOf(authorizedAction),
+            textResponse = "Proceeding with ${action.title.lowercase()} as requested.",
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun mapActionToDecision(type: AiActionType): AiDecisionType {
+        return when (type) {
+            AiActionType.CREATE_TASK -> AiDecisionType.CREATE_TASK
+            AiActionType.COMPLETE_TASK -> AiDecisionType.COMPLETE_TASK
+            AiActionType.UPDATE_TASK -> AiDecisionType.UPDATE_TASK
+            AiActionType.DELETE_TASK -> AiDecisionType.DELETE_TASK
+            AiActionType.RESCHEDULE_TASK -> AiDecisionType.RESCHEDULE_TASK
+            AiActionType.CREATE_GOAL -> AiDecisionType.CREATE_GOAL
+            AiActionType.UPDATE_GOAL -> AiDecisionType.UPDATE_GOAL
+            AiActionType.DELETE_GOAL -> AiDecisionType.DELETE_GOAL
+            AiActionType.DECOMPOSE_GOAL -> AiDecisionType.DECOMPOSE_GOAL
+            AiActionType.SHOW_INSIGHT -> AiDecisionType.SHOW_INSIGHT
+            AiActionType.OPEN_TASK -> AiDecisionType.START_TASK
+            AiActionType.OPEN_GOAL -> AiDecisionType.UPDATE_GOAL
+            AiActionType.DELETE_ALL_TASKS -> AiDecisionType.DELETE_ALL_TASKS
+            AiActionType.COMPLETE_ALL_TASKS -> AiDecisionType.COMPLETE_ALL_TASKS
+        }
+    }
+
 
     private fun handleCancel(): AiModelStructuredResponse {
         return AiModelStructuredResponse(
@@ -60,6 +113,7 @@ class LocalAiIntentResolver {
             lastGoalId = response.decision.goalId ?: conversationContext.lastGoalId,
             lastEntityTitle = langResult.entities["title"]?.toString() ?: conversationContext.lastEntityTitle,
             activeClarification = langResult.clarificationNeeded,
+            pendingAction = response.actions.firstOrNull()?.takeIf { it.requiresConfirmation },
             candidateIds = response.candidateTaskIds.takeIf { it.isNotEmpty() } ?: conversationContext.candidateIds
         )
     }

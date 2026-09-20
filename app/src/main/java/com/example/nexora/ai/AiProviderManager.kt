@@ -42,20 +42,18 @@ class AiProviderManager(
         }
     }
 
-    /**
-     * Generates a structured decision/action with automatic local fallback and basic validation.
-     */
     suspend fun generateStructuredResponse(
         prompt: String,
-        context: AiContext
+        context: AiContext,
+        conversationContext: AiConversationContext? = null
     ): AiModelStructuredResponse {
         val provider = getActiveProvider()
         return try {
-            val response = provider.generateStructuredResponse(prompt, context)
+            val response = provider.generateStructuredResponse(prompt, context, conversationContext)
             validateResponse(response, context)
         } catch (e: Exception) {
             NexoraLogger.w("AI", "Structured provider ${provider.providerName} failed: ${e.message}")
-            localProvider.generateStructuredResponse(prompt, context)
+            localProvider.generateStructuredResponse(prompt, context, conversationContext)
         }
     }
 

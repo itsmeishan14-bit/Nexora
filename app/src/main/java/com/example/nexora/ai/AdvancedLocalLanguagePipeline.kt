@@ -18,18 +18,38 @@ class AdvancedLocalLanguagePipeline {
         val normalized = normalize(message)
         if (normalized.isBlank()) return AiLanguageResult(AiDecisionType.NO_ACTION, AiConfidence.LOW)
 
-        // 2. Intent Detection
+        // 2. Check for Confirmation/Cancellation if there's a pending action
+        if (convContext.pendingAction != null) {
+            val isConfirm = isConfirmation(normalized)
+            val isCancel = isCancellation(normalized)
+            
+            if (isConfirm) {
+                return AiLanguageResult(
+                    intent = mapActionToDecision(convContext.pendingAction.type),
+                    confidence = AiConfidence.HIGH,
+                    isConfirmation = true
+                )
+            } else if (isCancel) {
+                return AiLanguageResult(
+                    intent = AiDecisionType.CANCEL,
+                    confidence = AiConfidence.HIGH,
+                    isCancellation = true
+                )
+            }
+        }
+
+        // 3. Intent Detection
         val intentResult = detectIntent(normalized)
         
-        // 3. Handle Conversational Clarification
+        // 4. Handle Conversational Clarification
         if (convContext.activeClarification != null && !isNewIntent(normalized)) {
             return handleClarificationFollowUp(normalized, convContext, context)
         }
 
-        // 4. Entity & Parameter Extraction
+        // 5. Entity & Parameter Extraction
         val entities = extractEntities(normalized, intentResult.first)
         
-        // 5. Contextual Resolution (it, the first one, etc.)
+        // 6. Contextual Resolution (it, the first one, etc.)
         val resolvedEntities = resolveContextualReferences(entities, convContext, context, normalized)
 
         return AiLanguageResult(
@@ -37,6 +57,33 @@ class AdvancedLocalLanguagePipeline {
             confidence = intentResult.second,
             entities = resolvedEntities
         )
+    }
+
+    private fun isConfirmation(text: String): Boolean {
+        return text.contains(Regex("(?i)\\byes\\b|\\bconfirm\\b|\\bdo it\\b|\\bdo that\\b|\\bcontinue\\b|\\bproceed\\b|\\bokay\\b|\\bok\\b|\\bgo ahead\\b|\\bdelete them\\b|\\bdelete everything\\b"))
+    }
+
+    private fun isCancellation(text: String): Boolean {
+        return text.contains(Regex("(?i)\\bno\\b|\\bcancel\\b|\\bstop\\b|\\bnever mind\\b|\\bforget it\\b|\\bdon't\\b"))
+    }
+
+    private fun mapActionToDecision(type: AiActionType): AiDecisionType {
+        return when (type) {
+            AiActionType.CREATE_TASK -> AiDecisionType.CREATE_TASK
+            AiActionType.COMPLETE_TASK -> AiDecisionType.COMPLETE_TASK
+            AiActionType.UPDATE_TASK -> AiDecisionType.UPDATE_TASK
+            AiActionType.DELETE_TASK -> AiDecisionType.DELETE_TASK
+            AiActionType.RESCHEDULE_TASK -> AiDecisionType.RESCHEDULE_TASK
+            AiActionType.CREATE_GOAL -> AiDecisionType.CREATE_GOAL
+            AiActionType.UPDATE_GOAL -> AiDecisionType.UPDATE_GOAL
+            AiActionType.DELETE_GOAL -> AiDecisionType.DELETE_GOAL
+            AiActionType.DECOMPOSE_GOAL -> AiDecisionType.DECOMPOSE_GOAL
+            AiActionType.SHOW_INSIGHT -> AiDecisionType.SHOW_INSIGHT
+            AiActionType.OPEN_TASK -> AiDecisionType.START_TASK
+            AiActionType.OPEN_GOAL -> AiDecisionType.UPDATE_GOAL
+            AiActionType.DELETE_ALL_TASKS -> AiDecisionType.DELETE_ALL_TASKS
+            AiActionType.COMPLETE_ALL_TASKS -> AiDecisionType.COMPLETE_ALL_TASKS
+        }
     }
 
     private fun normalize(text: String): String {
@@ -57,26 +104,29 @@ class AdvancedLocalLanguagePipeline {
             text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
 
             // Task Actions
-            text.contains(Regex("(?i)create|add|new|remind")) && text.contains("task") -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)complete|finish|done|checked off|mark")) -> AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)delete|remove|destroy")) -> AiDecisionType.DELETE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)change|update|edit|priority|rename")) -> AiDecisionType.UPDATE_TASK to AiConfidence.MEDIUM
+            text.contains(Regex("(?i)create|add|new|remind")) && text.contains(Regex("(?i)task|todo")) -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH
+            text.contains(Regex("(?i)complete|finish|done|checked off|mark|handled")) -> AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
+            text.contains(Regex("(?i)delete|remove|destroy|trash|clear")) && !text.contains(Regex("(?i)all|every")) -> AiDecisionType.DELETE_TASK to AiConfidence.HIGH
+            text.contains(Regex("(?i)change|update|edit|priority|rename|modify|set")) -> AiDecisionType.UPDATE_TASK to AiConfidence.MEDIUM
             
             // Planning
-            text.contains(Regex("(?i)plan")) && text.contains(Regex("(?i)day|today")) -> AiDecisionType.DAILY_PLAN to AiConfidence.HIGH
-            text.contains(Regex("(?i)next|focus|do next|do now")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)break down|decompose|steps")) -> AiDecisionType.DECOMPOSE_GOAL to AiConfidence.MEDIUM
+            text.contains(Regex("(?i)plan")) && text.contains(Regex("(?i)day|today|schedule")) -> AiDecisionType.DAILY_PLAN to AiConfidence.HIGH
+            text.contains(Regex("(?i)next|focus|do next|do now|what's next")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
+            text.contains(Regex("(?i)break down|decompose|steps|milestones")) -> AiDecisionType.DECOMPOSE_GOAL to AiConfidence.MEDIUM
             
             // Goal Actions
             text.contains(Regex("(?i)create|add|new")) && text.contains("goal") -> AiDecisionType.CREATE_GOAL to AiConfidence.MEDIUM
             
             // Analysis & Info
-            text.contains(Regex("(?i)show|list|view")) && text.contains("task") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
-            text.contains(Regex("(?i)show|list|view")) && text.contains("goal") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+            text.contains(Regex("(?i)show|list|view|display")) && text.contains("task") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+            text.contains(Regex("(?i)show|list|view|display")) && text.contains("goal") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
             text.contains(Regex("(?i)unfinished|incomplete|pending|to do|todo")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
-            text.contains(Regex("(?i)productivity|pattern|consistency|how am i doing")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
-            text.contains(Regex("(?i)clean|organize|overload")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
+            text.contains(Regex("(?i)productivity|pattern|consistency|how am i doing|stats|history")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
+            text.contains(Regex("(?i)clean|organize|overload|messy")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
             text.contains(Regex("(?i)highest priority|most important|urgent")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
+            
+            // Questions
+            text.contains(Regex("(?i)why|reason|behind|falling behind")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
 
             else -> AiDecisionType.NO_ACTION to AiConfidence.LOW
         }

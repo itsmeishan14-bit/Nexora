@@ -37,7 +37,8 @@ class CloudAiProvider(
 
     override suspend fun generateStructuredResponse(
         prompt: String,
-        context: AiContext
+        context: AiContext,
+        conversationContext: AiConversationContext?
     ): AiModelStructuredResponse = withContext(Dispatchers.IO) {
         val response = callLlm(prompt, structured = true)
         

@@ -12,6 +12,7 @@ data class AiConversationContext(
     val lastGoalId: Long? = null,
     val lastEntityTitle: String? = null,
     val activeClarification: AiClarification? = null,
+    val pendingAction: AiAction? = null,
     val candidateIds: List<Long> = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 ) {
@@ -43,5 +44,7 @@ data class AiLanguageResult(
     val confidence: AiConfidence,
     val entities: Map<String, Any> = emptyMap(),
     val textResponse: String? = null,
-    val clarificationNeeded: AiClarification? = null
+    val clarificationNeeded: AiClarification? = null,
+    val isConfirmation: Boolean = false,
+    val isCancellation: Boolean = false
 )

@@ -35,7 +35,7 @@ class AiProviderArchitectureTest {
             override suspend fun generateResponse(prompt: String, context: AiContext): AiModelResponse {
                 throw Exception("Network Timeout")
             }
-            override suspend fun generateStructuredResponse(prompt: String, context: AiContext): AiModelStructuredResponse {
+            override suspend fun generateStructuredResponse(prompt: String, context: AiContext, conversationContext: AiConversationContext?): AiModelStructuredResponse {
                 throw Exception("Network Timeout")
             }
         }
@@ -53,7 +53,7 @@ class AiProviderArchitectureTest {
             override val providerName: String = "Hallucinating Cloud"
             override suspend fun isAvailable(): Boolean = true
             override suspend fun generateResponse(prompt: String, context: AiContext): AiModelResponse = AiModelResponse("", "")
-            override suspend fun generateStructuredResponse(prompt: String, context: AiContext): AiModelStructuredResponse {
+            override suspend fun generateStructuredResponse(prompt: String, context: AiContext, conversationContext: AiConversationContext?): AiModelStructuredResponse {
                 return AiModelStructuredResponse(
                     decision = AiDecision(
                         type = AiDecisionType.COMPLETE_TASK,
