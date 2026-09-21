@@ -15,7 +15,8 @@ object NexoraSecurity {
     fun isDestructiveAction(action: AiAction): Boolean {
         return action.type == AiActionType.DELETE_TASK || 
                action.type == AiActionType.DELETE_GOAL ||
-               action.type == AiActionType.DELETE_ALL_TASKS
+               action.type == AiActionType.DELETE_ALL_TASKS ||
+               action.type == AiActionType.DELETE_AUTOMATION
     }
 
     /**
@@ -25,7 +26,8 @@ object NexoraSecurity {
         return when (type) {
             AiActionType.DELETE_TASK, 
             AiActionType.DELETE_GOAL,
-            AiActionType.DELETE_ALL_TASKS -> ToolRiskLevel.DESTRUCTIVE
+            AiActionType.DELETE_ALL_TASKS,
+            AiActionType.DELETE_AUTOMATION -> ToolRiskLevel.DESTRUCTIVE
             
             AiActionType.CREATE_TASK, 
             AiActionType.UPDATE_TASK, 
@@ -34,7 +36,9 @@ object NexoraSecurity {
             AiActionType.CREATE_GOAL, 
             AiActionType.UPDATE_GOAL,
             AiActionType.DECOMPOSE_GOAL,
-            AiActionType.COMPLETE_ALL_TASKS -> ToolRiskLevel.LOW_RISK
+            AiActionType.COMPLETE_ALL_TASKS,
+            AiActionType.CREATE_AUTOMATION,
+            AiActionType.TOGGLE_AUTOMATION -> ToolRiskLevel.LOW_RISK
             
             else -> ToolRiskLevel.SAFE
         }

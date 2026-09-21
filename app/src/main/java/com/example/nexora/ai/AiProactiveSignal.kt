@@ -61,7 +61,25 @@ data class AiAutomationRule(
     val enabled: Boolean = true,
     val cooldownMillis: Long = 3600000, // Default 1 hour
     val lastTriggeredAt: Long = 0,
-    val lastTriggeredFingerprint: String? = null
+    val lastTriggeredFingerprint: String? = null,
+    val isStateChanging: Boolean = false,
+    val targetActionType: AiActionType? = null,
+    val conditionExpression: String? = null,
+    val lastRunReason: String? = null,
+    val runCount: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class AutomationExecutionRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val ruleId: String,
+    val ruleName: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val triggerType: AutomationTriggerType,
+    val conditionMatched: String,
+    val evidence: String,
+    val actionTaken: String,
+    val success: Boolean
 )
 
 enum class AutomationTriggerType {

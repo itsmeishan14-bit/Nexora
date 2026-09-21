@@ -55,6 +55,9 @@ open class AiActionExecutor(
                 AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
                 AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
                 AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
+                AiActionType.CREATE_AUTOMATION -> AiActionResult(true, "Automation rule created.")
+                AiActionType.TOGGLE_AUTOMATION -> AiActionResult(true, "Automation rule state toggled.")
+                AiActionType.DELETE_AUTOMATION -> AiActionResult(true, "Automation rule deleted.")
             }
 
             // 3. Verification Layer

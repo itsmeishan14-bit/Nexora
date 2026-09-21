@@ -83,6 +83,9 @@ class AdvancedLocalLanguagePipeline {
             AiActionType.OPEN_GOAL -> AiDecisionType.UPDATE_GOAL
             AiActionType.DELETE_ALL_TASKS -> AiDecisionType.DELETE_ALL_TASKS
             AiActionType.COMPLETE_ALL_TASKS -> AiDecisionType.COMPLETE_ALL_TASKS
+            AiActionType.CREATE_AUTOMATION -> AiDecisionType.CREATE_AUTOMATION
+            AiActionType.TOGGLE_AUTOMATION -> AiDecisionType.TOGGLE_AUTOMATION
+            AiActionType.DELETE_AUTOMATION -> AiDecisionType.DELETE_AUTOMATION
         }
     }
 
@@ -102,6 +105,13 @@ class AdvancedLocalLanguagePipeline {
             // Bulk Actions (Check these before single actions)
             text.contains(Regex("(?i)delete|remove|clear")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
             text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
+
+            // Automations Management
+            text.contains(Regex("(?i)\\b(show|list|view|active)\\b")) && text.contains("automation") -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(why did|explain|reason for)\\b")) && (text.contains("run") || text.contains("automation") || text.contains("trigger")) -> AiDecisionType.EXPLAIN_AUTOMATION to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(turn off|disable|enable|turn on|toggle)\\b")) && (text.contains("automation") || text.contains("rule") || text.contains("manager") || text.contains("guard") || text.contains("assistant")) -> AiDecisionType.TOGGLE_AUTOMATION to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(delete|remove)\\b")) && text.contains("automation") -> AiDecisionType.DELETE_AUTOMATION to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(every morning|when i finish|if i carry|when my workload|when a goal|create automation)\\b")) -> AiDecisionType.CREATE_AUTOMATION to AiConfidence.HIGH
 
             // Task Actions
             text.contains(Regex("(?i)create|add|new|remind")) && text.contains(Regex("(?i)task|todo")) -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH

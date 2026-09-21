@@ -126,6 +126,14 @@ class NexoraAiBrain(
         automationSystem.updateRule(rule)
     }
 
+    fun addAutomationRule(rule: AiAutomationRule): Boolean = automationSystem.addRule(rule)
+
+    fun deleteAutomationRule(idOrName: String): Boolean = automationSystem.deleteRule(idOrName)
+
+    fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? = automationSystem.toggleRule(idOrName, enabled)
+
+    fun explainAutomationRun(query: String? = null): String = automationSystem.explainLastRun(query)
+
     private fun shouldUseAgent(request: AiRequest, context: AiContext): Boolean {
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""
@@ -562,6 +570,11 @@ class NexoraAiBrain(
             AiDecisionType.CANCEL -> AiResponseType.NO_ACTION
             AiDecisionType.DELETE_ALL_TASKS -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.COMPLETE_ALL_TASKS -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.CREATE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.TOGGLE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.DELETE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.LIST_AUTOMATIONS -> AiResponseType.INFORMATION
+            AiDecisionType.EXPLAIN_AUTOMATION -> AiResponseType.INFORMATION
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }

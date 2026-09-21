@@ -2,10 +2,14 @@ package com.example.nexora.ai
 
 import com.example.nexora.uii.TaskPriority
 
-class LocalAiIntentResolver {
+class LocalAiIntentResolver(
+    private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
+) {
 
     private val pipeline = AdvancedLocalLanguagePipeline()
     private var conversationContext = AiConversationContext()
+
+    fun getAutomationSystem(): NexoraAutomationSystem = automationSystem
 
     /**
      * Resolves natural language queries into structured AI responses using local heuristics.
@@ -44,6 +48,11 @@ class LocalAiIntentResolver {
                 AiDecisionType.CANCEL -> handleCancel()
                 AiDecisionType.DELETE_ALL_TASKS -> handleDeleteAllTasks(context)
                 AiDecisionType.COMPLETE_ALL_TASKS -> handleCompleteAllTasks(context)
+                AiDecisionType.LIST_AUTOMATIONS -> handleListAutomations()
+                AiDecisionType.EXPLAIN_AUTOMATION -> handleExplainAutomation(query)
+                AiDecisionType.TOGGLE_AUTOMATION -> handleToggleAutomation(query)
+                AiDecisionType.DELETE_AUTOMATION -> handleDeleteAutomation(query)
+                AiDecisionType.CREATE_AUTOMATION -> handleCreateAutomation(query)
                 else -> noAction(query, context, AiPlanner())
             }
         }
@@ -90,6 +99,9 @@ class LocalAiIntentResolver {
             AiActionType.OPEN_GOAL -> AiDecisionType.UPDATE_GOAL
             AiActionType.DELETE_ALL_TASKS -> AiDecisionType.DELETE_ALL_TASKS
             AiActionType.COMPLETE_ALL_TASKS -> AiDecisionType.COMPLETE_ALL_TASKS
+            AiActionType.CREATE_AUTOMATION -> AiDecisionType.CREATE_AUTOMATION
+            AiActionType.TOGGLE_AUTOMATION -> AiDecisionType.TOGGLE_AUTOMATION
+            AiActionType.DELETE_AUTOMATION -> AiDecisionType.DELETE_AUTOMATION
         }
     }
 
@@ -673,4 +685,152 @@ class LocalAiIntentResolver {
             AiPriority.CRITICAL -> TaskPriority.URGENT
         }
     }
+
+    private fun handleListAutomations(): AiModelStructuredResponse {
+        val rules = automationSystem.getRules()
+        val text = if (rules.isEmpty()) {
+            "You have no automation rules configured."
+        } else {
+            val list = rules.joinToString("\n") { 
+                "• ${it.name} (${if (it.enabled) "Active" else "Disabled"}): ${it.description}" 
+            }
+            "Here are your active Nexora automations:\n\n$list"
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.LIST_AUTOMATIONS,
+                title = "Automations Overview",
+                reason = "Listed ${rules.size} automations."
+            ),
+            textResponse = text,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleExplainAutomation(query: String): AiModelStructuredResponse {
+        val explanation = automationSystem.explainLastRun(query)
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.EXPLAIN_AUTOMATION,
+                title = "Automation Explanation",
+                reason = explanation
+            ),
+            textResponse = explanation,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleToggleAutomation(query: String): AiModelStructuredResponse {
+        val rule = automationSystem.findRule(query)
+            ?: automationSystem.getRules().firstOrNull()
+            ?: return notFoundResult("I couldn't find a matching automation rule to toggle.")
+
+        val targetState = if (query.contains("disable") || query.contains("turn off")) false else true
+        val updated = automationSystem.toggleRule(rule.id, targetState)
+
+        val statusText = if (updated?.enabled == true) "enabled" else "disabled"
+        val responseText = "Automation \"${rule.name}\" is now $statusText."
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.TOGGLE_AUTOMATION,
+                title = "Toggle Automation",
+                reason = responseText
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.TOGGLE_AUTOMATION,
+                    title = "Toggle Automation",
+                    description = responseText,
+                    parameters = mapOf("ruleId" to rule.id, "enabled" to (updated?.enabled ?: true)),
+                    requiresConfirmation = false
+                )
+            ),
+            textResponse = responseText,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleDeleteAutomation(query: String): AiModelStructuredResponse {
+        val rule = automationSystem.findRule(query)
+            ?: return notFoundResult("I couldn't find the automation rule you want to delete.")
+
+        val responseText = "Are you sure you want to delete the \"${rule.name}\" automation rule?"
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.DELETE_AUTOMATION,
+                title = "Delete Automation",
+                reason = responseText
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.DELETE_AUTOMATION,
+                    title = "Delete Automation",
+                    description = responseText,
+                    parameters = mapOf("ruleId" to rule.id),
+                    requiresConfirmation = true
+                )
+            ),
+            textResponse = responseText,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleCreateAutomation(query: String): AiModelStructuredResponse {
+        val q = query.lowercase()
+        val (name, trigger, desc, isStateChanging) = when {
+            q.contains("morning") || q.contains("plan my day") -> {
+                Quadruple("Morning Plan Assistant", AutomationTriggerType.DAY_STARTED, "Prepares your daily plan automatically every morning.", false)
+            }
+            q.contains("finish") || q.contains("complete") -> {
+                Quadruple("Post-Task Next Action", AutomationTriggerType.TASK_COMPLETED, "Suggests next task immediately after task completion.", false)
+            }
+            q.contains("carry") || q.contains("postpone") -> {
+                Quadruple("Carry-forward Breakdown Assistant", AutomationTriggerType.TASK_CARRIED_FORWARD, "Suggests breaking down tasks carried forward repeatedly.", false)
+            }
+            q.contains("workload") || q.contains("high") -> {
+                Quadruple("High Workload Monitor", AutomationTriggerType.WORKLOAD_CHANGED, "Warns when workload exceeds learned capacity.", false)
+            }
+            else -> {
+                Quadruple("Custom Assistant Rule", AutomationTriggerType.PRODUCTIVITY_PATTERN_DETECTED, "Monitors productivity patterns and alerts on key changes.", false)
+            }
+        }
+
+        val rule = AiAutomationRule(
+            name = name,
+            description = desc,
+            triggerType = trigger,
+            enabled = true,
+            isStateChanging = isStateChanging,
+            conditionExpression = query
+        )
+
+        automationSystem.addRule(rule)
+
+        val responseText = "I've created and enabled the automation rule: \"$name\" ($desc)."
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.CREATE_AUTOMATION,
+                title = "Automation Created",
+                reason = responseText
+            ),
+            actions = listOf(
+                AiAction(
+                    type = AiActionType.CREATE_AUTOMATION,
+                    title = "Create Automation",
+                    description = responseText,
+                    parameters = mapOf("name" to name, "description" to desc),
+                    requiresConfirmation = false
+                )
+            ),
+            textResponse = responseText,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 }
+

@@ -16,7 +16,10 @@ enum class AiActionType {
     OPEN_TASK,
     OPEN_GOAL,
     DELETE_ALL_TASKS,
-    COMPLETE_ALL_TASKS
+    COMPLETE_ALL_TASKS,
+    CREATE_AUTOMATION,
+    TOGGLE_AUTOMATION,
+    DELETE_AUTOMATION
 }
 
 data class AiAction(

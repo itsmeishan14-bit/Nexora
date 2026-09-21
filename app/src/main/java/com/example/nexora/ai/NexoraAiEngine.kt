@@ -51,6 +51,22 @@ class NexoraAiEngine(
         brain.updateAutomationRule(rule)
     }
 
+    fun addAutomationRule(rule: AiAutomationRule): Boolean {
+        return brain.addAutomationRule(rule)
+    }
+
+    fun deleteAutomationRule(idOrName: String): Boolean {
+        return brain.deleteAutomationRule(idOrName)
+    }
+
+    fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? {
+        return brain.toggleAutomationRule(idOrName, enabled)
+    }
+
+    fun explainAutomationRun(query: String? = null): String {
+        return brain.explainAutomationRun(query)
+    }
+
     suspend fun analyze(): List<AiRecommendation> {
         val response = brain.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
         return response.recommendations
