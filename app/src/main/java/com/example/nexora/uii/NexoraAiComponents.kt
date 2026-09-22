@@ -349,6 +349,75 @@ fun WorkflowCard(workflow: AgentWorkflow) {
 }
 
 @Composable
+fun AiRecommendationCard(
+    recommendation: AiRecommendation,
+    onAction: (AiRecommendation) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val icon = when (recommendation.type) {
+        AiRecommendationType.NEXT_TASK -> Icons.AutoMirrored.Rounded.PlaylistAddCheck
+        AiRecommendationType.GOAL_ACTION -> Icons.Rounded.Flag
+        AiRecommendationType.WARNING -> Icons.Rounded.Warning
+        AiRecommendationType.PRODUCTIVITY_INSIGHT -> Icons.Rounded.Insights
+        else -> Icons.Rounded.AutoAwesome
+    }
+
+    NexoraCard(modifier = modifier) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconBox(icon, Green95, Green60, size = 28)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = recommendation.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Green10
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = recommendation.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Green40,
+                lineHeight = 20.sp
+            )
+
+            if (recommendation.evidence.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                ReasoningList(factors = recommendation.evidence)
+            }
+
+            if (!recommendation.actionLabel.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Surface(
+                    onClick = { onAction(recommendation) },
+                    shape = NexoraShapes.small,
+                    color = Green95
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = recommendation.actionLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Green60,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            tint = Green60,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ReasoningList(factors: List<ReasoningFactor>) {
     if (factors.isEmpty()) return
     
