@@ -130,22 +130,37 @@ class MainActivity : ComponentActivity() {
                                         goals = mainState.goals,
                                         progressHistory = mainState.progressHistory,
                                         onAddTask = { mainViewModel.navigateTo("addTask") },
-                                        onToggleTask = { mainViewModel.toggleTask(it) },
+                                        onToggleTask = { 
+                                            mainViewModel.toggleTask(it)
+                                            aiViewModel.analyze()
+                                        },
                                         proactiveSignals = aiState.proactiveSignals,
+                                        aiRecommendations = aiState.recommendations,
                                         proposedAction = aiState.homeProposedAction,
                                         onApproveAction = { action ->
                                             aiViewModel.executeHomeAction(action) {
-                                                // No explicit data refresh needed here as ViewModel handles it
+                                                mainViewModel.refreshAll()
                                             }
                                         },
-                                        onDismissAction = { aiViewModel.dismissHomeAction() }
+                                        onDismissAction = { aiViewModel.dismissHomeAction() },
+                                        onRecommendationAction = { rec ->
+                                            rec.relatedGoalId?.let { id -> mainState.goals.find { it.id == id }?.let { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") } }
+                                            rec.relatedTaskId?.let { mainViewModel.navigateTo("tasks") }
+                                        }
                                     )
                                     "tasks" -> TasksScreen(
                                         tasks = mainState.tasks,
+                                        topRecommendation = aiState.recommendations.find { it.type == AiRecommendationType.NEXT_TASK },
                                         onAddTask = { mainViewModel.navigateTo("addTask") },
-                                        onToggleTask = { mainViewModel.toggleTask(it) },
+                                        onToggleTask = { 
+                                            mainViewModel.toggleTask(it)
+                                            aiViewModel.analyze()
+                                        },
                                         onAiAction = { mainViewModel.navigateTo("insights") },
-                                        onDeleteTask = { mainViewModel.deleteTask(it) }
+                                        onDeleteTask = { 
+                                            mainViewModel.deleteTask(it)
+                                            aiViewModel.analyze()
+                                        }
                                     )
                                     "goals" -> GoalScreen(
                                         goals = mainState.goals,
@@ -162,10 +177,16 @@ class MainActivity : ComponentActivity() {
                                             onBack = { mainViewModel.setSelectedGoal(null); mainViewModel.navigateTo("goals") },
                                             onEdit = { mainViewModel.setEditingGoal(goal); mainViewModel.navigateTo("addGoal") },
                                             onDelete = { mainViewModel.deleteGoal(goal); mainViewModel.navigateTo("goals") },
-                                            onToggleTask = { mainViewModel.toggleTask(it) },
+                                            onToggleTask = { 
+                                                mainViewModel.toggleTask(it)
+                                                aiViewModel.analyze()
+                                            },
                                             onAddTask = { mainViewModel.setTaskGoal(goal); mainViewModel.navigateTo("addTask") },
                                             onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") },
-                                            onUpdateProgress = { newProgress -> mainViewModel.updateGoalProgress(goal, newProgress) }
+                                            onUpdateProgress = { newProgress -> 
+                                                mainViewModel.updateGoalProgress(goal, newProgress)
+                                                aiViewModel.analyze()
+                                            }
                                         )
                                     }
                                     "insights" -> AiScreen(
@@ -215,6 +236,7 @@ class MainActivity : ComponentActivity() {
                                         onSave = { name, cat, dur, gt, p ->
                                             mainViewModel.addTask(name, cat, dur, gt, p)
                                             mainViewModel.setTaskGoal(null)
+                                            aiViewModel.analyze()
                                             mainViewModel.navigateTo("tasks")
                                         }
                                     )
@@ -227,6 +249,7 @@ class MainActivity : ComponentActivity() {
                                                 mainViewModel.updateGoal(mainState.editingGoal!!, name, cat, td, prog)
                                             }
                                             mainViewModel.setEditingGoal(null)
+                                            aiViewModel.analyze()
                                             mainViewModel.navigateTo("goals")
                                         },
                                         existingGoal = mainState.editingGoal

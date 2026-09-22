@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -36,6 +37,7 @@ private enum class TaskFilter { Active, Completed }
 @Composable
 fun TasksScreen(
     tasks: List<PremiumTask>,
+    topRecommendation: AiRecommendation? = null,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     onAiAction: () -> Unit = {},
@@ -87,6 +89,18 @@ fun TasksScreen(
                 }
             }
 
+            // TOP AI RECOMMENDATION BANNER
+            if (topRecommendation != null) {
+                item {
+                    Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                        AiRecommendationCard(
+                            recommendation = topRecommendation,
+                            onAction = { onAiAction() }
+                        )
+                    }
+                }
+            }
+
             // STICKY FILTER HEADER
             stickyHeader {
                 Surface(
@@ -110,8 +124,11 @@ fun TasksScreen(
                     items = filteredTasks,
                     key = { task -> if (task.id != 0L) "task_${task.id}" else "temp_${task.title}" }
                 ) { task ->
+                    val isRecommended = topRecommendation?.relatedTaskId == task.id
                     AnimatedTaskCard(
                         task = task,
+                        isAiRecommended = isRecommended,
+                        reasoningMessage = if (isRecommended) topRecommendation?.message else null,
                         onToggle = { onToggleTask(task) },
                         onDelete = { onDeleteTask(task) }
                     )
@@ -155,7 +172,13 @@ private fun TaskFilterBar(selected: TaskFilter, onSelect: (TaskFilter) -> Unit) 
 }
 
 @Composable
-private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun AnimatedTaskCard(
+    task: PremiumTask,
+    isAiRecommended: Boolean = false,
+    reasoningMessage: String? = null,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit
+) {
     val completionProgress by animateFloatAsState(
         targetValue = if (task.completed) 1f else 0f,
         animationSpec = NexoraMotion.SmoothSpec,
@@ -184,100 +207,137 @@ private fun AnimatedTaskCard(task: PremiumTask, onToggle: () -> Unit, onDelete: 
                 .nexoraClickable { onToggle() },
             containerColor = cardBg
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Scale-Bounce Icon
-                Box(contentAlignment = Alignment.Center) {
-                    val scale by animateFloatAsState(
-                        targetValue = if (task.completed) 1.2f else 1f,
-                        animationSpec = NexoraMotion.SpringSpec,
-                        label = "iconScale"
-                    )
-                    Icon(
-                        imageVector = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                        contentDescription = null,
-                        tint = if (task.completed) Green60 else Green80,
-                        modifier = Modifier
-                            .size(24.dp)
-                            .scale(scale)
-                    )
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (isAiRecommended) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(NexoraShapes.small)
+                                .background(Green95)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Green60,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "AI Priority Focus",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green60,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
 
-                Spacer(Modifier.width(16.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .alpha(contentAlpha)
-                ) {
-                    Box {
-                        Text(
-                            text = task.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Green10
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Scale-Bounce Icon
+                    Box(contentAlignment = Alignment.Center) {
+                        val scale by animateFloatAsState(
+                            targetValue = if (task.completed) 1.2f else 1f,
+                            animationSpec = NexoraMotion.SpringSpec,
+                            label = "iconScale"
                         )
-                        // Custom Animated Strikethrough
-                        Canvas(modifier = Modifier.matchParentSize()) {
-                            if (completionProgress > 0f) {
-                                drawLine(
-                                    color = Green60,
-                                    start = Offset(0f, size.height / 2 + 2.dp.toPx()),
-                                    end = Offset(
-                                        size.width * completionProgress,
-                                        size.height / 2 + 2.dp.toPx()
-                                    ),
-                                    strokeWidth = 2.dp.toPx(),
-                                    cap = StrokeCap.Round
+                        Icon(
+                            imageVector = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (task.completed) Green60 else Green80,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .scale(scale)
+                        )
+                    }
+
+                    Spacer(Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .alpha(contentAlpha)
+                    ) {
+                        Box {
+                            Text(
+                                text = task.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Green10
+                            )
+                            // Custom Animated Strikethrough
+                            Canvas(modifier = Modifier.matchParentSize()) {
+                                if (completionProgress > 0f) {
+                                    drawLine(
+                                        color = Green60,
+                                        start = Offset(0f, size.height / 2 + 2.dp.toPx()),
+                                        end = Offset(
+                                            size.width * completionProgress,
+                                            size.height / 2 + 2.dp.toPx()
+                                        ),
+                                        strokeWidth = 2.dp.toPx(),
+                                        cap = StrokeCap.Round
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = task.category,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Green40
+                            )
+                            if (task.duration.isNotBlank()) {
+                                Text(" • ", color = Green80)
+                                Text(
+                                    text = task.duration,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green40
+                                )
+                            }
+                        }
+
+                        if (!task.goalTitle.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Flag,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = Green60
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = task.goalTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green60
                                 )
                             }
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = task.category,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Green40
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = null,
+                            tint = Green80,
+                            modifier = Modifier.size(20.dp)
                         )
-                        if (task.duration.isNotBlank()) {
-                            Text(" • ", color = Green80)
-                            Text(
-                                text = task.duration,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Green40
-                            )
-                        }
-                    }
-
-                    if (!task.goalTitle.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Flag,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = Green60
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = task.goalTitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Green60
-                            )
-                        }
                     }
                 }
 
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = null,
-                        tint = Green80,
-                        modifier = Modifier.size(20.dp)
+                if (!reasoningMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = reasoningMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Green40,
+                        lineHeight = 16.sp
                     )
                 }
             }

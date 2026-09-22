@@ -37,9 +37,11 @@ fun HomeScreen(
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
     proactiveSignals: List<AiProactiveSignal> = emptyList(),
+    aiRecommendations: List<AiRecommendation> = emptyList(),
     proposedAction: AiAction? = null,
     onApproveAction: (AiAction) -> Unit = {},
-    onDismissAction: () -> Unit = {}
+    onDismissAction: () -> Unit = {},
+    onRecommendationAction: (AiRecommendation) -> Unit = {}
 ) {
     var revealed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { revealed = true }
@@ -50,10 +52,25 @@ fun HomeScreen(
         if (totalCount == 0) 0f else completedCount.toFloat() / totalCount 
     }
 
-    val focusTasks = remember(tasks.toList()) {
-        tasks.filter { !it.completed }
-            .sortedBy { it.priority.ordinal }
-            .take(3)
+    val nextTaskRec = remember(aiRecommendations) {
+        aiRecommendations.find { it.type == AiRecommendationType.NEXT_TASK }
+    }
+
+    val focusTasks = remember(tasks.toList(), nextTaskRec) {
+        val incomplete = tasks.filter { !it.completed }
+        if (incomplete.isEmpty()) return@remember emptyList()
+
+        val topRecommendedTaskId = nextTaskRec?.relatedTaskId
+        if (topRecommendedTaskId != null) {
+            val recTask = incomplete.find { it.id == topRecommendedTaskId }
+            if (recTask != null) {
+                listOf(recTask) + incomplete.filter { it.id != topRecommendedTaskId }.sortedBy { it.priority.ordinal }.take(2)
+            } else {
+                incomplete.sortedBy { it.priority.ordinal }.take(3)
+            }
+        } else {
+            incomplete.sortedBy { it.priority.ordinal }.take(3)
+        }
     }
 
     val streakCount = remember(progressHistory) { calculateCurrentStreak(progressHistory) }
@@ -80,19 +97,24 @@ fun HomeScreen(
         }
 
         // 3. AI INTELLIGENCE (Contextual)
-        if (proposedAction != null || proactiveSignals.isNotEmpty()) {
+        if (proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
             item {
                 StaggeredEntrance(revealed, 2) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text("Nexora Noticed", style = MaterialTheme.typography.titleMedium, color = Green10)
+                        Text("Nexora Intelligence", style = MaterialTheme.typography.titleMedium, color = Green10)
                         if (proposedAction != null) {
                             ProposedActionCard(
                                 action = proposedAction,
                                 onConfirm = { onApproveAction(proposedAction) },
                                 onDismiss = onDismissAction
                             )
-                        } else {
+                        } else if (proactiveSignals.isNotEmpty()) {
                             ProactiveSignalCard(proactiveSignals.first(), onApproveAction)
+                        } else if (aiRecommendations.isNotEmpty()) {
+                            AiRecommendationCard(
+                                recommendation = aiRecommendations.first(),
+                                onAction = onRecommendationAction
+                            )
                         }
                     }
                 }
@@ -114,7 +136,13 @@ fun HomeScreen(
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             focusTasks.forEach { task ->
-                                HomeTaskCard(task, { onToggleTask(task) })
+                                val isAiRecommended = nextTaskRec != null && task.id == nextTaskRec.relatedTaskId
+                                HomeTaskCard(
+                                    task = task,
+                                    isAiRecommended = isAiRecommended,
+                                    reasoningMessage = if (isAiRecommended) nextTaskRec?.message else null,
+                                    onToggle = { onToggleTask(task) }
+                                )
                             }
                         }
                     }
@@ -205,7 +233,12 @@ private fun StreakHero(count: Int) {
 }
 
 @Composable
-private fun HomeTaskCard(task: PremiumTask, onToggle: () -> Unit) {
+private fun HomeTaskCard(
+    task: PremiumTask,
+    isAiRecommended: Boolean = false,
+    reasoningMessage: String? = null,
+    onToggle: () -> Unit
+) {
     val priorityColor = when(task.priority) {
         TaskPriority.URGENT -> NexoraError
         TaskPriority.HIGH -> Clay60
@@ -223,57 +256,94 @@ private fun HomeTaskCard(task: PremiumTask, onToggle: () -> Unit) {
                 .fillMaxSize()
                 .padding(start = 8.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconBox(
-                    icon = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                    containerColor = if (task.completed) Green60 else Gray95,
-                    contentColor = if (task.completed) Color.White else Green40,
-                    size = 28
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = task.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Green10
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (isAiRecommended) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(NexoraShapes.small)
+                                .background(Green95)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Green60,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "AI Recommended Focus",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green60,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBox(
+                        icon = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        containerColor = if (task.completed) Green60 else Gray95,
+                        contentColor = if (task.completed) Color.White else Green40,
+                        size = 28
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = task.category,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Green40
+                            text = task.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Green10
                         )
-                        if (task.duration.isNotBlank()) {
-                            Text(" • ", color = Green80)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = task.duration,
-                                style = MaterialTheme.typography.labelSmall,
+                                text = task.category,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = Green40
                             )
+                            if (task.duration.isNotBlank()) {
+                                Text(" • ", color = Green80)
+                                Text(
+                                    text = task.duration,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green40
+                                )
+                            }
+                        }
+                        if (!task.goalTitle.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Flag,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(10.dp),
+                                    tint = Green60
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = task.goalTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green60
+                                )
+                            }
                         }
                     }
-                    if (!task.goalTitle.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Flag,
-                                contentDescription = null,
-                                modifier = Modifier.size(10.dp),
-                                tint = Green60
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = task.goalTitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Green60
-                            )
-                        }
-                    }
+                }
+
+                if (!reasoningMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = reasoningMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Green40,
+                        lineHeight = 16.sp
+                    )
                 }
             }
         }

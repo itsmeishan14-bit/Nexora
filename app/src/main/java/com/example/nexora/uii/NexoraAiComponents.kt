@@ -355,7 +355,7 @@ fun AiRecommendationCard(
     modifier: Modifier = Modifier
 ) {
     val icon = when (recommendation.type) {
-        AiRecommendationType.NEXT_TASK -> Icons.AutoMirrored.Rounded.PlaylistAddCheck
+        AiRecommendationType.NEXT_TASK -> Icons.Rounded.CheckCircle
         AiRecommendationType.GOAL_ACTION -> Icons.Rounded.Flag
         AiRecommendationType.WARNING -> Icons.Rounded.Warning
         AiRecommendationType.PRODUCTIVITY_INSIGHT -> Icons.Rounded.Insights

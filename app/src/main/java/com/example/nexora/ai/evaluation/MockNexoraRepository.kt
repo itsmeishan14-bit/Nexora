@@ -11,6 +11,19 @@ class MockNexoraRepository : NexoraRepository(null) {
     private val tasks = mutableListOf<PremiumTask>()
     private val goals = mutableListOf<NexoraGoal>()
     private val memories = mutableListOf<com.example.nexora.ai.AiMemoryItem>()
+    private val dailyProgress = mutableListOf<com.example.nexora.data.DailyProgressEntity>()
+
+    override suspend fun saveDailyProgress(progress: com.example.nexora.data.DailyProgressEntity) {
+        dailyProgress.add(progress)
+    }
+
+    override suspend fun getDailyProgress(date: String): com.example.nexora.data.DailyProgressEntity? {
+        return dailyProgress.find { it.date == date }
+    }
+
+    override suspend fun getHistoricalProgress(limit: Int): List<com.example.nexora.data.DailyProgressEntity> {
+        return dailyProgress.takeLast(limit)
+    }
 
     override suspend fun observeTasksOnce(): List<PremiumTask> = tasks.toList()
     
