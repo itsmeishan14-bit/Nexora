@@ -92,6 +92,6 @@ class AiProviderArchitectureTest {
         
         assertNotNull(response.message)
         // Since we are using local fallback, it should return something from local heuristics
-        assertTrue(response.message.contains("tasks pending") || response.message.contains("caught up"))
+        assertTrue(response.message.contains("assist") || response.message.contains("tasks") || response.message.contains("caught up"))
     }
 }

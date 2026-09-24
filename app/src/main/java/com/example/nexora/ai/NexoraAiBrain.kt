@@ -151,8 +151,8 @@ class NexoraAiBrain(
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
-        // 1. Check if user is asking about memory/productivity or recent proactive alerts
-        val isMemoryQuery = message.lowercase().contains(Regex("know|remember|productivity|pattern|history|behavior|status|how am i doing|current situation|falling behind|why|warning|alert|notice"))
+        // 1. Check if user is asking specifically about memory/productivity patterns
+        val isMemoryQuery = message.lowercase().contains(Regex("\\b(remember|productivity|pattern|history|behavior|how am i doing|falling behind|memory|observations)\\b"))
         if (isMemoryQuery) {
             val personal = context.personalContext
             val hasHistory = context.memory.analyzedDays > 0 || relevantMemory.isNotEmpty()
@@ -575,6 +575,10 @@ class NexoraAiBrain(
             AiDecisionType.DELETE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.LIST_AUTOMATIONS -> AiResponseType.INFORMATION
             AiDecisionType.EXPLAIN_AUTOMATION -> AiResponseType.INFORMATION
+            AiDecisionType.GREETING -> AiResponseType.INFORMATION
+            AiDecisionType.GENERAL_CONVERSATION -> AiResponseType.INFORMATION
+            AiDecisionType.THANKS -> AiResponseType.INFORMATION
+            AiDecisionType.GOODBYE -> AiResponseType.INFORMATION
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }

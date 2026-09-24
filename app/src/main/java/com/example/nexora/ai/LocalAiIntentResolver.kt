@@ -53,6 +53,10 @@ class LocalAiIntentResolver(
                 AiDecisionType.TOGGLE_AUTOMATION -> handleToggleAutomation(query)
                 AiDecisionType.DELETE_AUTOMATION -> handleDeleteAutomation(query)
                 AiDecisionType.CREATE_AUTOMATION -> handleCreateAutomation(query)
+                AiDecisionType.GREETING -> handleGreeting(query)
+                AiDecisionType.GENERAL_CONVERSATION -> handleGeneralConversation(query)
+                AiDecisionType.THANKS -> handleThanks()
+                AiDecisionType.GOODBYE -> handleGoodbye()
                 else -> noAction(query, context, AiPlanner())
             }
         }
@@ -634,17 +638,78 @@ class LocalAiIntentResolver(
         }
     }
 
-    private fun noAction(query: String, context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
-        val textResponse = if (context.incompleteTasks.isEmpty()) {
-            "You're all caught up! It's a great time to set a new goal or plan some future work."
-        } else {
-            "I'm here to help. You have ${context.incompleteTasks.size} tasks pending. Try asking 'What should I do next?' or 'Plan my day' for a focused itinerary."
+    private fun handleGreeting(query: String): AiModelStructuredResponse {
+        val q = query.lowercase()
+        val textResponse = when {
+            q.contains("morning") -> "Good morning! Ready to plan your day or tackle your tasks?"
+            q.contains("afternoon") -> "Good afternoon! What can I help you work on today?"
+            q.contains("evening") -> "Good evening! What would you like to review or accomplish?"
+            else -> "Hey! I'm Nexora, your AI Personal Operating System. What can I help you with today?"
         }
 
         return AiModelStructuredResponse(
             decision = AiDecision(
+                type = AiDecisionType.GREETING,
+                title = "Greeting",
+                reason = "Responded to user greeting."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleGeneralConversation(query: String): AiModelStructuredResponse {
+        val q = query.lowercase()
+        val textResponse = if (q.contains("how are you")) {
+            "I'm running smoothly and ready to assist! How can I help you with your tasks or goals today?"
+        } else {
+            "I'm Nexora, an AI-first Personal Operating System. I can help you manage tasks and goals, plan your day, analyze your productivity patterns, automate workflows, and execute actions on your behalf when you approve them."
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.GENERAL_CONVERSATION,
+                title = "Nexora Capabilities",
+                reason = "Explained assistant capabilities."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleThanks(): AiModelStructuredResponse {
+        val textResponse = "You're welcome! Let me know whenever you need further assistance."
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.THANKS,
+                title = "Acknowledgement",
+                reason = "Responded to thanks."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handleGoodbye(): AiModelStructuredResponse {
+        val textResponse = "Goodbye! Have a focused and productive day."
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.GOODBYE,
+                title = "Goodbye",
+                reason = "Responded to goodbye."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun noAction(query: String, context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
+        val textResponse = "I'm here to assist. Try asking me 'What should I do next?', 'Plan my day', or ask me to create or manage a task or goal."
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
                 type = AiDecisionType.NO_ACTION,
-                title = "Nexora Intelligence",
+                title = "Nexora Assistant",
                 reason = textResponse
             ),
             textResponse = textResponse,

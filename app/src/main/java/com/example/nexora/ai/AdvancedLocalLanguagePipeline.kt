@@ -93,12 +93,17 @@ class AdvancedLocalLanguagePipeline {
         return text.lowercase()
             .replace(Regex("[?!.,]"), " ")
             .replace(Regex("\\s+"), " ")
-            .replace(Regex("\\bcan you\\b|\\bcould you\\b|\\bplease\\b|\\bhelp me\\b|\\bwant to\\b|\\bneed to\\b"), "")
             .trim()
     }
 
     private fun detectIntent(text: String): Pair<AiDecisionType, AiConfidence> {
         return when {
+            // Conversational Intents (Greetings, Thanks, Capability Questions, Goodbye)
+            text.contains(Regex("(?i)\\b(hello|hi|hey|greetings|good morning|good afternoon|good evening)\\b")) -> AiDecisionType.GREETING to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(thanks|thank you|appreciated|awesome|cool|great|perfect)\\b")) -> AiDecisionType.THANKS to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(bye|goodbye|see you|see ya|goodnight)\\b")) -> AiDecisionType.GOODBYE to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(what can you do|who are you|how are you|tell me about yourself|what are your capabilities|features|what do you do)\\b")) -> AiDecisionType.GENERAL_CONVERSATION to AiConfidence.HIGH
+
             // Cancel / Stop
             text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
 
