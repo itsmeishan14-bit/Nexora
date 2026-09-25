@@ -86,6 +86,7 @@ class AiEvaluationEngine(
             category = case.category,
             passed = passed,
             actualIntent = actualIntent,
+            actualDecisionType = response?.decision?.type,
             actualResponseType = response?.responseType,
             actualActionType = response?.proposedActions?.firstOrNull()?.type,
             actualConfidence = response?.confidence ?: AiConfidence.LOW,
@@ -104,7 +105,12 @@ class AiEvaluationEngine(
     }
 
     private fun verifyResponse(case: AiEvaluationCase, response: AiResponse): Boolean {
-        // 1. Response Type check
+        // 1. Expected Decision Type check
+        if (case.expectedDecisionType != null && response.decision?.type != case.expectedDecisionType) {
+            return false
+        }
+
+        // 2. Response Type check
         if (case.expectedResponseType != null && response.responseType != case.expectedResponseType) {
             // Special case: Agent returns INFORMATION for what would be ACTION_PROPOSAL
             val msg = response.message.lowercase()
