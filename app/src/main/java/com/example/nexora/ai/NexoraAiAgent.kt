@@ -330,7 +330,15 @@ class NexoraAiAgent(
                     )
                 }
             } else {
-                return AgentReasoning(status = WorkflowStatus.FAILED, finalMessage = lastStep.result?.message ?: "Task not found.")
+                val candidateIds = (lastStep.result?.data as? List<*>)?.filterIsInstance<Long>() ?: emptyList()
+                return if (candidateIds.isNotEmpty()) {
+                    AgentReasoning(
+                        status = WorkflowStatus.WAITING_FOR_CONFIRMATION,
+                        finalMessage = "I found multiple matching tasks. Which one did you mean?"
+                    )
+                } else {
+                    AgentReasoning(status = WorkflowStatus.FAILED, finalMessage = lastStep.result?.message ?: "Task not found.")
+                }
             }
         }
         

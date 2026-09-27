@@ -87,18 +87,19 @@ class NexoraAiEngine(
     }
 
     suspend fun createDailyPlan(): NexoraDailyPlan {
+        brain.processRequest(AiRequest(AiRequestType.DAILY_PLAN))
         val context = contextBuilder.build()
         return aiService.generateDailyPlan(context)
     }
 
     suspend fun analyzeGoals(): List<AiRecommendation> {
-        val context = contextBuilder.build()
-        return aiService.analyzeGoals(context)
+        val response = brain.processRequest(AiRequest(AiRequestType.GOAL_ANALYSIS))
+        return response.recommendations
     }
 
     suspend fun analyzeProductivity(): List<AiRecommendation> {
-        val context = contextBuilder.build()
-        return aiService.analyzeProductivity(context)
+        val response = brain.processRequest(AiRequest(AiRequestType.PRODUCTIVITY_ANALYSIS))
+        return response.recommendations
     }
 
     suspend fun decomposeGoal(
@@ -106,6 +107,12 @@ class NexoraAiEngine(
         goalDescription: String = "",
         category: String = "Personal"
     ): AiGoalDecomposition {
+        brain.processRequest(
+            AiRequest(
+                type = AiRequestType.GOAL_DECOMPOSITION,
+                parameters = mapOf("title" to goalTitle, "description" to goalDescription, "category" to category)
+            )
+        )
         return aiService.decomposeGoal(
             goalTitle = goalTitle,
             goalDescription = goalDescription,
@@ -116,6 +123,12 @@ class NexoraAiEngine(
     suspend fun ask(
         userMessage: String
     ): AiModelStructuredResponse {
+        brain.processRequest(
+            AiRequest(
+                type = AiRequestType.CHAT,
+                userMessage = userMessage
+            )
+        )
         val context = contextBuilder.build()
         return aiService.askNexora(
             context = context,
