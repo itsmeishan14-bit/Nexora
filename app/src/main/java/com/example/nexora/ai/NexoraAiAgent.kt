@@ -523,11 +523,15 @@ class NexoraAiAgent(
     private fun mapStepToAction(step: AgentWorkflowStep): AiAction {
         val type = mapToolToType(step.toolName)
         val risk = NexoraSecurity.getRiskLevel(type)
+        val taskId = step.parameters["taskId"]?.toString()?.toLongOrNull()
+        val goalId = step.parameters["goalId"]?.toString()?.toLongOrNull()
         
         return AiAction(
             type = type,
             title = step.description,
             description = step.description,
+            taskId = taskId,
+            goalId = goalId,
             parameters = step.parameters,
             reason = step.reason,
             requiresConfirmation = step.requiresConfirmation || risk == ToolRiskLevel.DESTRUCTIVE

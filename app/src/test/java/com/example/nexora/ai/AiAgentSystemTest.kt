@@ -67,29 +67,39 @@ class AiAgentSystemTest {
 
     @Test
     fun `test agent task completion reasoning`() = runBlocking {
-        // 1. Setup task
+        // 1. Setup task and agent
         val task = repository.addTask(PremiumTask(title = "Complete Java Project", category = "Study", duration = "1h"))
-        
-        // 2. Request completion via name that needs resolution
-        // Note: We added a trigger in shouldUseAgent for "java" and COMPLETE_TASK
-        val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Finish my Java project"))
-        
+        val actionExecutor = AiActionExecutor(repository)
+        val toolRegistry = AiToolRegistry(repository, actionExecutor)
+        val agent = NexoraAiAgent(toolRegistry = toolRegistry)
+
+        val context = engine.getContext()
+        val request = AiRequest(AiRequestType.CHAT, userMessage = "Finish my Java project")
+
+        // 2. Execute agent
+        val response = agent.execute(request, context)
+
         // 3. Verify Agent resolved and proposed completion
-        // The Agent loop might have finished the findTask step and is now planning completeTask
-        assertTrue("Should have proposed an action or be in WAITING state", 
-            response.proposedActions.isNotEmpty() || response.workflow?.status == WorkflowStatus.WAITING_FOR_CONFIRMATION)
+        assertNotNull(response.workflow)
+        val proposed = response.proposedActions.firstOrNull()
+        assertNotNull("Agent should propose completion action", proposed)
+        assertEquals(AiActionType.COMPLETE_TASK, proposed?.type)
+        assertEquals(task.id, proposed?.taskId)
     }
 
     @Test
     fun `test agent handle non-existent task failure`() = runBlocking {
-        // 1. Request to finish something that doesn't exist
-        // Note: Using "java" to trigger agent
-        val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Finish my Java nonexistent project"))
-        
-        // 2. Verify Agent reported failure gracefully
-        // Use a less strict check for the error message
-        val status = response.workflow?.status
-        assertTrue("Workflow should be FAILED or NO_ACTION. Got: $status", 
-            status == WorkflowStatus.FAILED || status == WorkflowStatus.NO_ACTION)
+        val actionExecutor = AiActionExecutor(repository)
+        val toolRegistry = AiToolRegistry(repository, actionExecutor)
+        val agent = NexoraAiAgent(toolRegistry = toolRegistry)
+
+        val context = engine.getContext()
+        val request = AiRequest(AiRequestType.CHAT, userMessage = "Finish my Java nonexistent project")
+
+        val response = agent.execute(request, context)
+
+        assertEquals(WorkflowStatus.FAILED, response.workflow?.status)
+        assertTrue("Message should explain task was not found. Got: ${response.message}",
+            response.message.contains("No task found", ignoreCase = true) || response.message.contains("not found", ignoreCase = true))
     }
 }

@@ -138,14 +138,9 @@ class NexoraAiBrain(
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""
         
-        // Use intent resolver for smarter selection
-        val prompt = "Select component. User message: $msg"
-        val langResult = AdvancedLocalLanguagePipeline().process(msg, context)
-        
         // Multi-step complex workflow triggers
         return (msg.contains("goal") && (msg.contains("finish") || msg.contains("help") || msg.contains("work") || msg.contains("milestones") || msg.contains("progress"))) ||
-               msg.contains("organize") || msg.contains("clean") || msg.contains("overload") ||
-               (langResult.intent == AiDecisionType.COMPLETE_TASK && msg.contains("java")) // Example for testing multi-turn
+               msg.contains("organize") || msg.contains("clean") || msg.contains("overload")
     }
 
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
