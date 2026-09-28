@@ -231,6 +231,57 @@ class NexoraPredictiveEngineTest {
     }
 
     @Test
+    fun `test similar task behavior increases delay risk`() = runBlocking {
+        val task = PremiumTask(id = 10, title = "Practice Java DSA Exercises", category = "Study", duration = "60m")
+        val memoryItem = AiMemoryItem(
+            category = AiMemoryCategory.TASK_PATTERN,
+            title = "Task Carryover",
+            content = "Tasks matching Java DSA were carried forward repeatedly in previous sessions."
+        )
+
+        val context = AiContext(
+            tasks = listOf(task),
+            memory = AiMemory(items = listOf(memoryItem)),
+            adaptiveProfile = AdaptiveProfile(sampleCount = 5)
+        )
+
+        val predictions = predictiveEngine.predictTaskDelayRisks(context)
+        val prediction = predictions.find { it.targetId == 10L }
+
+        assertNotNull(prediction)
+        assertTrue(prediction?.contributingFactors?.any { it.factor == "Similar Task Behavior" } == true)
+    }
+
+    @Test
+    fun `test evidence quality classification for small vs large history`() = runBlocking {
+        val task = PremiumTask(id = 1, title = "Study Task", category = "Study", duration = "90m")
+        
+        // Small sample history
+        val contextWeak = AiContext(
+            tasks = listOf(task),
+            adaptiveProfile = AdaptiveProfile(sampleCount = 1)
+        )
+        val predWeak = predictiveEngine.predictTaskDelayRisks(contextWeak).find { it.targetId == 1L }
+        assertEquals(EvidenceQuality.WEAK, predWeak?.evidenceQuality)
+
+        // Large sample history
+        val contextStrong = AiContext(
+            tasks = listOf(task),
+            adaptiveProfile = AdaptiveProfile(sampleCount = 12)
+        )
+        val predStrong = predictiveEngine.predictTaskDelayRisks(contextStrong).find { it.targetId == 1L }
+        assertEquals(EvidenceQuality.STRONG, predStrong?.evidenceQuality)
+    }
+
+    @Test
+    fun `test predictive query routing in chat - How accurate are your predictions`() = runBlocking {
+        val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "How accurate are your predictions?"))
+
+        assertEquals(AiDecisionType.PREDICT_PRODUCTIVITY, response.decision?.type)
+        assertTrue(response.message.contains("calibrated", ignoreCase = true) || response.message.contains("baseline", ignoreCase = true) || response.message.contains("accuracy", ignoreCase = true))
+    }
+
+    @Test
     fun `test predictive engine performance with 500 tasks`() = runBlocking {
         val largeTasks = (1..500).map {
             PremiumTask(id = it.toLong(), title = "Task $it", category = "Work", duration = "30m", completed = it % 2 == 0)

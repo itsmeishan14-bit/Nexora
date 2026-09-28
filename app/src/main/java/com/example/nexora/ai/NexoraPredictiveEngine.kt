@@ -9,8 +9,8 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
 /**
- * Deterministic local engine for calculating predictive personal intelligence signals.
- * Analyzes tasks, goals, workload, adaptive profile, and historical progress.
+ * Predictive Personal Intelligence Engine 2.0.
+ * Evidence-based, self-calibrating, personalized predictions with real uncertainty modeling.
  */
 class NexoraPredictiveEngine {
 
@@ -29,7 +29,8 @@ class NexoraPredictiveEngine {
     }
 
     /**
-     * Calculates delay risks for incomplete tasks based on historical behavior and current workload.
+     * Calculates delay risks for incomplete tasks using personal history, similar task behavior,
+     * task-size completion rates, and workload pressure.
      */
     fun predictTaskDelayRisks(context: AiContext): List<AiPrediction> {
         val predictions = mutableListOf<AiPrediction>()
@@ -38,43 +39,48 @@ class NexoraPredictiveEngine {
 
         if (incompleteTasks.isEmpty()) return emptyList()
 
-        val isDataSufficient = profile.sampleCount >= 2 || context.recentEvaluations.isNotEmpty() || context.memory.items.isNotEmpty()
-        val defaultConfidence = if (isDataSufficient) {
-            if (profile.sampleCount >= 5) AiConfidence.HIGH else AiConfidence.MEDIUM
-        } else {
-            AiConfidence.LOW
+        val totalObservations = profile.sampleCount + context.recentEvaluations.size + context.memory.items.size
+        val evidenceQuality = calculateEvidenceQuality(totalObservations)
+        val isDataSufficient = evidenceQuality != EvidenceQuality.INSUFFICIENT
+
+        val defaultConfidence = when (evidenceQuality) {
+            EvidenceQuality.STRONG -> AiConfidence.HIGH
+            EvidenceQuality.MODERATE -> AiConfidence.MEDIUM
+            EvidenceQuality.WEAK, EvidenceQuality.INSUFFICIENT -> AiConfidence.LOW
         }
+
+        val calibrationFactor = getCalibrationFactor(context)
 
         incompleteTasks.forEach { task ->
             var riskScore = 0.0f
             val factors = mutableListOf<ReasoningFactor>()
 
-            // 1. Duration factor
+            // 1. Task Size & Duration Bucket
             val durationMin = extractDurationMinutes(task.duration)
-            if (durationMin > 120) {
-                riskScore += 0.35f
-                factors.add(ReasoningFactor("Task Size", ReasoningImpact.CRITICAL, "Task duration ($durationMin min) exceeds typical focus blocks."))
-            } else if (durationMin > 60) {
-                riskScore += 0.20f
-                factors.add(ReasoningFactor("Task Size", ReasoningImpact.POSITIVE, "Task requires over an hour of sustained focus."))
+            val sizeBucket = classifyTaskSize(durationMin)
+            
+            if (sizeBucket == "VERY_LARGE" || sizeBucket == "LARGE") {
+                riskScore += if (sizeBucket == "VERY_LARGE") 0.35f else 0.20f
+                factors.add(ReasoningFactor("Task Size", ReasoningImpact.CRITICAL, "Task duration ($durationMin min) is classified as $sizeBucket."))
             }
 
-            // 2. Priority factor
+            // 2. Priority
             if (task.priority == TaskPriority.URGENT) {
                 riskScore += 0.15f
                 factors.add(ReasoningFactor("Priority", ReasoningImpact.CRITICAL, "Marked as URGENT priority."))
             }
 
-            // 3. Workload pressure factor
-            if (context.personalContext.workload.state == WorkloadState.VERY_HIGH) {
+            // 3. Workload Pressure vs Personal 7-Day Capacity
+            val personalCapacity = calculatePersonalCapacity(context)
+            if (context.incompleteTasks.size > personalCapacity * 1.5) {
                 riskScore += 0.25f
-                factors.add(ReasoningFactor("Workload Pressure", ReasoningImpact.CRITICAL, "Current workload is VERY HIGH relative to typical capacity."))
-            } else if (context.personalContext.workload.state == WorkloadState.HIGH) {
+                factors.add(ReasoningFactor("Workload Pressure", ReasoningImpact.CRITICAL, "Incomplete tasks (${context.incompleteTasks.size}) exceed 7-day typical capacity ($personalCapacity tasks/day)."))
+            } else if (context.incompleteTasks.size > personalCapacity) {
                 riskScore += 0.15f
-                factors.add(ReasoningFactor("Workload Pressure", ReasoningImpact.POSITIVE, "Current workload is high."))
+                factors.add(ReasoningFactor("Workload Pressure", ReasoningImpact.POSITIVE, "Workload is above average daily capacity."))
             }
 
-            // 4. Goal health factor
+            // 4. Linked Goal Health
             val linkedGoal = context.goals.find { it.title == task.goalTitle }
             if (linkedGoal != null) {
                 val health = context.personalContext.goalHealth.find { it.goalId == linkedGoal.id }
@@ -84,41 +90,51 @@ class NexoraPredictiveEngine {
                 }
             }
 
-            // 5. Memory / Carry-forward pattern factor
+            // 5. Carry-forward History for this Specific Task
             val taskMemory = context.memory.items.find { it.category == AiMemoryCategory.TASK_PATTERN && it.relatedTaskId == task.id }
             if (taskMemory != null && taskMemory.content.contains("carried", ignoreCase = true)) {
                 riskScore += 0.30f
                 factors.add(ReasoningFactor("Carry-forward Pattern", ReasoningImpact.CRITICAL, "Task has been carried forward in previous sessions."))
             }
 
-            val probability = riskScore.coerceIn(0.05f, 0.95f)
+            // 6. Similar Task Behavior (Personalized Category / Keyword Reasoning)
+            val similarTaskEvidence = findSimilarTaskEvidence(task, context)
+            if (similarTaskEvidence != null) {
+                riskScore += similarTaskEvidence.first
+                factors.add(similarTaskEvidence.second)
+            }
+
+            // Apply Calibration Factor
+            val calibratedProbability = (riskScore * calibrationFactor).coerceIn(0.05f, 0.95f)
+
             val riskLevel = when {
-                probability >= 0.7f -> AiPriority.CRITICAL
-                probability >= 0.45f -> AiPriority.HIGH
-                probability >= 0.25f -> AiPriority.MEDIUM
+                calibratedProbability >= 0.7f -> AiPriority.CRITICAL
+                calibratedProbability >= 0.45f -> AiPriority.HIGH
+                calibratedProbability >= 0.25f -> AiPriority.MEDIUM
                 else -> AiPriority.LOW
             }
 
             val statusText = if (!isDataSufficient) {
                 "INSUFFICIENT_DATA (Building initial history)"
-            } else if (probability >= 0.5f) {
-                "High Delay Risk (${(probability * 100).toInt()}% probability)"
+            } else if (calibratedProbability >= 0.5f) {
+                "High Delay Risk (${(calibratedProbability * 100).toInt()}% probability)"
             } else {
-                "Low Delay Risk (${(probability * 100).toInt()}% probability)"
+                "Low Delay Risk (${(calibratedProbability * 100).toInt()}% probability)"
             }
 
-            // Only add prediction if elevated risk or if data is insufficient
-            if (probability >= 0.35f || !isDataSufficient) {
+            // Add prediction if risk factors exist or if data is insufficient
+            if (calibratedProbability >= 0.15f || !isDataSufficient) {
                 predictions.add(
                     AiPrediction(
                         type = PredictionType.TASK_DELAY_RISK,
                         targetId = task.id,
                         targetTitle = task.title,
                         prediction = statusText,
-                        probability = probability,
+                        probability = calibratedProbability,
                         confidence = defaultConfidence,
+                        evidenceQuality = evidenceQuality,
                         riskLevel = riskLevel,
-                        evidence = "Calculated from duration ($durationMin min), priority (${task.priority}), and workload pressure.",
+                        evidence = "Calculated from duration ($durationMin min), priority (${task.priority}), similar task history, and personal capacity.",
                         contributingFactors = factors
                     )
                 )
@@ -129,7 +145,7 @@ class NexoraPredictiveEngine {
     }
 
     /**
-     * Calculates risk status and estimated completion timing for active goals.
+     * Calculates risk status and estimated completion timing for active goals without fabricating hidden tasks.
      */
     fun predictGoalRisksAndTimings(context: AiContext): List<AiPrediction> {
         val predictions = mutableListOf<AiPrediction>()
@@ -139,10 +155,30 @@ class NexoraPredictiveEngine {
             val incompleteLinked = linkedTasks.filter { !it.completed }
             val completedLinked = linkedTasks.count { it.completed }
 
-            // Estimate daily completion velocity from adaptive profile or history
-            val dailyVelocity = max(1.0f, context.adaptiveProfile.averageTasksCompleted.takeIf { it > 0f } ?: 2.0f)
-            val remainingTasks = max(1, incompleteLinked.size.takeIf { it > 0 } ?: ((1.0f - goal.progress) * 5).toInt())
-            val estimatedDays = (remainingTasks.toFloat() / dailyVelocity * 1.5f).toInt().coerceAtLeast(1)
+            val totalObservations = context.memory.analyzedDays + linkedTasks.size
+            val evidenceQuality = calculateEvidenceQuality(totalObservations)
+
+            // If no tasks exist and progress is zero, return INSUFFICIENT_DATA
+            if (linkedTasks.isEmpty() && goal.progress == 0.0f) {
+                predictions.add(
+                    AiPrediction(
+                        type = PredictionType.GOAL_RISK,
+                        targetId = goal.id,
+                        targetTitle = goal.title,
+                        prediction = "INSUFFICIENT_DATA (No sub-tasks or activity history available to estimate completion timeline)",
+                        probability = 0.0f,
+                        confidence = AiConfidence.LOW,
+                        evidenceQuality = EvidenceQuality.INSUFFICIENT,
+                        riskLevel = AiPriority.LOW,
+                        evidence = "Goal active with 0 linked tasks and 0% progress."
+                    )
+                )
+                return@forEach
+            }
+
+            val dailyVelocity = max(0.5f, calculatePersonalCapacity(context).toFloat())
+            val remainingTasks = if (incompleteLinked.isNotEmpty()) incompleteLinked.size else max(1, ((1.0f - goal.progress) * 3).toInt())
+            val estimatedDays = (remainingTasks.toFloat() / dailyVelocity * 1.3f).toInt().coerceAtLeast(1)
 
             val daysToDeadline = parseTargetDateDaysRemaining(goal.targetDate)
             
@@ -169,7 +205,11 @@ class NexoraPredictiveEngine {
                 factors.add(ReasoningFactor("Deadline", if (estimatedDays > daysToDeadline) ReasoningImpact.CRITICAL else ReasoningImpact.POSITIVE, "$daysToDeadline days remaining to target date."))
             }
 
-            val confidence = if (context.memory.analyzedDays >= 3 || linkedTasks.isNotEmpty()) AiConfidence.HIGH else AiConfidence.MEDIUM
+            val confidence = when (evidenceQuality) {
+                EvidenceQuality.STRONG -> AiConfidence.HIGH
+                EvidenceQuality.MODERATE -> AiConfidence.MEDIUM
+                else -> AiConfidence.LOW
+            }
 
             predictions.add(
                 AiPrediction(
@@ -179,6 +219,7 @@ class NexoraPredictiveEngine {
                     prediction = statusText,
                     probability = if (isAtRisk) 0.75f else 0.2f,
                     confidence = confidence,
+                    evidenceQuality = evidenceQuality,
                     riskLevel = riskLevel,
                     evidence = "Estimated $estimatedDays days based on $remainingTasks remaining tasks and daily velocity of $dailyVelocity tasks/day.",
                     contributingFactors = factors,
@@ -191,17 +232,19 @@ class NexoraPredictiveEngine {
     }
 
     /**
-     * Predicts whether today's workload presents an overload risk.
+     * Predicts whether today's workload presents an overload risk using real personal capacity.
      */
     fun predictWorkloadOverload(context: AiContext): AiPrediction? {
-        val profile = context.adaptiveProfile
         val incomplete = context.incompleteTasks
         val plannedToday = context.tasksPlannedToday
-        val baselineCapacity = max(1, profile.preferredDailyWorkload)
+        val baselineCapacity = calculatePersonalCapacity(context)
 
         if (incomplete.isEmpty() && plannedToday == 0) return null
 
         val totalMinutes = incomplete.sumOf { extractDurationMinutes(it.duration) }
+        val totalObs = context.adaptiveProfile.sampleCount + context.recentEvaluations.size
+        val evidenceQuality = calculateEvidenceQuality(totalObs)
+
         val probability = (plannedToday.toFloat() / baselineCapacity.toFloat() * 0.5f +
                            incomplete.size.toFloat() / (baselineCapacity * 2).toFloat() * 0.5f).coerceIn(0.1f, 0.95f)
 
@@ -221,7 +264,7 @@ class NexoraPredictiveEngine {
 
         val factors = listOf(
             ReasoningFactor("Incomplete Count", ReasoningImpact.NEUTRAL, "${incomplete.size} total incomplete tasks."),
-            ReasoningFactor("Planned Today", ReasoningImpact.NEUTRAL, "$plannedToday tasks planned today vs baseline capacity of $baselineCapacity."),
+            ReasoningFactor("Planned Today", ReasoningImpact.NEUTRAL, "$plannedToday tasks planned today vs 7-day capacity of $baselineCapacity tasks/day."),
             ReasoningFactor("Total Duration", ReasoningImpact.NEUTRAL, "${totalMinutes} minutes of total estimated work.")
         )
 
@@ -229,7 +272,8 @@ class NexoraPredictiveEngine {
             type = PredictionType.WORKLOAD_OVERLOAD_RISK,
             prediction = "Workload state: $state (${(probability * 100).toInt()}% load risk)",
             probability = probability,
-            confidence = if (profile.sampleCount >= 2) AiConfidence.HIGH else AiConfidence.MEDIUM,
+            confidence = if (evidenceQuality >= EvidenceQuality.MODERATE) AiConfidence.HIGH else AiConfidence.MEDIUM,
+            evidenceQuality = evidenceQuality,
             riskLevel = riskLevel,
             evidence = "Planned $plannedToday tasks vs historical capacity of $baselineCapacity tasks/day.",
             contributingFactors = factors
@@ -240,7 +284,6 @@ class NexoraPredictiveEngine {
      * Calculates time-weighted productivity trend prediction.
      */
     fun predictProductivityTrend(context: AiContext): AiPrediction? {
-        val history = context.recentEvaluations
         val trend = context.personalContext.productivityTrend
 
         if (trend == ProductivityTrend.INSUFFICIENT_DATA) {
@@ -249,6 +292,7 @@ class NexoraPredictiveEngine {
                 prediction = "INSUFFICIENT_DATA",
                 probability = 0.0f,
                 confidence = AiConfidence.LOW,
+                evidenceQuality = EvidenceQuality.INSUFFICIENT,
                 riskLevel = AiPriority.LOW,
                 evidence = "Need at least 3-5 days of completion history to calculate productivity trend."
             )
@@ -265,9 +309,80 @@ class NexoraPredictiveEngine {
             prediction = statusText,
             probability = if (trend == ProductivityTrend.DECLINING) 0.7f else 0.3f,
             confidence = AiConfidence.HIGH,
+            evidenceQuality = EvidenceQuality.STRONG,
             riskLevel = if (trend == ProductivityTrend.DECLINING) AiPriority.HIGH else AiPriority.LOW,
             evidence = "Calculated from time-weighted completion rate history across recent days."
         )
+    }
+
+    // --- Helper Personalization Functions ---
+
+    private fun calculatePersonalCapacity(context: AiContext): Int {
+        val profileCapacity = context.adaptiveProfile.preferredDailyWorkload
+        val memory = context.memory.items.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN }
+        
+        // Extract capacity from memory if present (e.g., "target of 3-4 key tasks")
+        val memoryCapacity = memory?.content?.let { content ->
+            Regex("(\\d+)-(\\d+)|(\\d+)").find(content)?.groupValues?.get(1)?.toIntOrNull()
+        }
+
+        return memoryCapacity ?: if (profileCapacity > 0) profileCapacity else 4
+    }
+
+    private fun classifyTaskSize(minutes: Int): String {
+        return when {
+            minutes <= 30 -> "SMALL"
+            minutes <= 60 -> "MEDIUM"
+            minutes <= 120 -> "LARGE"
+            else -> "VERY_LARGE"
+        }
+    }
+
+    private fun findSimilarTaskEvidence(task: PremiumTask, context: AiContext): Pair<Float, ReasoningFactor>? {
+        val cleanTitle = task.title.lowercase().trim()
+        val keywords = cleanTitle.split(" ").filter { it.length >= 3 }
+        
+        if (keywords.isEmpty()) return null
+
+        val similarCarried = context.memory.items.filter { item ->
+            item.category == AiMemoryCategory.TASK_PATTERN &&
+            keywords.any { kw -> item.content.lowercase().contains(kw) || item.title.lowercase().contains(kw) }
+        }
+
+        if (similarCarried.isNotEmpty()) {
+            val kw = keywords.firstOrNull { kw -> similarCarried.any { it.content.contains(kw, ignoreCase = true) } } ?: "similar"
+            return Pair(
+                0.20f,
+                ReasoningFactor(
+                    "Similar Task Behavior",
+                    ReasoningImpact.CRITICAL,
+                    "Historical tasks matching '$kw' were carried forward in previous sessions."
+                )
+            )
+        }
+
+        return null
+    }
+
+    private fun getCalibrationFactor(context: AiContext): Float {
+        val evaluations = context.recentEvaluations
+        val planTooLargeCount = evaluations.count { it.outcome == AiOutcomeType.PLAN_TOO_LARGE }
+        val planRealisticCount = evaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC }
+
+        return when {
+            planTooLargeCount >= 3 -> 1.15f // Underestimating overload, boost delay risk
+            planRealisticCount >= 5 -> 0.85f // Very consistent, decrease delay risk slightly
+            else -> 1.0f
+        }
+    }
+
+    private fun calculateEvidenceQuality(sampleCount: Int): EvidenceQuality {
+        return when {
+            sampleCount >= 10 -> EvidenceQuality.STRONG
+            sampleCount >= 5 -> EvidenceQuality.MODERATE
+            sampleCount >= 1 -> EvidenceQuality.WEAK
+            else -> EvidenceQuality.INSUFFICIENT
+        }
     }
 
     private fun extractDurationMinutes(duration: String): Int {

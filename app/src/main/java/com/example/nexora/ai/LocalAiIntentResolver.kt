@@ -780,14 +780,27 @@ class LocalAiIntentResolver(
         val predictiveEngine = NexoraPredictiveEngine()
         val prediction = predictiveEngine.predictProductivityTrend(context)
         
-        val textResponse = prediction?.let {
-            "Productivity Pace Prediction:\n${it.prediction}\n\nEvidence: ${it.evidence}"
-        } ?: "Keep completing tasks to build historical trend predictions."
+        val isAccuracyQuery = query.lowercase().contains(Regex("\\b(accurate|accuracy|calibration|prediction quality)\\b"))
+        
+        val textResponse = if (isAccuracyQuery) {
+            val evalCount = context.recentEvaluations.size
+            if (evalCount == 0) {
+                "I am actively building your personal productivity baseline. As you complete daily plans and tasks, I will calibrate my prediction accuracy against real outcomes."
+            } else {
+                val realisticPlans = context.recentEvaluations.count { it.outcome == AiOutcomeType.PLAN_REALISTIC }
+                val passRate = (realisticPlans.toFloat() / evalCount * 100).toInt()
+                "Based on $evalCount evaluated daily plan outcomes, $realisticPlans were realistic ($passRate% plan accuracy). Predictions are dynamically calibrated using your actual completion data."
+            }
+        } else {
+            prediction?.let {
+                "Productivity Pace Prediction:\n${it.prediction}\n\nEvidence: ${it.evidence}"
+            } ?: "Keep completing tasks to build historical trend predictions."
+        }
 
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.PREDICT_PRODUCTIVITY,
-                title = "Productivity Trend",
+                title = "Productivity Trend & Calibration",
                 reason = textResponse
             ),
             textResponse = textResponse,

@@ -13,12 +13,20 @@ data class AiPrediction(
     val prediction: String,
     val probability: Float = 0.0f,
     val confidence: AiConfidence = AiConfidence.LOW,
+    val evidenceQuality: EvidenceQuality = EvidenceQuality.INSUFFICIENT,
     val riskLevel: AiPriority = AiPriority.LOW,
     val evidence: String = "",
     val contributingFactors: List<ReasoningFactor> = emptyList(),
     val estimatedDaysToCompletion: Int? = null,
     val generatedAt: Long = System.currentTimeMillis()
 )
+
+enum class EvidenceQuality {
+    STRONG,
+    MODERATE,
+    WEAK,
+    INSUFFICIENT
+}
 
 enum class PredictionType {
     TASK_DELAY_RISK,
