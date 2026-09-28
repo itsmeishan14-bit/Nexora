@@ -104,11 +104,11 @@ class NexoraPredictiveEngineTest {
     @Test
     fun `test productivity trend prediction with history`() = runBlocking {
         val history = listOf(
-            DailyProgressEntity(date = "2026-03-01", tasksPlanned = 5, tasksCompleted = 5),
-            DailyProgressEntity(date = "2026-03-02", tasksPlanned = 5, tasksCompleted = 4),
-            DailyProgressEntity(date = "2026-03-03", tasksPlanned = 5, tasksCompleted = 5),
+            DailyProgressEntity(date = "2026-03-05", tasksPlanned = 5, tasksCompleted = 1),
             DailyProgressEntity(date = "2026-03-04", tasksPlanned = 5, tasksCompleted = 1),
-            DailyProgressEntity(date = "2026-03-05", tasksPlanned = 5, tasksCompleted = 1)
+            DailyProgressEntity(date = "2026-03-03", tasksPlanned = 5, tasksCompleted = 5),
+            DailyProgressEntity(date = "2026-03-02", tasksPlanned = 5, tasksCompleted = 5),
+            DailyProgressEntity(date = "2026-03-01", tasksPlanned = 5, tasksCompleted = 5)
         )
 
         val builder = AiPersonalContextBuilder()
@@ -179,7 +179,7 @@ class NexoraPredictiveEngineTest {
         val tasks = (1..15).map {
             PremiumTask(id = it.toLong(), title = "Task $it", category = "Work", duration = "60m")
         }
-        val profile = AdaptiveProfile(preferredDailyWorkload = 3, sampleCount = 5)
+        val profile = AdaptiveProfile(preferredDailyWorkload = 3, averageTasksCompleted = 3f, sampleCount = 5)
         val builder = AiPersonalContextBuilder()
         val personalContext = builder.build(
             tasks = tasks,
@@ -279,6 +279,51 @@ class NexoraPredictiveEngineTest {
 
         assertEquals(AiDecisionType.PREDICT_PRODUCTIVITY, response.decision?.type)
         assertTrue(response.message.contains("calibrated", ignoreCase = true) || response.message.contains("baseline", ignoreCase = true) || response.message.contains("accuracy", ignoreCase = true))
+    }
+
+    @Test
+    fun `test goal with zero tasks and zero history returns INSUFFICIENT_DATA and null days`() = runBlocking {
+        val emptyGoal = NexoraGoal(id = 99, title = "Empty Goal", category = "Personal", targetDate = "", progress = 0.0f)
+        val context = AiContext(goals = listOf(emptyGoal), tasks = emptyList())
+
+        val predictions = predictiveEngine.predictGoalRisksAndTimings(context)
+        val goalPred = predictions.find { it.targetId == 99L }
+
+        assertNotNull(goalPred)
+        assertEquals("INSUFFICIENT_DATA", goalPred?.prediction)
+        assertNull(goalPred?.estimatedDaysToCompletion)
+        assertEquals(EvidenceQuality.INSUFFICIENT, goalPred?.evidenceQuality)
+    }
+
+    @Test
+    fun `test personal capacity returns null when no history exists`() = runBlocking {
+        val emptyContext = AiContext(adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 0, sampleCount = 0))
+        val capacity = predictiveEngine.calculatePersonalCapacity(emptyContext)
+
+        assertNull(capacity.value)
+        assertEquals(EvidenceQuality.INSUFFICIENT, capacity.evidenceQuality)
+    }
+
+    @Test
+    fun `test similar task token matching - Java does NOT match JavaScript`() = runBlocking {
+        val task = PremiumTask(id = 20, title = "Java Refactoring", category = "Work", duration = "60m")
+        val jsMemory = AiMemoryItem(
+            category = AiMemoryCategory.TASK_PATTERN,
+            title = "Task Carryover",
+            content = "JavaScript tasks carried forward repeatedly"
+        )
+
+        val context = AiContext(
+            tasks = listOf(task),
+            memory = AiMemory(items = listOf(jsMemory)),
+            adaptiveProfile = AdaptiveProfile(sampleCount = 5)
+        )
+
+        val predictions = predictiveEngine.predictTaskDelayRisks(context)
+        val taskPred = predictions.find { it.targetId == 20L }
+
+        // Similar task factor should NOT be present because "java" != "javascript"
+        assertFalse(taskPred?.contributingFactors?.any { it.factor == "Similar Task Behavior" } == true)
     }
 
     @Test

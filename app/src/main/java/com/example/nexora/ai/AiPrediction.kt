@@ -28,6 +28,20 @@ enum class EvidenceQuality {
     INSUFFICIENT
 }
 
+enum class CalibrationStatus {
+    INSUFFICIENT_DATA,
+    INITIAL,
+    LEARNING,
+    CALIBRATED
+}
+
+data class PersonalCapacityEstimate(
+    val value: Int?,
+    val confidence: AiConfidence = AiConfidence.LOW,
+    val evidenceQuality: EvidenceQuality = EvidenceQuality.INSUFFICIENT,
+    val source: String = "Insufficient Data"
+)
+
 enum class PredictionType {
     TASK_DELAY_RISK,
     TASK_COMPLETION_LIKELIHOOD,
