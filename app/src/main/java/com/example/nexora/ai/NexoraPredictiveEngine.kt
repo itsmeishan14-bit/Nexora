@@ -99,7 +99,7 @@ class NexoraPredictiveEngine {
                 else -> AiPriority.LOW
             }
 
-            val statusText = if (defaultConfidence == AiConfidence.gitINSUFFICIENT_DATA) {
+            val statusText = if (!isDataSufficient) {
                 "INSUFFICIENT_DATA (Building initial history)"
             } else if (probability >= 0.5f) {
                 "High Delay Risk (${(probability * 100).toInt()}% probability)"
@@ -108,7 +108,7 @@ class NexoraPredictiveEngine {
             }
 
             // Only add prediction if elevated risk or if data is insufficient
-            if (probability >= 0.35f || defaultConfidence == AiConfidence.INSUFFICIENT_DATA) {
+            if (probability >= 0.35f || !isDataSufficient) {
                 predictions.add(
                     AiPrediction(
                         type = PredictionType.TASK_DELAY_RISK,
@@ -277,9 +277,13 @@ class NexoraPredictiveEngine {
     }
 
     private fun parseTargetDateDaysRemaining(targetDate: String): Long? {
+        if (targetDate.isBlank()) return null
         return try {
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-            val date = LocalDate.parse(targetDate, formatter)
+            val date = try {
+                LocalDate.parse(targetDate, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+            } catch (e: Exception) {
+                LocalDate.parse(targetDate, DateTimeFormatter.ofPattern("MMM d, yyyy"))
+            }
             val today = LocalDate.now()
             ChronoUnit.DAYS.between(today, date)
         } catch (e: Exception) {

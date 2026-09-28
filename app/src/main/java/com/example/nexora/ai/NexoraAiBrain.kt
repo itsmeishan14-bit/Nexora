@@ -138,9 +138,14 @@ class NexoraAiBrain(
         if (request.type != AiRequestType.CHAT) return false
         val msg = request.userMessage?.lowercase() ?: ""
         
+        // Predictive or conversational questions should route through chat pipeline, not agent
+        if (msg.contains("will i") || msg.contains("when will i") || msg.contains("can i") || msg.contains("what should i")) {
+            return false
+        }
+
         // Multi-step complex workflow triggers
-        return (msg.contains("goal") && (msg.contains("finish") || msg.contains("help") || msg.contains("work") || msg.contains("milestones") || msg.contains("progress"))) ||
-               msg.contains("organize") || msg.contains("clean") || msg.contains("overload")
+        return (msg.contains("goal") && (msg.contains("help") || msg.contains("decompose") || msg.contains("break down"))) ||
+               msg.contains("organize") || msg.contains("clean")
     }
 
     private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
