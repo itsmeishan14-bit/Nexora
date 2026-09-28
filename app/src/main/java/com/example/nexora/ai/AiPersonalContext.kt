@@ -14,6 +14,7 @@ data class AiPersonalContext(
     val productivityTrend: ProductivityTrend = ProductivityTrend.STABLE,
     val risks: List<AiRisk> = emptyList(),
     val opportunities: List<AiOpportunity> = emptyList(),
+    val predictions: List<AiPrediction> = emptyList(),
     val confidence: AiConfidence = AiConfidence.LOW,
     val timestamp: Long = System.currentTimeMillis()
 )

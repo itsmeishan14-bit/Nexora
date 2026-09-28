@@ -26,6 +26,18 @@ class AiPersonalContextBuilder {
         
         val confidence = mapAdaptiveConfidence(adaptiveProfile.confidence)
 
+        // Build temporary context for predictive engine
+        val tempContext = AiContext(
+            tasks = tasks,
+            goals = goals,
+            memory = memory,
+            adaptiveProfile = adaptiveProfile,
+            tasksPlannedToday = todayProgress?.tasksPlanned ?: 0,
+            tasksCompletedToday = todayProgress?.tasksCompleted ?: 0
+        )
+        val predictiveEngine = NexoraPredictiveEngine()
+        val predictions = predictiveEngine.generatePredictions(tempContext)
+
         return AiPersonalContext(
             workload = workload,
             goalHealth = goalHealth,
@@ -33,6 +45,7 @@ class AiPersonalContextBuilder {
             productivityTrend = trend,
             risks = risks,
             opportunities = opportunities,
+            predictions = predictions,
             confidence = confidence
         )
     }

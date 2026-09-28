@@ -157,9 +157,15 @@ class AiPlanner {
         var baseCapacity = if (profile.sampleCount >= 3) profile.preferredDailyWorkload else 5
         if (tooAmbitiousCount >= 2) baseCapacity = Math.max(2, baseCapacity - 1)
         
-        // Adjust for current workload
-        if (personal.workload.state == WorkloadState.VERY_HIGH) baseCapacity = Math.max(2, baseCapacity - 2)
-        else if (personal.workload.state == WorkloadState.HIGH) baseCapacity = Math.max(3, baseCapacity - 1)
+        // Adjust for current workload and predictive overload risks
+        val workloadPrediction = personal.predictions.find { it.type == PredictionType.WORKLOAD_OVERLOAD_RISK }
+        if (workloadPrediction != null && workloadPrediction.probability >= 0.7f) {
+            baseCapacity = Math.max(2, baseCapacity - 2)
+        } else if (personal.workload.state == WorkloadState.VERY_HIGH) {
+            baseCapacity = Math.max(2, baseCapacity - 2)
+        } else if (personal.workload.state == WorkloadState.HIGH) {
+            baseCapacity = Math.max(3, baseCapacity - 1)
+        }
 
         val maxMinutes = 480 // 8 hours max focus estimate
         var currentMinutes = 0
@@ -323,6 +329,13 @@ class AiPlanner {
         if (memory != null && memory.content.contains("carried", ignoreCase = true)) {
             score += 20
             factors.add(ReasoningFactor("Persistence", ReasoningImpact.POSITIVE, "This task has been carried forward; finishing it now clears focus."))
+        }
+
+        // 6. PREDICTIVE RISKS
+        val prediction = context.personalContext.predictions.find { it.targetId == task.id && it.type == PredictionType.TASK_DELAY_RISK }
+        if (prediction != null && prediction.probability >= 0.5f) {
+            score += 35
+            factors.add(ReasoningFactor("Predictive Risk", ReasoningImpact.CRITICAL, prediction.prediction))
         }
 
         return Pair(score, factors)

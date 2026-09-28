@@ -418,6 +418,95 @@ fun AiRecommendationCard(
 }
 
 @Composable
+fun PredictiveBadge(
+    prediction: AiPrediction,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = when (prediction.riskLevel) {
+        AiPriority.CRITICAL -> NexoraError.copy(alpha = 0.15f)
+        AiPriority.HIGH -> Clay60.copy(alpha = 0.15f)
+        else -> Green95
+    }
+    val contentColor = when (prediction.riskLevel) {
+        AiPriority.CRITICAL -> NexoraError
+        AiPriority.HIGH -> Clay40
+        else -> Green60
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = NexoraShapes.small,
+        color = containerColor
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Insights,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = prediction.prediction,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun PredictiveCard(
+    prediction: AiPrediction,
+    modifier: Modifier = Modifier
+) {
+    NexoraCard(modifier = modifier) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconBox(Icons.Rounded.Insights, Green95, Green60, size = 28)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = prediction.targetTitle ?: "Predictive Intelligence",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Green10
+                    )
+                    Text(
+                        text = "Confidence: ${prediction.confidence.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Green40
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = prediction.prediction,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Green10,
+                fontWeight = FontWeight.Medium
+            )
+            if (prediction.evidence.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = prediction.evidence,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Green40,
+                    lineHeight = 16.sp
+                )
+            }
+            if (prediction.contributingFactors.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ReasoningList(factors = prediction.contributingFactors)
+            }
+        }
+    }
+}
+
+@Composable
 fun ReasoningList(factors: List<ReasoningFactor>) {
     if (factors.isEmpty()) return
     

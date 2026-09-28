@@ -20,6 +20,7 @@ class NexoraProactiveEngine {
         signals.addAll(detectTaskSignals(context))
         signals.addAll(detectProductivitySignals(context))
         signals.addAll(detectPlanningSignals(context))
+        signals.addAll(detectPredictiveSignals(context))
         
         // 1. Safety & Confidence Gate
         val validatedSignals = signals.filter { it.confidence >= AiConfidence.MEDIUM }
@@ -252,6 +253,58 @@ class NexoraProactiveEngine {
                 evidence = "Identified 'Plan Too Large' pattern in recent evaluations.",
                 fingerprint = "plan_overload_trend"
             ))
+        }
+
+        return signals
+    }
+
+    private fun detectPredictiveSignals(context: AiContext): List<AiProactiveSignal> {
+        val signals = mutableListOf<AiProactiveSignal>()
+        val predictions = context.personalContext.predictions
+
+        predictions.filter { it.probability >= 0.6f && it.confidence >= AiConfidence.MEDIUM }.forEach { prediction ->
+            when (prediction.type) {
+                PredictionType.TASK_DELAY_RISK -> {
+                    prediction.targetId?.let { taskId ->
+                        signals.add(AiProactiveSignal(
+                            type = ProactiveSignalType.TASK_STAGNATION,
+                            title = "Task Delay Risk",
+                            message = "Task \"${prediction.targetTitle}\" has an elevated risk of delay.",
+                            severity = prediction.riskLevel,
+                            confidence = prediction.confidence,
+                            evidence = prediction.evidence,
+                            relatedTaskId = taskId,
+                            fingerprint = "predictive_task_delay_$taskId"
+                        ))
+                    }
+                }
+                PredictionType.GOAL_RISK -> {
+                    prediction.targetId?.let { goalId ->
+                        signals.add(AiProactiveSignal(
+                            type = ProactiveSignalType.GOAL_STAGNATION,
+                            title = "Goal Trajectory Warning",
+                            message = "Goal \"${prediction.targetTitle}\": ${prediction.prediction}",
+                            severity = prediction.riskLevel,
+                            confidence = prediction.confidence,
+                            evidence = prediction.evidence,
+                            relatedGoalId = goalId,
+                            fingerprint = "predictive_goal_risk_$goalId"
+                        ))
+                    }
+                }
+                PredictionType.WORKLOAD_OVERLOAD_RISK -> {
+                    signals.add(AiProactiveSignal(
+                        type = ProactiveSignalType.WORKLOAD_RISK,
+                        title = "Predictive Workload Warning",
+                        message = prediction.prediction,
+                        severity = prediction.riskLevel,
+                        confidence = prediction.confidence,
+                        evidence = prediction.evidence,
+                        fingerprint = "predictive_workload_risk_${System.currentTimeMillis() / 86400000}"
+                    ))
+                }
+                else -> {}
+            }
         }
 
         return signals

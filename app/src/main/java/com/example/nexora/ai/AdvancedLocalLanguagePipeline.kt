@@ -104,6 +104,12 @@ class AdvancedLocalLanguagePipeline {
             text.contains(Regex("(?i)\\b(bye|goodbye|see you|see ya|goodnight)\\b")) -> AiDecisionType.GOODBYE to AiConfidence.HIGH
             text.contains(Regex("(?i)\\b(what can you do|who are you|how are you|tell me about yourself|what are your capabilities|features|what do you do)\\b")) -> AiDecisionType.GENERAL_CONVERSATION to AiConfidence.HIGH
 
+            // Predictive Intelligence Queries
+            text.contains(Regex("(?i)\\b(will i finish|when will i finish|estimated completion|goal finish|finish my goal)\\b")) -> AiDecisionType.PREDICT_GOAL to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(postpone|delay risk|at risk|task at risk|most likely to postpone|delay)\\b")) && text.contains("task") -> AiDecisionType.PREDICT_TASK_RISK to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(taking on too much|schedule realistic|workload risk|overload risk|too much today|unrealistic)\\b")) -> AiDecisionType.PREDICT_WORKLOAD to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(how productive|productivity trend|completion pace|my pace)\\b")) -> AiDecisionType.PREDICT_PRODUCTIVITY to AiConfidence.HIGH
+
             // Cancel / Stop
             text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
 

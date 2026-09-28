@@ -574,6 +574,10 @@ class NexoraAiBrain(
             AiDecisionType.GENERAL_CONVERSATION -> AiResponseType.INFORMATION
             AiDecisionType.THANKS -> AiResponseType.INFORMATION
             AiDecisionType.GOODBYE -> AiResponseType.INFORMATION
+            AiDecisionType.PREDICT_GOAL -> AiResponseType.INFORMATION
+            AiDecisionType.PREDICT_TASK_RISK -> AiResponseType.INFORMATION
+            AiDecisionType.PREDICT_WORKLOAD -> AiResponseType.INFORMATION
+            AiDecisionType.PREDICT_PRODUCTIVITY -> AiResponseType.INFORMATION
             AiDecisionType.NO_ACTION -> AiResponseType.NO_ACTION
         }
     }

@@ -57,6 +57,10 @@ class LocalAiIntentResolver(
                 AiDecisionType.GENERAL_CONVERSATION -> handleGeneralConversation(query)
                 AiDecisionType.THANKS -> handleThanks()
                 AiDecisionType.GOODBYE -> handleGoodbye()
+                AiDecisionType.PREDICT_GOAL -> handlePredictGoal(query, context)
+                AiDecisionType.PREDICT_TASK_RISK -> handlePredictTaskRisk(query, context)
+                AiDecisionType.PREDICT_WORKLOAD -> handlePredictWorkload(query, context)
+                AiDecisionType.PREDICT_PRODUCTIVITY -> handlePredictProductivity(query, context)
                 else -> noAction(query, context, AiPlanner())
             }
         }
@@ -697,6 +701,94 @@ class LocalAiIntentResolver(
                 type = AiDecisionType.GOODBYE,
                 title = "Goodbye",
                 reason = "Responded to goodbye."
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handlePredictGoal(query: String, context: AiContext): AiModelStructuredResponse {
+        val predictiveEngine = NexoraPredictiveEngine()
+        val predictions = predictiveEngine.predictGoalRisksAndTimings(context)
+        
+        val textResponse = if (predictions.isEmpty()) {
+            "You don't have any active goals configured. Setting a goal allows Nexora to estimate completion timelines and track risk."
+        } else {
+            val list = predictions.joinToString("\n\n") { p ->
+                "• Goal: ${p.targetTitle}\n  Status: ${p.prediction}\n  Evidence: ${p.evidence}"
+            }
+            "Here is my predictive analysis for your active goals:\n\n$list"
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.PREDICT_GOAL,
+                title = "Predictive Goal Analysis",
+                reason = textResponse
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handlePredictTaskRisk(query: String, context: AiContext): AiModelStructuredResponse {
+        val predictiveEngine = NexoraPredictiveEngine()
+        val predictions = predictiveEngine.predictTaskDelayRisks(context)
+        
+        val textResponse = if (predictions.isEmpty()) {
+            "All your current tasks appear to be within normal duration and focus parameters with low delay risk."
+        } else {
+            val list = predictions.take(3).joinToString("\n\n") { p ->
+                "• Task: ${p.targetTitle}\n  Risk: ${p.prediction}\n  Why: ${p.evidence}"
+            }
+            "Based on your historical completion patterns and current workload:\n\n$list"
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.PREDICT_TASK_RISK,
+                title = "Task Delay Risk",
+                reason = textResponse
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handlePredictWorkload(query: String, context: AiContext): AiModelStructuredResponse {
+        val predictiveEngine = NexoraPredictiveEngine()
+        val prediction = predictiveEngine.predictWorkloadOverload(context)
+        
+        val textResponse = if (prediction != null) {
+            "Workload Assessment:\n${prediction.prediction}\n\n${prediction.evidence}"
+        } else {
+            "Your task list is clear right now. No workload pressure detected."
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.PREDICT_WORKLOAD,
+                title = "Workload Feasibility",
+                reason = textResponse
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
+    private fun handlePredictProductivity(query: String, context: AiContext): AiModelStructuredResponse {
+        val predictiveEngine = NexoraPredictiveEngine()
+        val prediction = predictiveEngine.predictProductivityTrend(context)
+        
+        val textResponse = prediction?.let {
+            "Productivity Pace Prediction:\n${it.prediction}\n\nEvidence: ${it.evidence}"
+        } ?: "Keep completing tasks to build historical trend predictions."
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.PREDICT_PRODUCTIVITY,
+                title = "Productivity Trend",
+                reason = textResponse
             ),
             textResponse = textResponse,
             modelName = "local-heuristic"
