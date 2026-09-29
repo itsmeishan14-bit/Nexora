@@ -154,4 +154,55 @@ class NexoraProductionIntegrationTest {
         assertNotNull(response.message)
         assertTrue(response.message.isNotBlank())
     }
+
+    @Test
+    fun `FLOW 11 - Complete real user journey end-to-end flow`() = runBlocking {
+        // 1. First launch: Empty workspace
+        var context = engine.getContext()
+        assertTrue("Initial workspace has 0 tasks", context.tasks.isEmpty())
+        assertTrue("Initial workspace has 0 goals", context.goals.isEmpty())
+
+        // 2. Create Goal
+        val goal = repository.addGoal(NexoraGoal(title = "Build Android App", category = "Work", targetDate = "2026-12-31", progress = 0f))
+        val goalId = goal.id
+
+        // 3. Create Task associated with Goal
+        val task = repository.addTask(PremiumTask(title = "Setup Architecture", category = "Work", duration = "40m", goalTitle = goal.title))
+        
+        // 4. Ask AI: "How should I start?"
+        val aiStartResponse = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "What should I do next?"))
+        assertNotNull(aiStartResponse.message)
+
+        // 5. Complete task & verify goal progress recalculation
+        val completedTask = task.copy(completed = true)
+        repository.updateTask(completedTask)
+        
+        // Recalculate goal progress
+        val tasks = repository.observeTasksOnce()
+        val goalTasks = tasks.filter { it.goalTitle == goal.title }
+        val newProgress = goalTasks.count { it.completed }.toFloat() / goalTasks.size.toFloat()
+        val updatedGoal = goal.copy(progress = newProgress)
+        repository.updateGoal(updatedGoal)
+
+        assertEquals(1.0f, repository.getGoalById(goalId)?.progress)
+
+        // 6. Ask AI: "How am I doing?"
+        val aiStatusResponse = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "How am I doing?"))
+        assertNotNull(aiStatusResponse.message)
+
+        // 7. Create another task using natural language
+        val createResponse = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Create a task called Unit Testing"))
+        val createAction = createResponse.proposedActions.firstOrNull()
+        assertNotNull(createAction)
+        val actionResult = engine.executeAction(createAction!!)
+        assertTrue(actionResult.success)
+
+        val createdTask = repository.observeTasksOnce().find { it.title.equals("Unit Testing", ignoreCase = true) }
+        assertNotNull(createdTask)
+
+        // 8. Simulate App Restart and verify context freshness
+        context = engine.getContext()
+        assertEquals(2, context.tasks.size)
+        assertEquals(1.0f, context.goals.find { it.id == goalId }?.progress)
+    }
 }
