@@ -175,10 +175,15 @@ class AdvancedLocalLanguagePipeline {
         // Extract Task/Goal Title
         val rawTitle = when (intent) {
             AiDecisionType.CREATE_TASK -> {
-                text.replace(Regex("(?i)\\b(create|add|new|remind|a|an|task|todo|to|called|for|with)\\b"), " ")
-                    .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
+                val explicitMatch = Regex("(?i)(?:called|named|title)\\s+[\"']?([^\"']+)[\"']?").find(text)
+                if (explicitMatch != null) {
+                    explicitMatch.groupValues[1].trim()
+                } else {
+                    text.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(task|todo)?\\s*(called|named|to|for)?\\s*"), "")
+                        .replace(Regex("(?i)\\s+(priority|high|urgent|low|medium|duration|minutes|hours|min|hr)s?\\b.*"), "")
+                        .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b.*"), "")
+                        .trim()
+                }
             }
             AiDecisionType.CREATE_GOAL -> {
                 text.replace(Regex("(?i)\\b(create|add|new|a|an|goal|objective|to|called|for|with)\\b"), " ")

@@ -274,7 +274,14 @@ class NexoraProactiveEngine {
                             confidence = prediction.confidence,
                             evidence = prediction.evidence,
                             relatedTaskId = taskId,
-                            fingerprint = "predictive_task_delay_$taskId"
+                            fingerprint = "predictive_task_delay_$taskId",
+                            suggestedAction = AiAction(
+                                type = AiActionType.DECOMPOSE_GOAL,
+                                title = "Break Down Task",
+                                description = "Split \"${prediction.targetTitle}\" into 30m sub-tasks?",
+                                taskId = taskId,
+                                reason = "Elevated task delay risk detected."
+                            )
                         ))
                     }
                 }
@@ -288,7 +295,14 @@ class NexoraProactiveEngine {
                             confidence = prediction.confidence,
                             evidence = prediction.evidence,
                             relatedGoalId = goalId,
-                            fingerprint = "predictive_goal_risk_$goalId"
+                            fingerprint = "predictive_goal_risk_$goalId",
+                            suggestedAction = AiAction(
+                                type = AiActionType.DECOMPOSE_GOAL,
+                                title = "Decompose Goal",
+                                description = "Break down \"${prediction.targetTitle}\" into new tasks?",
+                                goalId = goalId,
+                                reason = "Goal is at risk of falling behind schedule."
+                            )
                         ))
                     }
                 }
@@ -300,7 +314,13 @@ class NexoraProactiveEngine {
                         severity = prediction.riskLevel,
                         confidence = prediction.confidence,
                         evidence = prediction.evidence,
-                        fingerprint = "predictive_workload_risk_${System.currentTimeMillis() / 86400000}"
+                        fingerprint = "predictive_workload_risk_${System.currentTimeMillis() / 86400000}",
+                        suggestedAction = AiAction(
+                            type = AiActionType.RESCHEDULE_TASK,
+                            title = "Rebalance Workload",
+                            description = "Move low-priority tasks to tomorrow?",
+                            reason = "Workload exceeds daily capacity."
+                        )
                     ))
                 }
                 else -> {}

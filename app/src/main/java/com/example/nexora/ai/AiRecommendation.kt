@@ -22,6 +22,13 @@ enum class AiConfidence {
     HIGH
 }
 
+enum class ActionCategory {
+    INFORMATIONAL,
+    SUGGESTION,
+    ASSISTED_ACTION,
+    CONFIRMED_ACTION
+}
+
 data class AiRecommendation(
     val id: String = java.util.UUID.randomUUID().toString(),
     val type: AiRecommendationType,
@@ -31,6 +38,10 @@ data class AiRecommendation(
     val relatedTaskId: Long? = null,
     val relatedGoalId: Long? = null,
     val actionLabel: String? = null,
+    val suggestedAction: AiAction? = null,
+    val requiresApproval: Boolean = true,
+    val actionCategory: ActionCategory = ActionCategory.ASSISTED_ACTION,
+    val evidenceQuality: EvidenceQuality = EvidenceQuality.INSUFFICIENT,
     val evidence: List<ReasoningFactor> = emptyList(),
     val confidence: AiConfidence = AiConfidence.MEDIUM
 )

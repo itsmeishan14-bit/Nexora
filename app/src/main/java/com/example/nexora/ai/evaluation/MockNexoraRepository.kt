@@ -75,6 +75,16 @@ class MockNexoraRepository : NexoraRepository(null) {
         goals.removeAll { it.id == goal.id }
     }
 
+    private val outcomes = mutableListOf<com.example.nexora.ai.AiOutcome>()
+
+    override suspend fun saveOutcome(outcome: com.example.nexora.ai.AiOutcome) {
+        outcomes.add(outcome)
+    }
+
+    override suspend fun getRecentOutcomes(limit: Int): List<com.example.nexora.ai.AiOutcome> {
+        return outcomes.takeLast(limit)
+    }
+
     override suspend fun saveMemory(item: com.example.nexora.ai.AiMemoryItem) {
         memories.add(item)
     }
