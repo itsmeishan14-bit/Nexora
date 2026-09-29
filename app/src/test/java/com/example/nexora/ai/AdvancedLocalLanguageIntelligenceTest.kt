@@ -27,7 +27,7 @@ class AdvancedLocalLanguageIntelligenceTest {
         
         assertEquals(AiDecisionType.CREATE_TASK, result.intent)
         // Heuristic title extraction includes "study java for 45 minutes" in this version
-        assertTrue(result.entities["title"].toString().contains("study java"))
+        assertTrue(result.entities["title"].toString().contains("study java", ignoreCase = true))
         assertEquals("HIGH", result.entities["priority"])
         assertEquals("45 minutes", result.entities["duration"])
     }

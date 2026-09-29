@@ -16,8 +16,7 @@ class LocalAiIntentResolver(
      * Operates entirely offline without external APIs.
      */
     fun resolve(query: String, context: AiContext, externalConvContext: AiConversationContext? = null): AiModelStructuredResponse {
-        // Use external context if provided, otherwise fallback to local persistence
-        val effectiveConvContext = externalConvContext ?: conversationContext
+        val effectiveConvContext = externalConvContext ?: AiConversationContext()
         
         // Refresh context if expired
         if (effectiveConvContext.isExpired()) {

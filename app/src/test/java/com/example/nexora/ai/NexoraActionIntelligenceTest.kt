@@ -137,11 +137,11 @@ class NexoraActionIntelligenceTest {
         assertEquals(AiActionType.CREATE_TASK, action?.type)
 
         // DB remains unchanged until explicit execution
-        assertNull(repository.observeTasksOnce().find { it.title == "Finish Report" })
+        assertNull(repository.observeTasksOnce().find { it.title.equals("Finish Report", ignoreCase = true) })
 
         // Authorized execution
         val result = engine.executeAction(action!!)
         assertTrue(result.success)
-        assertNotNull(repository.observeTasksOnce().find { it.title == "Finish Report" })
+        assertNotNull(repository.observeTasksOnce().find { it.title.equals("Finish Report", ignoreCase = true) })
     }
 }

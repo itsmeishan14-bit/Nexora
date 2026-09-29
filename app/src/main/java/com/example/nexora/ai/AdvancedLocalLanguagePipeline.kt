@@ -114,8 +114,8 @@ class AdvancedLocalLanguagePipeline {
             text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
 
             // Bulk Actions (Check these before single actions)
-            text.contains(Regex("(?i)delete|remove|clear")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
-            text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)all|every")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
+            text.contains(Regex("(?i)delete|remove|clear")) && text.contains(Regex("(?i)\\b(all|every)\\b")) -> AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
+            text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)\\b(all|every)\\b")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
 
             // Automations Management
             text.contains(Regex("(?i)\\b(show|list|view|active)\\b")) && text.contains("automation") -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.HIGH
@@ -179,10 +179,14 @@ class AdvancedLocalLanguagePipeline {
                 if (explicitMatch != null) {
                     explicitMatch.groupValues[1].trim()
                 } else {
-                    text.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(task|todo)?\\s*(called|named|to|for)?\\s*"), "")
-                        .replace(Regex("(?i)\\s+(priority|high|urgent|low|medium|duration|minutes|hours|min|hr)s?\\b.*"), "")
-                        .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b.*"), "")
-                        .trim()
+                    var t = text
+                    t = t.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(high|urgent|low|medium)?\\s*(priority)?\\s*(task|todo)?\\s*(called|named|to|for)?\\s*"), "")
+                    t = t.replace(Regex("(?i)\\s+(priority|high|urgent|low|medium)\\b"), "")
+                         .replace(Regex("(?i)\\s+for\\s+\\d+\\s*(minute|min|hour|hr)s?\\b.*"), "")
+                         .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), "")
+                         .replace(Regex("\\s+"), " ")
+                         .trim()
+                    t
                 }
             }
             AiDecisionType.CREATE_GOAL -> {
@@ -204,7 +208,7 @@ class AdvancedLocalLanguagePipeline {
             else -> ""
         }
         
-        val cleanTitle = if (rawTitle.isNotBlank()) rawTitle.replaceFirstChar { it.uppercase() } else ""
+        val cleanTitle = if (rawTitle.isNotBlank()) rawTitle.replaceFirstChar { it.uppercase() }.trim() else ""
 
         if (cleanTitle.isNotBlank()) {
             entities["title"] = cleanTitle
