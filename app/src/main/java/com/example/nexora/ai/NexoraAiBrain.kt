@@ -14,7 +14,7 @@ class NexoraAiBrain(
     private val providerManager: AiProviderManager,
     toolRegistry: AiToolRegistry,
     private val repository: NexoraRepository,
-    val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
+    val automationSystem: NexoraAutomationSystem
 ) {
     private val planner = AiPlanner()
     private val learningLoop = AiLearningLoop(repository)

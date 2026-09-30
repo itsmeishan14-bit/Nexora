@@ -104,11 +104,12 @@ class NexoraAiViewModel(
             )
             onComplete()
             analyze()
+            loadAutomationRules()
             loadInitialHomeState()
         }
     }
 
-    private fun loadAutomationRules() {
+    fun loadAutomationRules() {
         _uiState.value = _uiState.value.copy(
             automationRules = engine.getAutomationRules()
         )
@@ -440,6 +441,7 @@ class NexoraAiViewModel(
             if (result.success) {
                 // Refresh data
                 analyze()
+                loadAutomationRules()
             }
         }
     }

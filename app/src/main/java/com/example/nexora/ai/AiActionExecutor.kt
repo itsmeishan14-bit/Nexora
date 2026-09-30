@@ -11,6 +11,8 @@ open class AiActionExecutor(
     private val repository: NexoraRepository?,
     private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
 ) {
+    fun getAutomationSystem(): NexoraAutomationSystem = automationSystem
+
     private val validator = repository?.let { NexoraAiValidator(it) }
 
     open suspend fun execute(action: AiAction): AiActionResult {

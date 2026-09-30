@@ -11,7 +11,7 @@ class NexoraAiEngine(
     private val actionExecutor: AiActionExecutor,
     toolRegistry: AiToolRegistry,
     private val repository: com.example.nexora.data.NexoraRepository,
-    val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
+    val automationSystem: NexoraAutomationSystem = actionExecutor.getAutomationSystem()
 ) {
     private val brain = NexoraAiBrain(
         contextBuilder = contextBuilder,

@@ -18,13 +18,13 @@ class NexoraAutomationWorkflowsTest {
     fun setup() {
         repository = MockNexoraRepository()
         val contextBuilder = AiContextBuilder(repository)
-        val localProvider = LocalAiProvider()
+        automationSystem = NexoraAutomationSystem()
+        val localIntentResolver = LocalAiIntentResolver(automationSystem = automationSystem)
+        val localProvider = LocalAiProvider(intentResolver = localIntentResolver)
         val providerManager = AiProviderManager(localProvider = localProvider)
         val aiService = LocalNexoraAiService(providerManager = providerManager)
-        val actionExecutor = AiActionExecutor(repository)
+        val actionExecutor = AiActionExecutor(repository, automationSystem)
         val toolRegistry = AiToolRegistry(repository, actionExecutor)
-
-        automationSystem = NexoraAutomationSystem()
 
         engine = NexoraAiEngine(
             contextBuilder = contextBuilder,
@@ -32,7 +32,8 @@ class NexoraAutomationWorkflowsTest {
             providerManager = providerManager,
             actionExecutor = actionExecutor,
             toolRegistry = toolRegistry,
-            repository = repository
+            repository = repository,
+            automationSystem = automationSystem
         )
     }
 
@@ -241,4 +242,166 @@ class NexoraAutomationWorkflowsTest {
         assertNotNull(signals)
         assertTrue("Automation evaluation on 500 tasks must be under 100ms", duration < 100)
     }
+
+    @Test
+    fun `TEST 16 - Authoritative single automation system instance is shared across Executor, Engine, Brain, and Resolver`() = runBlocking {
+        // Given ONE authoritative automation system shared across Executor, Engine, Brain, and LocalAiIntentResolver
+        val sharedSystem = NexoraAutomationSystem()
+        val executor = AiActionExecutor(repository, sharedSystem)
+        val localResolver = LocalAiIntentResolver(automationSystem = sharedSystem)
+        val localProvider = LocalAiProvider(intentResolver = localResolver)
+        val providerManager = AiProviderManager(localProvider = localProvider)
+        val service = LocalNexoraAiService(providerManager = providerManager)
+        val registry = AiToolRegistry(repository, executor)
+        val testEngine = NexoraAiEngine(
+            contextBuilder = AiContextBuilder(repository),
+            aiService = service,
+            providerManager = providerManager,
+            actionExecutor = executor,
+            toolRegistry = registry,
+            repository = repository,
+            automationSystem = sharedSystem
+        )
+
+        // Verify initial state is identical across all components
+        val initialEngineRules = testEngine.getAutomationRules()
+        assertEquals(sharedSystem.getRules().size, initialEngineRules.size)
+        assertEquals(sharedSystem.getRules().size, localResolver.getAutomationSystem().getRules().size)
+        assertEquals(sharedSystem.getRules().size, executor.getAutomationSystem().getRules().size)
+
+        // 1. Create an automation through the action executor (ACTION WRITE)
+        val ruleName = "Authoritative Shared Rule"
+        val createAction = AiAction(
+            type = AiActionType.CREATE_AUTOMATION,
+            title = "Create Rule",
+            description = "Creates a test automation rule",
+            parameters = mapOf(
+                "name" to ruleName,
+                "description" to "Monitors background test conditions",
+                "triggerType" to "WORKLOAD_CHANGED",
+                "userConfirmed" to true
+            ),
+            requiresConfirmation = false
+        )
+        val createResult = executor.execute(createAction)
+        assertTrue("Create automation action must succeed", createResult.success)
+
+        // Read through Brain / Engine (BRAIN/UI READ) -> verify newly created rule appears
+        val rulesAfterCreate = testEngine.getAutomationRules()
+        val createdRule = rulesAfterCreate.find { it.name == ruleName }
+        assertNotNull("Newly created rule must be visible in Engine/Brain", createdRule)
+        assertTrue(createdRule!!.enabled)
+
+        // Verify rule is visible through IntentResolver's automationSystem
+        val resolverRulesAfterCreate = localResolver.getAutomationSystem().getRules()
+        assertTrue("Rule must be visible through IntentResolver's automationSystem",
+            resolverRulesAfterCreate.any { it.name == ruleName })
+
+        // 2. Toggle through executor (ACTION WRITE)
+        val toggleAction = AiAction(
+            type = AiActionType.TOGGLE_AUTOMATION,
+            title = "Toggle Rule",
+            description = "Toggle rule state",
+            parameters = mapOf(
+                "ruleName" to ruleName,
+                "enabled" to false,
+                "userConfirmed" to true
+            ),
+            requiresConfirmation = false
+        )
+        val toggleResult = executor.execute(toggleAction)
+        assertTrue("Toggle automation action must succeed", toggleResult.success)
+
+        // Read through Brain / Engine (BRAIN/UI READ) -> verify changed state
+        val rulesAfterToggle = testEngine.getAutomationRules()
+        val toggledRule = rulesAfterToggle.find { it.name == ruleName }
+        assertNotNull(toggledRule)
+        assertFalse("Rule state must reflect toggle (disabled) in Brain/Engine", toggledRule!!.enabled)
+
+        // 3. Delete through executor (ACTION WRITE)
+        val deleteAction = AiAction(
+            type = AiActionType.DELETE_AUTOMATION,
+            title = "Delete Rule",
+            description = "Delete rule",
+            parameters = mapOf(
+                "ruleName" to ruleName,
+                "userConfirmed" to true
+            ),
+            requiresConfirmation = false
+        )
+        val deleteResult = executor.execute(deleteAction)
+        assertTrue("Delete automation action must succeed", deleteResult.success)
+
+        // Read through Brain / Engine (BRAIN/UI READ) -> verify rule is gone
+        val rulesAfterDelete = testEngine.getAutomationRules()
+        assertFalse("Deleted rule must no longer be present in Brain/Engine",
+            rulesAfterDelete.any { it.name == ruleName })
+        assertFalse("Deleted rule must no longer be present in Resolver",
+            localResolver.getAutomationSystem().getRules().any { it.name == ruleName })
+    }
+
+    @Test
+    fun `TEST 17 - Engine executeAction correctly mutates authoritative automation state visible to Engine Brain and Resolver`() = runBlocking {
+        // Test that execution via engine.executeAction (which ViewModel confirmAction delegates to)
+        // routes directly through actionExecutor to the authoritative instance
+        val sharedSystem = NexoraAutomationSystem()
+        val executor = AiActionExecutor(repository, sharedSystem)
+        val localResolver = LocalAiIntentResolver(automationSystem = sharedSystem)
+        val localProvider = LocalAiProvider(intentResolver = localResolver)
+        val providerManager = AiProviderManager(localProvider = localProvider)
+        val service = LocalNexoraAiService(providerManager = providerManager)
+        val registry = AiToolRegistry(repository, executor)
+        
+        // Construct engine relying on default parameter (actionExecutor.getAutomationSystem())
+        val testEngine = NexoraAiEngine(
+            contextBuilder = AiContextBuilder(repository),
+            aiService = service,
+            providerManager = providerManager,
+            actionExecutor = executor,
+            toolRegistry = registry,
+            repository = repository
+        )
+
+        assertSame("Engine must adopt executor's automationSystem when not explicitly supplied",
+            sharedSystem, testEngine.automationSystem)
+
+        // 1. Create rule via engine.executeAction
+        val ruleName = "Engine ExecuteAction Rule"
+        val createAction = AiAction(
+            type = AiActionType.CREATE_AUTOMATION,
+            title = "Create Rule",
+            description = "Rule created via engine execution",
+            parameters = mapOf(
+                "name" to ruleName,
+                "description" to "Rule created via engine"
+            ),
+            requiresConfirmation = true
+        )
+        val createResult = testEngine.executeAction(createAction)
+        assertTrue("Create action through engine must succeed", createResult.success)
+
+        // Verify rule is immediately visible in Engine & Brain rules
+        assertTrue("Engine must see newly created rule",
+            testEngine.getAutomationRules().any { it.name == ruleName })
+        assertTrue("Resolver must see newly created rule",
+            localResolver.getAutomationSystem().getRules().any { it.name == ruleName })
+
+        // 2. Toggle rule via engine.updateAutomationRule (used by AiAutomationScreen / ViewModel toggle)
+        val createdRule = testEngine.getAutomationRules().first { it.name == ruleName }
+        testEngine.updateAutomationRule(createdRule.copy(enabled = false))
+
+        val toggledInEngine = testEngine.getAutomationRules().first { it.name == ruleName }
+        assertFalse("Toggled rule must be disabled in Engine", toggledInEngine.enabled)
+        val toggledInShared = sharedSystem.getRules().first { it.name == ruleName }
+        assertFalse("Toggled rule must be disabled in sharedSystem", toggledInShared.enabled)
+
+        // 3. Delete rule via engine.deleteAutomationRule
+        val deleteResult = testEngine.deleteAutomationRule(ruleName)
+        assertTrue("Delete rule through engine must succeed", deleteResult)
+        assertFalse("Deleted rule must be removed from Engine",
+            testEngine.getAutomationRules().any { it.name == ruleName })
+        assertFalse("Deleted rule must be removed from sharedSystem",
+            sharedSystem.getRules().any { it.name == ruleName })
+    }
 }
+

@@ -84,7 +84,8 @@ class AiProviderArchitectureTest {
             aiService = LocalNexoraAiService(providerManager),
             providerManager = providerManager,
             toolRegistry = AiToolRegistry(null, null),
-            repository = NexoraRepository(null)
+            repository = NexoraRepository(null),
+            automationSystem = NexoraAutomationSystem()
         )
         
         val request = AiRequest(AiRequestType.CHAT, userMessage = "What should I do?")

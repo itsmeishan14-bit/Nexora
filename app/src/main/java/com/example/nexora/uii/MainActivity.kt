@@ -195,7 +195,10 @@ class MainActivity : ComponentActivity() {
                                     "insights" -> AiScreen(
                                         viewModel = aiViewModel,
                                         onOpenGoalDecomposer = { mainViewModel.navigateTo("aiGoalDecomposer") },
-                                        onOpenAutomations = { mainViewModel.navigateTo("aiAutomations") },
+                                        onOpenAutomations = { 
+                                            aiViewModel.loadAutomationRules()
+                                            mainViewModel.navigateTo("aiAutomations") 
+                                        },
                                         onOpenEvaluation = { mainViewModel.navigateTo("aiBenchmarks") },
                                         onRecommendationAction = { rec ->
                                             rec.relatedGoalId?.let { id -> mainState.goals.find { it.id == id }?.let { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") } }

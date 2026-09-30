@@ -119,7 +119,8 @@ class AiBrainTest {
             aiService = fakeService,
             providerManager = AiProviderManager(localProvider = LocalAiProvider()),
             toolRegistry = toolRegistry,
-            repository = com.example.nexora.data.NexoraRepository(null)
+            repository = com.example.nexora.data.NexoraRepository(null),
+            automationSystem = NexoraAutomationSystem()
         )
     }
 

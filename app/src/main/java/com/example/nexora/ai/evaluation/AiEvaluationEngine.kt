@@ -49,7 +49,8 @@ class AiEvaluationEngine(
             aiService = aiService,
             providerManager = providerManager,
             toolRegistry = toolRegistry,
-            repository = repository
+            repository = repository,
+            automationSystem = actionExecutor?.getAutomationSystem() ?: NexoraAutomationSystem()
         )
 
         // Prepare request
