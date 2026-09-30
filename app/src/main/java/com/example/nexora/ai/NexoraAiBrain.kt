@@ -265,13 +265,22 @@ class NexoraAiBrain(
         val nextTaskRec = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
         return if (nextTaskRec != null) {
+            val suggested = nextTaskRec.suggestedAction ?: AiAction(
+                type = AiActionType.COMPLETE_TASK,
+                title = "Complete Task",
+                description = "Mark \"${nextTaskRec.title}\" as finished?",
+                taskId = nextTaskRec.relatedTaskId,
+                reason = nextTaskRec.message
+            )
             AiResponse(
                 responseType = AiResponseType.RECOMMENDATION,
                 title = nextTaskRec.title,
                 message = nextTaskRec.message,
                 confidence = nextTaskRec.confidence,
                 evidence = nextTaskRec.evidence,
-                relatedTaskId = nextTaskRec.relatedTaskId
+                relatedTaskId = nextTaskRec.relatedTaskId,
+                recommendations = recommendations,
+                proposedActions = listOf(suggested)
             )
         } else {
             AiResponse(

@@ -222,7 +222,7 @@ fun AiScreen(
                 if (uiState.recommendations.isNotEmpty()) {
                     items(items = uiState.recommendations, key = { it.id }) { recommendation ->
                         AiRecommendationCard(recommendation = recommendation, onAction = { rec ->
-                            val action = recommendationToAction(rec)
+                            val action = rec.suggestedAction
                             if (action != null) viewModel.proposeAction(action) else onRecommendationAction(rec)
                         })
                     }
@@ -516,13 +516,5 @@ private fun MemoryItemCard(item: AiMemoryItem, onDelete: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-private fun recommendationToAction(recommendation: AiRecommendation): AiAction? {
-    return when (recommendation.type) {
-        AiRecommendationType.NEXT_TASK -> recommendation.relatedTaskId?.let { AiAction(type = AiActionType.COMPLETE_TASK, title = "Complete Task", description = "Mark this task as finished?", reason = recommendation.message, taskId = it) }
-        AiRecommendationType.WARNING -> if (recommendation.title.contains("workload", ignoreCase = true)) AiAction(type = AiActionType.RESCHEDULE_TASK, title = "Reschedule tasks", description = "Move low-priority tasks to tomorrow?", reason = recommendation.message) else null
-        else -> null
     }
 }

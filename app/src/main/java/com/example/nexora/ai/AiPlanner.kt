@@ -108,6 +108,14 @@ class AiPlanner {
             val (task, scoreResult) = best
             val factors = scoreResult.second
             
+            val suggestedAction = AiAction(
+                type = AiActionType.COMPLETE_TASK,
+                title = "Complete Task",
+                description = "Mark \"${task.title}\" as finished?",
+                reason = buildNextTaskMessage(task, factors),
+                taskId = task.id
+            )
+
             recommendations.add(
                 AiRecommendation(
                     id = "planner_next_task_${task.id}",
@@ -116,7 +124,11 @@ class AiPlanner {
                     message = buildNextTaskMessage(task, factors),
                     priority = taskPriorityToAiPriority(task.priority),
                     relatedTaskId = task.id,
-                    actionLabel = "Start task",
+                    actionLabel = "Complete task",
+                    suggestedAction = suggestedAction,
+                    requiresApproval = true,
+                    actionCategory = ActionCategory.ASSISTED_ACTION,
+                    evidenceQuality = if (factors.size >= 3) EvidenceQuality.STRONG else EvidenceQuality.MODERATE,
                     evidence = factors,
                     confidence = if (factors.size >= 3) AiConfidence.HIGH else AiConfidence.MEDIUM
                 )
