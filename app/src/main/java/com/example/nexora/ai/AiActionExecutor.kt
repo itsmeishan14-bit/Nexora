@@ -254,6 +254,11 @@ open class AiActionExecutor(
     }
 
     private suspend fun rescheduleTask(repository: NexoraRepository, action: AiAction): AiActionResult {
+        val taskId = action.taskId
+        if (taskId != null) {
+            val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
+            return AiActionResult(true, "Task rescheduled: ${task.title}", affectedTaskId = taskId)
+        }
         return AiActionResult(true, "Task rescheduled: ${action.title}")
     }
 

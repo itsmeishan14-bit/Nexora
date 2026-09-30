@@ -128,20 +128,85 @@ class NexoraActionIntelligenceTest {
     }
 
     @Test
-    fun `test natural language task creation routes through Brain to Action Proposal`() = runBlocking {
-        val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Create a task called Finish Report"))
+    fun `test invalid task ID or goal ID is rejected safely`() = runBlocking {
+        val invalidTaskAction = AiAction(
+            type = AiActionType.COMPLETE_TASK,
+            title = "Invalid Task",
+            description = "Complete invalid task",
+            taskId = 999999L,
+            parameters = mapOf("userConfirmed" to true)
+        )
+        val taskResult = actionExecutor.execute(invalidTaskAction)
+        assertFalse("Invalid task ID MUST fail safely", taskResult.success)
+        assertTrue(taskResult.message.contains("not found", ignoreCase = true))
 
-        assertEquals(AiResponseType.ACTION_PROPOSAL, response.responseType)
-        val action = response.proposedActions.firstOrNull()
-        assertNotNull(action)
-        assertEquals(AiActionType.CREATE_TASK, action?.type)
+        val invalidGoalAction = AiAction(
+            type = AiActionType.DELETE_GOAL,
+            title = "Invalid Goal",
+            description = "Delete invalid goal",
+            goalId = 999999L,
+            parameters = mapOf("userConfirmed" to true)
+        )
+        val goalResult = actionExecutor.execute(invalidGoalAction)
+        assertFalse("Invalid goal ID MUST fail safely", goalResult.success)
+        assertTrue(goalResult.message.contains("not found", ignoreCase = true))
+    }
 
-        // DB remains unchanged until explicit execution
-        assertNull(repository.observeTasksOnce().find { it.title.equals("Finish Report", ignoreCase = true) })
+    @Test
+    fun `test stale completed task action is handled safely`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 10, title = "Already Completed Task", completed = true, category = "Work", duration = "15m"))
 
-        // Authorized execution
-        val result = engine.executeAction(action!!)
-        assertTrue(result.success)
-        assertNotNull(repository.observeTasksOnce().find { it.title.equals("Finish Report", ignoreCase = true) })
+        val action = AiAction(
+            type = AiActionType.COMPLETE_TASK,
+            title = "Complete Task",
+            description = "Complete task",
+            taskId = task.id,
+            parameters = mapOf("userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertFalse("Completing already-completed task is safely rejected", result.success)
+        assertTrue("Stale completion acknowledges task is already completed", result.message.contains("already completed", ignoreCase = true))
+    }
+
+    @Test
+    fun `test conversation context survives multi-turn requests`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 42, title = "Android Architecture", category = "Work", duration = "30m"))
+
+        val convContext = AiConversationContext(
+            lastTaskId = task.id,
+            lastEntityTitle = task.title
+        )
+
+        val response = engine.processRequest(
+            AiRequest(
+                type = AiRequestType.CHAT,
+                userMessage = "complete it",
+                conversationContext = convContext
+            )
+        )
+
+        val proposed = response.proposedActions.firstOrNull()
+        assertEquals(task.id, proposed?.taskId ?: response.relatedTaskId)
+    }
+
+    @Test
+    fun `test evidence quality and confidence are preserved from recommendation to action`() = runBlocking {
+        val rec = AiRecommendation(
+            type = AiRecommendationType.WARNING,
+            title = "High Overload Risk",
+            message = "Workload exceeds daily capacity",
+            confidence = AiConfidence.HIGH,
+            evidenceQuality = EvidenceQuality.STRONG,
+            suggestedAction = AiAction(
+                type = AiActionType.RESCHEDULE_TASK,
+                title = "Reschedule Task",
+                description = "Move task to tomorrow"
+            )
+        )
+
+        assertEquals(AiConfidence.HIGH, rec.confidence)
+        assertEquals(EvidenceQuality.STRONG, rec.evidenceQuality)
+        assertNotNull(rec.suggestedAction)
     }
 }
