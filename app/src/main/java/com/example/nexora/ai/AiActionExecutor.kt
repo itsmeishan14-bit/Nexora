@@ -8,7 +8,8 @@ import com.example.nexora.util.NexoraLogger
 import com.example.nexora.util.NexoraSecurity
 
 open class AiActionExecutor(
-    private val repository: NexoraRepository?
+    private val repository: NexoraRepository?,
+    private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
 ) {
     private val validator = repository?.let { NexoraAiValidator(it) }
 
@@ -49,15 +50,15 @@ open class AiActionExecutor(
                 AiActionType.CREATE_GOAL -> createGoal(repo, action)
                 AiActionType.UPDATE_GOAL -> updateGoal(repo, action)
                 AiActionType.DELETE_GOAL -> deleteGoal(repo, action)
-                AiActionType.DECOMPOSE_GOAL -> AiActionResult(true, "Goal decomposition requested.")
+                AiActionType.DECOMPOSE_GOAL -> AiActionResult(false, "Goal decomposition is proposal-only and creates sub-task proposals for review rather than direct database mutations.", error = "Proposal-only action")
                 AiActionType.SHOW_INSIGHT -> AiActionResult(true, "Insight displayed.")
                 AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
                 AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
                 AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
                 AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
-                AiActionType.CREATE_AUTOMATION -> AiActionResult(true, "Automation rule created.")
-                AiActionType.TOGGLE_AUTOMATION -> AiActionResult(true, "Automation rule state toggled.")
-                AiActionType.DELETE_AUTOMATION -> AiActionResult(true, "Automation rule deleted.")
+                AiActionType.CREATE_AUTOMATION -> createAutomation(action)
+                AiActionType.TOGGLE_AUTOMATION -> toggleAutomation(action)
+                AiActionType.DELETE_AUTOMATION -> deleteAutomation(action)
             }
 
             // 3. Verification Layer
@@ -370,5 +371,53 @@ open class AiActionExecutor(
             message = if (remainingIncomplete == 0) "Done. I marked all tasks as complete." else "Failed to complete all tasks. $remainingIncomplete tasks remain incomplete.",
             error = if (remainingIncomplete == 0) null else "Verification failed"
         )
+    }
+
+    private fun createAutomation(action: AiAction): AiActionResult {
+        val name = action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        if (name.isNullOrBlank()) {
+            return AiActionResult(false, "Automation rule name missing.", error = "Rule name missing")
+        }
+        val description = action.parameters["description"] as? String ?: "Custom automation rule"
+        val triggerTypeStr = action.parameters["triggerType"] as? String
+        val triggerType = try {
+            AutomationTriggerType.valueOf(triggerTypeStr ?: "DAY_STARTED")
+        } catch (e: Exception) {
+            AutomationTriggerType.DAY_STARTED
+        }
+        val rule = AiAutomationRule(name = name, description = description, triggerType = triggerType)
+        val added = automationSystem.addRule(rule)
+        return if (added) {
+            AiActionResult(true, "Automation rule created: $name")
+        } else {
+            AiActionResult(false, "Failed to create automation rule: duplicate rule name \"$name\".", error = "Duplicate rule name")
+        }
+    }
+
+    private fun toggleAutomation(action: AiAction): AiActionResult {
+        val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        if (target.isNullOrBlank()) {
+            return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
+        }
+        val enabled = action.parameters["enabled"] as? Boolean
+        val toggled = automationSystem.toggleRule(target, enabled)
+        return if (toggled != null) {
+            AiActionResult(true, "Automation rule \"${toggled.name}\" state toggled to ${toggled.enabled}.")
+        } else {
+            AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
+        }
+    }
+
+    private fun deleteAutomation(action: AiAction): AiActionResult {
+        val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        if (target.isNullOrBlank()) {
+            return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
+        }
+        val deleted = automationSystem.deleteRule(target)
+        return if (deleted) {
+            AiActionResult(true, "Automation rule deleted: $target.")
+        } else {
+            AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
+        }
     }
 }

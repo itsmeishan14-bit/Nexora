@@ -230,19 +230,62 @@ class NexoraActionIntelligenceTest {
     }
 
     @Test
-    fun `test reschedule task without mutable parameter returns false success protection`() = runBlocking {
-        val task = repository.addTask(PremiumTask(id = 51, title = "Calendar Reschedule Target", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m"))
+    fun `test decompose goal action returns truthful proposal-only result`() = runBlocking {
+        val goal = repository.addGoal(NexoraGoal(id = 80, title = "Learn Compose", category = "Study", targetDate = "2026-12-31", progress = 0f))
 
         val action = AiAction(
-            type = AiActionType.RESCHEDULE_TASK,
-            title = "Reschedule Task",
-            description = "Move to tomorrow",
-            taskId = task.id,
+            type = AiActionType.DECOMPOSE_GOAL,
+            title = "Decompose Goal",
+            description = "Break down goal into sub-tasks",
+            goalId = goal.id,
             parameters = mapOf("userConfirmed" to true)
         )
 
         val result = actionExecutor.execute(action)
-        assertFalse("Reschedule without mutable parameter MUST NOT report fake success", result.success)
-        assertTrue(result.message.contains("proposal-only", ignoreCase = true) || result.message.contains("priority", ignoreCase = true))
+        assertFalse("Goal decomposition is proposal-only and MUST NOT report false database execution success", result.success)
+        assertTrue(result.message.contains("proposal-only", ignoreCase = true))
+    }
+
+    @Test
+    fun `test automation rule actions perform real state mutations or return non-success when parameters missing`() = runBlocking {
+        // 1. Create Automation with name
+        val createAction = AiAction(
+            type = AiActionType.CREATE_AUTOMATION,
+            title = "Create Rule",
+            description = "Create custom rule",
+            parameters = mapOf("ruleName" to "Custom Night Guard", "description" to "Nightly review", "userConfirmed" to true)
+        )
+        val createResult = actionExecutor.execute(createAction)
+        assertTrue(createResult.success)
+
+        // 2. Toggle Automation
+        val toggleAction = AiAction(
+            type = AiActionType.TOGGLE_AUTOMATION,
+            title = "Toggle Rule",
+            description = "Toggle custom rule",
+            parameters = mapOf("ruleName" to "Custom Night Guard", "enabled" to false, "userConfirmed" to true)
+        )
+        val toggleResult = actionExecutor.execute(toggleAction)
+        assertTrue(toggleResult.success)
+
+        // 3. Delete Automation
+        val deleteAction = AiAction(
+            type = AiActionType.DELETE_AUTOMATION,
+            title = "Delete Rule",
+            description = "Delete custom rule",
+            parameters = mapOf("ruleName" to "Custom Night Guard", "userConfirmed" to true)
+        )
+        val deleteResult = actionExecutor.execute(deleteAction)
+        assertTrue(deleteResult.success)
+
+        // 4. Missing parameters on automation action MUST fail cleanly
+        val invalidToggle = AiAction(
+            type = AiActionType.TOGGLE_AUTOMATION,
+            title = "Toggle Rule",
+            description = "Toggle without name",
+            parameters = mapOf("userConfirmed" to true)
+        )
+        val invalidResult = actionExecutor.execute(invalidToggle)
+        assertFalse("Automation toggle without rule ID or name MUST NOT report fake success", invalidResult.success)
     }
 }
