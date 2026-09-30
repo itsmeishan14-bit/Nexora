@@ -116,7 +116,11 @@ class MainActivity : ComponentActivity() {
                         containerColor = NexoraBackgroundLight,
                         bottomBar = {
                             if (!isWide && mainState.selectedScreen in listOf("home", "tasks", "goals", "insights")) {
-                                NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+                                NavigationBar(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 0.dp,
+                                    windowInsets = WindowInsets(0)
+                                ) {
                                     NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
                                     NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
                                     NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }

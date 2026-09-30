@@ -23,11 +23,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.lerp
 import com.example.nexora.ai.*
 import com.example.nexora.ui.theme.*
 
@@ -44,13 +43,16 @@ fun TasksScreen(
     onDeleteTask: (PremiumTask) -> Unit = {}
 ) {
     var selectedFilter by remember { mutableStateOf(TaskFilter.Active) }
-    
+
     val filteredTasks = remember(tasks.toList(), selectedFilter) {
-        when(selectedFilter) {
+        when (selectedFilter) {
             TaskFilter.Active -> tasks.filter { !it.completed }.sortedBy { it.priority.ordinal }
             TaskFilter.Completed -> tasks.filter { it.completed }
         }
     }
+
+    val activeCount = remember(tasks.toList()) { tasks.count { !it.completed } }
+    val completedCount = remember(tasks.toList()) { tasks.count { it.completed } }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -59,9 +61,10 @@ fun TasksScreen(
                 onClick = onAddTask,
                 containerColor = Green10,
                 contentColor = Color.White,
-                shape = NexoraShapes.medium
+                shape = NexoraShapes.medium,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
             ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
+                Icon(Icons.Rounded.Add, contentDescription = "Add task")
             }
         }
     ) { padding ->
@@ -70,29 +73,38 @@ fun TasksScreen(
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 100.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             // HEADER
             item {
-                Row(
-                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 40.dp, bottom = 8.dp)
                 ) {
-                    Text("Tasks", style = MaterialTheme.typography.headlineLarge, color = Green10)
-                    IconBox(
-                        icon = Icons.Rounded.AutoAwesome,
-                        containerColor = Green95,
-                        contentColor = Green60,
-                        size = 40
+                    Text(
+                        text = "Tasks",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Green10
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            activeCount == 0 -> "Nothing pending."
+                            activeCount == 1 -> "1 task remaining"
+                            else -> "$activeCount tasks remaining"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Green40
                     )
                 }
             }
 
-            // TOP AI RECOMMENDATION BANNER
+            // TOP AI RECOMMENDATION BANNER (compact inline)
             if (topRecommendation != null) {
                 item {
-                    Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                    Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
                         AiRecommendationCard(
                             recommendation = topRecommendation,
                             onAction = { onAiAction() }
@@ -101,23 +113,25 @@ fun TasksScreen(
                 }
             }
 
-            // STICKY FILTER HEADER
+            // STICKY FILTER BAR
             stickyHeader {
                 Surface(
-                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.95f),
+                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.97f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    TaskFilterBar(
+                    PremiumFilterBar(
                         selected = selectedFilter,
+                        activeCount = activeCount,
+                        completedCount = completedCount,
                         onSelect = { selectedFilter = it }
                     )
                 }
             }
 
-            // LIST
+            // TASK LIST
             if (filteredTasks.isEmpty()) {
                 item {
-                    EmptyTasksState(selectedFilter)
+                    PremiumEmptyTasksState(selectedFilter, onAddTask)
                 }
             } else {
                 items(
@@ -125,7 +139,7 @@ fun TasksScreen(
                     key = { task -> if (task.id != 0L) "task_${task.id}" else "temp_${task.title}" }
                 ) { task ->
                     val isRecommended = topRecommendation?.relatedTaskId == task.id
-                    AnimatedTaskCard(
+                    PremiumTaskRow(
                         task = task,
                         isAiRecommended = isRecommended,
                         reasoningMessage = if (isRecommended) topRecommendation?.message else null,
@@ -138,41 +152,101 @@ fun TasksScreen(
     }
 }
 
+// ─────────────────────────────────────────────
+// PREMIUM FILTER BAR
+// ─────────────────────────────────────────────
+
 @Composable
-private fun TaskFilterBar(selected: TaskFilter, onSelect: (TaskFilter) -> Unit) {
+private fun PremiumFilterBar(
+    selected: TaskFilter,
+    activeCount: Int,
+    completedCount: Int,
+    onSelect: (TaskFilter) -> Unit
+) {
     Row(
         modifier = Modifier
-            .padding(horizontal = 24.dp, vertical = 16.dp)
             .fillMaxWidth()
-            .clip(NexoraShapes.medium)
-            .background(Gray95)
-            .padding(4.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        TaskFilter.values().forEach { filter ->
-            val isSelected = selected == filter
-            val bgColor by animateColorAsState(if (isSelected) Color.White else Color.Transparent)
-            
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(NexoraShapes.small)
-                    .background(bgColor)
-                    .clickable { onSelect(filter) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = filter.name,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) Green10 else Green40
-                )
-            }
-        }
+        PremiumFilterTab(
+            label = "Active",
+            count = activeCount,
+            isSelected = selected == TaskFilter.Active,
+            onClick = { onSelect(TaskFilter.Active) },
+            modifier = Modifier.weight(1f)
+        )
+        PremiumFilterTab(
+            label = "Completed",
+            count = completedCount,
+            isSelected = selected == TaskFilter.Completed,
+            onClick = { onSelect(TaskFilter.Completed) },
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
 @Composable
-private fun AnimatedTaskCard(
+private fun PremiumFilterTab(
+    label: String,
+    count: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val textColor by animateColorAsState(
+        targetValue = if (isSelected) Green10 else Green40,
+        label = "filterTabColor"
+    )
+
+    Column(
+        modifier = modifier
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                ),
+                color = textColor
+            )
+            if (count > 0) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (isSelected) Green10 else NexoraBorder
+                ) {
+                    Text(
+                        text = count.toString(),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) Color.White else Green40
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        // Animated underline indicator
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .height(1.5.dp)
+                .background(if (isSelected) Green60 else Color.Transparent)
+        )
+    }
+}
+
+// ─────────────────────────────────────────────
+// PREMIUM TASK ROW
+// ─────────────────────────────────────────────
+
+@Composable
+private fun PremiumTaskRow(
     task: PremiumTask,
     isAiRecommended: Boolean = false,
     reasoningMessage: String? = null,
@@ -184,190 +258,232 @@ private fun AnimatedTaskCard(
         animationSpec = NexoraMotion.SmoothSpec,
         label = "completionAnim"
     )
-    
-    val cardBg = lerp(Color.White, Green95, completionProgress)
-    val contentAlpha = lerp(1f, 0.6f, completionProgress)
-    
-    val priorityColor = when(task.priority) {
+
+    val contentAlpha = if (task.completed) 0.55f else 1f
+
+    val priorityColor = when (task.priority) {
         TaskPriority.URGENT -> NexoraError
         TaskPriority.HIGH -> Clay60
-        else -> Green60
+        TaskPriority.MEDIUM -> Green60
+        else -> Color.Transparent
     }
 
-    Box(
+    val priorityBarWidth = when (task.priority) {
+        TaskPriority.URGENT, TaskPriority.HIGH -> 3.dp
+        else -> 0.dp
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 24.dp)
+            .padding(vertical = 6.dp)
     ) {
-        NexoraCard(
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 8.dp)
-                .nexoraClickable { onToggle() },
-            containerColor = cardBg
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+                .nexoraClickable { onToggle() }
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                if (isAiRecommended) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(NexoraShapes.small)
-                                .background(Green95)
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
+            // Card body
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = priorityBarWidth + if (priorityBarWidth > 0.dp) 4.dp else 0.dp),
+                shape = NexoraShapes.medium,
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    if (isAiRecommended) Green80.copy(alpha = 0.4f) else NexoraBorder
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    if (isAiRecommended) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Green60,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(NexoraShapes.small)
+                                    .background(Green95)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
                                 Text(
-                                    text = "AI Priority Focus",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Green60,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Scale-Bounce Icon
-                    Box(contentAlignment = Alignment.Center) {
-                        val scale by animateFloatAsState(
-                            targetValue = if (task.completed) 1.2f else 1f,
-                            animationSpec = NexoraMotion.SpringSpec,
-                            label = "iconScale"
-                        )
-                        Icon(
-                            imageVector = if (task.completed) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (task.completed) Green60 else Green80,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .scale(scale)
-                        )
-                    }
-
-                    Spacer(Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .alpha(contentAlpha)
-                    ) {
-                        Box {
-                            Text(
-                                text = task.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Green10
-                            )
-                            // Custom Animated Strikethrough
-                            Canvas(modifier = Modifier.matchParentSize()) {
-                                if (completionProgress > 0f) {
-                                    drawLine(
-                                        color = Green60,
-                                        start = Offset(0f, size.height / 2 + 2.dp.toPx()),
-                                        end = Offset(
-                                            size.width * completionProgress,
-                                            size.height / 2 + 2.dp.toPx()
-                                        ),
-                                        strokeWidth = 2.dp.toPx(),
-                                        cap = StrokeCap.Round
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = task.category,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Green40
-                            )
-                            if (task.duration.isNotBlank()) {
-                                Text(" • ", color = Green80)
-                                Text(
-                                    text = task.duration,
+                                    text = "Focus now",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Green40
                                 )
                             }
                         }
+                    }
 
-                        if (!task.goalTitle.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.alpha(contentAlpha)
+                    ) {
+                        // Animated check box
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (task.completed) 1.1f else 1f,
+                            animationSpec = NexoraMotion.SpringSpec,
+                            label = "checkScale"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .scale(iconScale)
+                                .clip(CircleShape)
+                                .background(if (task.completed) Green60 else Color.Transparent),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (task.completed) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Flag,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = Green60
+                                    Icons.Rounded.Check,
+                                    null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(Modifier.width(4.dp))
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Transparent),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Canvas(Modifier.size(22.dp)) {
+                                        drawCircle(
+                                            color = Green80,
+                                            radius = 10.dp.toPx(),
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Box {
                                 Text(
-                                    text = task.goalTitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Green60
+                                    text = task.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if (task.completed) Green40 else Green10,
+                                    textDecoration = if (task.completed) TextDecoration.LineThrough else TextDecoration.None
                                 )
                             }
+
+                            val meta = buildList {
+                                if (task.category.isNotBlank()) add(task.category)
+                                if (task.duration.isNotBlank()) add(task.duration)
+                            }
+                            if (meta.isNotEmpty()) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = meta.joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green40
+                                )
+                            }
+
+                            if (!task.goalTitle.isNullOrBlank()) {
+                                Spacer(Modifier.height(3.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Rounded.Flag,
+                                        null,
+                                        modifier = Modifier.size(10.dp),
+                                        tint = Green60
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = task.goalTitle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Green60
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                null,
+                                tint = NexoraBorder,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
 
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteOutline,
-                            contentDescription = null,
-                            tint = Green80,
-                            modifier = Modifier.size(20.dp)
+                    if (!reasoningMessage.isNullOrBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        HorizontalDivider(color = NexoraBorder, thickness = 0.5.dp)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = reasoningMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Green40,
+                            lineHeight = 18.sp
                         )
                     }
                 }
+            }
 
-                if (!reasoningMessage.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = reasoningMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Green40,
-                        lineHeight = 16.sp
-                    )
-                }
+            // Left priority bar
+            if (priorityBarWidth > 0.dp) {
+                Box(
+                    modifier = Modifier
+                        .width(priorityBarWidth)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(priorityColor)
+                )
             }
         }
-
-        // Left edge priority bar
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .fillMaxHeight()
-                .clip(CircleShape)
-                .background(priorityColor)
-        )
     }
 }
 
+// ─────────────────────────────────────────────
+// EMPTY STATE
+// ─────────────────────────────────────────────
+
 @Composable
-private fun EmptyTasksState(filter: TaskFilter) {
+private fun PremiumEmptyTasksState(filter: TaskFilter, onAddTask: () -> Unit = {}) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 80.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Icon(
-            if (filter == TaskFilter.Active) Icons.Rounded.Inbox else Icons.Rounded.CheckCircleOutline,
-            null, tint = Gray90, modifier = Modifier.size(64.dp)
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            if (filter == TaskFilter.Active) "You're all caught up" else "No completed tasks yet",
-            style = MaterialTheme.typography.titleMedium, color = Green40
-        )
+        if (filter == TaskFilter.Active) {
+            Text(
+                text = "Clear space.",
+                style = MaterialTheme.typography.titleMedium,
+                color = Green40
+            )
+            Text(
+                text = "Add a task when something needs your attention.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NexoraMutedTextLight,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        } else {
+            Text(
+                text = "Nothing completed yet.",
+                style = MaterialTheme.typography.titleMedium,
+                color = Green40
+            )
+            Text(
+                text = "Check off tasks to see them here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NexoraMutedTextLight,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
     }
 }

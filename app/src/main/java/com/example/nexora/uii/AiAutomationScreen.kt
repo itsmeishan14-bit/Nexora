@@ -30,20 +30,25 @@ fun AiAutomationScreen(
     BackHandler { onBack() }
 
     Scaffold(
-        containerColor = NexoraBackgroundLight,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Surface(
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Gray90)
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                tonalElevation = 0.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Green10)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Green10
+                        )
                     }
                     Text(
                         text = "Automations",
@@ -63,12 +68,23 @@ fun AiAutomationScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
-                Text(
-                    text = "Automations help Nexora assist you without being asked. All logic remains entirely on your device.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Green40,
-                    lineHeight = 22.sp
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Nexora Intelligence Rules",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Green10
+                    )
+                    Text(
+                        text = "All automation logic runs entirely on your device. Nothing is sent to the cloud.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = NexoraMutedTextLight,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            item {
+                SectionDivider(label = "RULES")
             }
 
             items(rules) { rule ->
@@ -88,17 +104,17 @@ fun AutomationRuleCard(
 ) {
     NexoraCard {
         Row(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconBox(
                 icon = Icons.Rounded.AutoAwesome,
                 containerColor = Green95,
                 contentColor = Green60,
-                size = 40
+                size = 36
             )
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -106,13 +122,16 @@ fun AutomationRuleCard(
                     style = MaterialTheme.typography.titleSmall,
                     color = Green10
                 )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = rule.description,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Green40,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NexoraMutedTextLight,
                     lineHeight = 16.sp
                 )
             }
+
+            Spacer(Modifier.width(12.dp))
 
             Switch(
                 checked = rule.enabled,
@@ -121,7 +140,7 @@ fun AutomationRuleCard(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = Green60,
                     uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Gray90,
+                    uncheckedTrackColor = NexoraBorder,
                     uncheckedBorderColor = Color.Transparent
                 )
             )

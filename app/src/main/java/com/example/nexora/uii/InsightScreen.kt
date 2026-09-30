@@ -37,22 +37,27 @@ fun InsightScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
-        containerColor = NexoraBackgroundLight,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Surface(
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Gray90)
+                color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                tonalElevation = 0.dp
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .padding(horizontal = 24.dp, vertical = 16.dp)
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxWidth()
                 ) {
                     Text(
                         text = "Observations",
                         style = MaterialTheme.typography.headlineLarge,
                         color = Green10
+                    )
+                    Text(
+                        text = "Patterns Nexora has learned about you.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Green40
                     )
                 }
             }
@@ -63,32 +68,53 @@ fun InsightScreen(
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // PRODUCTIVITY PATTERNS
             if (uiState.memory.items.isNotEmpty()) {
                 item {
-                    Text("Productivity Patterns", style = MaterialTheme.typography.titleMedium, color = Green10)
+                    SectionDivider(label = "PRODUCTIVITY PATTERNS")
                 }
                 items(uiState.memory.items) { memory ->
-                    PatternCard(memory)
+                    InsightPatternCard(memory)
                 }
             }
 
             // PROACTIVE OBSERVATIONS
             if (uiState.proactiveInsights.isNotEmpty()) {
                 item {
-                    Text("AI Observations", style = MaterialTheme.typography.titleMedium, color = Green10)
+                    SectionDivider(label = "AI OBSERVATIONS")
                 }
                 items(uiState.proactiveInsights) { rec ->
-                    ObservationCard(rec)
+                    InsightObservationCard(rec)
                 }
             }
-            
+
+            // EMPTY STATE
             if (uiState.memory.items.isEmpty() && uiState.proactiveInsights.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(top = 64.dp), contentAlignment = Alignment.Center) {
-                        Text("Everything looks steady.", style = MaterialTheme.typography.bodyLarge, color = Green40)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Everything looks steady.",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Green40
+                            )
+                            Text(
+                                text = "Patterns will appear as you use Nexora.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = NexoraMutedTextLight,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
                     }
                 }
             }
@@ -97,41 +123,44 @@ fun InsightScreen(
 }
 
 @Composable
-private fun PatternCard(memory: AiMemoryItem) {
+private fun InsightPatternCard(memory: AiMemoryItem) {
     NexoraCard {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBox(Icons.Rounded.AutoAwesome, Green95, Green60, size = 24)
-                Spacer(Modifier.width(12.dp))
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            IconBox(Icons.Rounded.AutoAwesome, Green95, Green60, size = 24)
+            Spacer(Modifier.width(14.dp))
+            Column {
                 Text(text = memory.title, style = MaterialTheme.typography.titleSmall, color = Green10)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = memory.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Green40,
+                    lineHeight = 22.sp
+                )
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = memory.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Green40,
-                lineHeight = 20.sp
-            )
         }
     }
 }
 
 @Composable
-private fun ObservationCard(rec: AiRecommendation) {
+private fun InsightObservationCard(rec: AiRecommendation) {
     AiSurface {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBox(Icons.Rounded.Visibility, Clay90, Clay40, size = 24)
-                Spacer(Modifier.width(12.dp))
+        Row(verticalAlignment = Alignment.Top) {
+            IconBox(Icons.Rounded.Visibility, Clay90, Clay40, size = 24)
+            Spacer(Modifier.width(14.dp))
+            Column {
                 Text(text = rec.title, style = MaterialTheme.typography.titleSmall, color = Green10)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = rec.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Green40,
+                    lineHeight = 22.sp
+                )
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = rec.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Green40,
-                lineHeight = 20.sp
-            )
         }
     }
 }

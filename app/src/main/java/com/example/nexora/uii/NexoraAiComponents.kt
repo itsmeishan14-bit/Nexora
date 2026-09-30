@@ -17,9 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -72,10 +70,10 @@ fun NexoraCard(
         shape = NexoraShapes.large,
         color = containerColor,
         border = BorderStroke(
-            width = if (tier == NexoraCardTier.Elevated) 1.5.dp else 1.dp,
-            color = if (tier == NexoraCardTier.Elevated) Clay60.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline
+            width = if (tier == NexoraCardTier.Elevated) 1.dp else 0.5.dp,
+            color = if (tier == NexoraCardTier.Elevated) Clay60.copy(alpha = 0.3f) else NexoraBorder
         ),
-        shadowElevation = if (tier == NexoraCardTier.Elevated) 8.dp else 0.dp,
+        shadowElevation = if (tier == NexoraCardTier.Elevated) 4.dp else 0.dp,
         tonalElevation = 0.dp
     ) {
         Column(content = content)
@@ -114,18 +112,18 @@ fun NexoraSectionHeader(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Bottom,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = NexoraPrimaryTextLight
+            style = MaterialTheme.typography.titleMedium,
+            color = Green10
         )
         if (actionLabel != null && onAction != null) {
             Text(
                 text = actionLabel,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = Green60,
                 modifier = Modifier.clickable { onAction() }
             )
@@ -142,7 +140,7 @@ fun AiSurface(
         modifier = modifier,
         shape = NexoraShapes.large,
         color = Clay90,
-        border = BorderStroke(1.5.dp, Clay60.copy(alpha = 0.5f)),
+        border = BorderStroke(0.5.dp, Clay60.copy(alpha = 0.4f)),
         content = { Column(modifier = Modifier.padding(20.dp)) { content() } }
     )
 }
@@ -157,51 +155,30 @@ fun ProposedActionCard(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "aiPulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.05f,
-        targetValue = 0.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Clay60.copy(alpha = pulseAlpha), Color.Transparent),
-                        center = center,
-                        radius = size.width
-                    )
-                )
-            },
+        modifier = Modifier.fillMaxWidth(),
         shape = NexoraShapes.extraLarge,
         color = Green10,
-        border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Clay60, Green40)))
+        border = BorderStroke(1.dp, Clay60.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBox(
-                    icon = Icons.Rounded.AutoAwesome,
-                    containerColor = Clay60,
-                    contentColor = Green10,
-                    size = 36
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Clay60)
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Nexora Intelligence",
-                    style = MaterialTheme.typography.labelLarge,
+                    text = "NEXORA INTELLIGENCE",
+                    style = MaterialTheme.typography.labelSmall,
                     color = Clay60,
                     letterSpacing = 1.sp
                 )
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
             
             Text(
                 text = action.title,
@@ -209,14 +186,16 @@ fun ProposedActionCard(
                 color = Color.White
             )
             
+            Spacer(modifier = Modifier.height(6.dp))
+            
             Text(
                 text = action.description,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = Color.White.copy(alpha = 0.65f),
                 lineHeight = 22.sp
             )
             
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             
             val confirmLabel = when (action.type) {
                 AiActionType.CREATE_TASK -> "Create Task"
@@ -229,23 +208,28 @@ fun ProposedActionCard(
                 else -> "Confirm Action"
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = onConfirm,
                     modifier = Modifier.weight(1.3f),
                     colors = ButtonDefaults.buttonColors(containerColor = Clay60, contentColor = Green10),
                     shape = NexoraShapes.medium,
-                    contentPadding = PaddingValues(vertical = 14.dp)
+                    contentPadding = PaddingValues(vertical = 13.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
-                    Text(confirmLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text(confirmLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 }
                 
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.08f),
+                        contentColor = Color.White.copy(alpha = 0.7f)
+                    ),
                     shape = NexoraShapes.medium,
-                    contentPadding = PaddingValues(vertical = 14.dp)
+                    contentPadding = PaddingValues(vertical = 13.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text("Cancel", style = MaterialTheme.typography.labelLarge)
                 }
