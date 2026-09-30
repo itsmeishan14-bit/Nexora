@@ -112,6 +112,15 @@ open class AiActionExecutor(
                 val task = repository.getTaskById(taskId)
                 if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists after deletion.")
             }
+            AiActionType.RESCHEDULE_TASK -> {
+                val taskId = action.taskId ?: return executionResult
+                val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Verification failed: Task lost after rescheduling.")
+                val expectedPriority = action.parameters["priority"] as? String
+                if (expectedPriority != null && task.priority.name != expectedPriority) {
+                    return AiActionResult(false, "Verification failed: Rescheduled priority mismatch. Expected $expectedPriority but found ${task.priority.name}")
+                }
+                executionResult
+            }
             AiActionType.CREATE_GOAL -> {
                 val goalId = executionResult.affectedGoalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
@@ -254,12 +263,36 @@ open class AiActionExecutor(
     }
 
     private suspend fun rescheduleTask(repository: NexoraRepository, action: AiAction): AiActionResult {
-        val taskId = action.taskId
-        if (taskId != null) {
-            val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
-            return AiActionResult(true, "Task rescheduled: ${task.title}", affectedTaskId = taskId)
+        val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing for rescheduling.")
+        val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
+
+        val newPriorityStr = action.parameters["priority"] as? String
+        val newDuration = action.parameters["duration"] as? String
+
+        if (newPriorityStr != null || newDuration != null) {
+            val newPriority = newPriorityStr?.let {
+                try { TaskPriority.valueOf(it) } catch (e: Exception) { null }
+            } ?: task.priority
+            
+            val updated = task.copy(
+                priority = newPriority,
+                duration = newDuration ?: task.duration
+            )
+            repository.updateTask(updated)
+            return AiActionResult(
+                success = true,
+                message = "Rescheduled \"${task.title}\" by updating priority to $newPriority.",
+                affectedTaskId = taskId
+            )
         }
-        return AiActionResult(true, "Task rescheduled: ${action.title}")
+
+        // If no priority or duration parameter was provided to reschedule the workload, return a truthful non-success result
+        return AiActionResult(
+            success = false,
+            message = "Rescheduling is proposal-only: tasks in Nexora do not store calendar dates. Specify a new priority or duration to reschedule.",
+            affectedTaskId = taskId,
+            error = "Persistent calendar date property not present on TaskEntity"
+        )
     }
 
     private suspend fun createGoal(repository: NexoraRepository, action: AiAction): AiActionResult {

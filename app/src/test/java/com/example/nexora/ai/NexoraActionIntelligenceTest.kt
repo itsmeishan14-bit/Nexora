@@ -209,4 +209,40 @@ class NexoraActionIntelligenceTest {
         assertEquals(EvidenceQuality.STRONG, rec.evidenceQuality)
         assertNotNull(rec.suggestedAction)
     }
+
+    @Test
+    fun `test reschedule task with priority parameter mutates DB state and returns success`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 50, title = "Reschedule Target", priority = TaskPriority.HIGH, category = "Work", duration = "60m"))
+
+        val action = AiAction(
+            type = AiActionType.RESCHEDULE_TASK,
+            title = "Reschedule Task",
+            description = "Lower priority to reschedule",
+            taskId = task.id,
+            parameters = mapOf("priority" to "LOW", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertTrue(result.success)
+
+        val updated = repository.getTaskById(task.id)
+        assertEquals(TaskPriority.LOW, updated?.priority)
+    }
+
+    @Test
+    fun `test reschedule task without mutable parameter returns false success protection`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 51, title = "Calendar Reschedule Target", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m"))
+
+        val action = AiAction(
+            type = AiActionType.RESCHEDULE_TASK,
+            title = "Reschedule Task",
+            description = "Move to tomorrow",
+            taskId = task.id,
+            parameters = mapOf("userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertFalse("Reschedule without mutable parameter MUST NOT report fake success", result.success)
+        assertTrue(result.message.contains("proposal-only", ignoreCase = true) || result.message.contains("priority", ignoreCase = true))
+    }
 }
