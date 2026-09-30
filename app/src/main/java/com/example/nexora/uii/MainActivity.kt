@@ -39,8 +39,10 @@ class MainActivity : ComponentActivity() {
                 val repository = remember { NexoraRepository(database) }
 
                 val aiEngine = remember {
+                    val automationSystem = NexoraAutomationSystem()
                     val contextBuilder = AiContextBuilder(repository)
-                    val localProvider = LocalAiProvider()
+                    val localIntentResolver = LocalAiIntentResolver(automationSystem = automationSystem)
+                    val localProvider = LocalAiProvider(intentResolver = localIntentResolver)
                     
                     // Cloud provider configuration (Optional, can be loaded from secure storage)
                     val cloudConfig = CloudAiConfig(
@@ -54,7 +56,7 @@ class MainActivity : ComponentActivity() {
                     )
                     
                     val aiService = LocalNexoraAiService(providerManager = providerManager)
-                    val actionExecutor = AiActionExecutor(repository)
+                    val actionExecutor = AiActionExecutor(repository, automationSystem)
                     val toolRegistry = AiToolRegistry(repository, actionExecutor)
 
                     NexoraAiEngine(
@@ -63,7 +65,8 @@ class MainActivity : ComponentActivity() {
                         providerManager = providerManager,
                         actionExecutor = actionExecutor,
                         toolRegistry = toolRegistry,
-                        repository = repository
+                        repository = repository,
+                        automationSystem = automationSystem
                     )
                 }
 
