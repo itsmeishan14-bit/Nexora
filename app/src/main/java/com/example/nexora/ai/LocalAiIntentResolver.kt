@@ -891,14 +891,12 @@ class LocalAiIntentResolver(
 
     private fun handleToggleAutomation(query: String): AiModelStructuredResponse {
         val rule = automationSystem.findRule(query)
-            ?: automationSystem.getRules().firstOrNull()
             ?: return notFoundResult("I couldn't find a matching automation rule to toggle.")
 
-        val targetState = if (query.contains("disable") || query.contains("turn off")) false else true
-        val updated = automationSystem.toggleRule(rule.id, targetState)
-
-        val statusText = if (updated?.enabled == true) "enabled" else "disabled"
-        val responseText = "Automation \"${rule.name}\" is now $statusText."
+        val q = query.lowercase()
+        val targetState = if (q.contains("disable") || q.contains("turn off") || q.contains("deactivate")) false else true
+        val statusText = if (targetState) "enabled" else "disabled"
+        val responseText = "Automation \"${rule.name}\" will be $statusText."
 
         return AiModelStructuredResponse(
             decision = AiDecision(
@@ -911,7 +909,12 @@ class LocalAiIntentResolver(
                     type = AiActionType.TOGGLE_AUTOMATION,
                     title = "Toggle Automation",
                     description = responseText,
-                    parameters = mapOf("ruleId" to rule.id, "enabled" to (updated?.enabled ?: true)),
+                    parameters = mapOf(
+                        "ruleId" to rule.id,
+                        "ruleName" to rule.name,
+                        "name" to rule.name,
+                        "enabled" to targetState
+                    ),
                     requiresConfirmation = false
                 )
             ),
@@ -937,7 +940,11 @@ class LocalAiIntentResolver(
                     type = AiActionType.DELETE_AUTOMATION,
                     title = "Delete Automation",
                     description = responseText,
-                    parameters = mapOf("ruleId" to rule.id),
+                    parameters = mapOf(
+                        "ruleId" to rule.id,
+                        "ruleName" to rule.name,
+                        "name" to rule.name
+                    ),
                     requiresConfirmation = true
                 )
             ),
@@ -966,18 +973,7 @@ class LocalAiIntentResolver(
             }
         }
 
-        val rule = AiAutomationRule(
-            name = name,
-            description = desc,
-            triggerType = trigger,
-            enabled = true,
-            isStateChanging = isStateChanging,
-            conditionExpression = query
-        )
-
-        automationSystem.addRule(rule)
-
-        val responseText = "I've created and enabled the automation rule: \"$name\" ($desc)."
+        val responseText = "I can create and enable the automation rule: \"$name\" ($desc)."
 
         return AiModelStructuredResponse(
             decision = AiDecision(
@@ -990,7 +986,12 @@ class LocalAiIntentResolver(
                     type = AiActionType.CREATE_AUTOMATION,
                     title = "Create Automation",
                     description = responseText,
-                    parameters = mapOf("name" to name, "description" to desc),
+                    parameters = mapOf(
+                        "name" to name,
+                        "ruleName" to name,
+                        "description" to desc,
+                        "triggerType" to trigger.name
+                    ),
                     requiresConfirmation = false
                 )
             ),

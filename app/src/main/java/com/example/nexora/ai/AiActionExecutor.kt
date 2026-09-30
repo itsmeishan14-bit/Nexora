@@ -376,7 +376,9 @@ open class AiActionExecutor(
     }
 
     private fun createAutomation(action: AiAction): AiActionResult {
-        val name = action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        val name = action.parameters["ruleName"] as? String 
+            ?: action.parameters["name"] as? String 
+            ?: action.parameters["title"] as? String
         if (name.isNullOrBlank()) {
             return AiActionResult(false, "Automation rule name missing.", error = "Rule name missing")
         }
@@ -397,7 +399,10 @@ open class AiActionExecutor(
     }
 
     private fun toggleAutomation(action: AiAction): AiActionResult {
-        val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        val target = action.parameters["ruleId"] as? String 
+            ?: action.parameters["ruleName"] as? String 
+            ?: action.parameters["name"] as? String
+            ?: action.parameters["title"] as? String
         if (target.isNullOrBlank()) {
             return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
         }
@@ -411,7 +416,10 @@ open class AiActionExecutor(
     }
 
     private fun deleteAutomation(action: AiAction): AiActionResult {
-        val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String
+        val target = action.parameters["ruleId"] as? String 
+            ?: action.parameters["ruleName"] as? String 
+            ?: action.parameters["name"] as? String
+            ?: action.parameters["title"] as? String
         if (target.isNullOrBlank()) {
             return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
         }

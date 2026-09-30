@@ -120,8 +120,8 @@ class AdvancedLocalLanguagePipeline {
             // Automations Management
             text.contains(Regex("(?i)\\b(show|list|view|active)\\b")) && text.contains("automation") -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.HIGH
             text.contains(Regex("(?i)\\b(why did|explain|reason for)\\b")) && (text.contains("run") || text.contains("automation") || text.contains("trigger")) -> AiDecisionType.EXPLAIN_AUTOMATION to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(turn off|disable|enable|turn on|toggle)\\b")) && (text.contains("automation") || text.contains("rule") || text.contains("manager") || text.contains("guard") || text.contains("assistant")) -> AiDecisionType.TOGGLE_AUTOMATION to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(delete|remove)\\b")) && text.contains("automation") -> AiDecisionType.DELETE_AUTOMATION to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(turn off|disable|enable|turn on|toggle)\\b")) && (text.contains("automation") || text.contains("rule") || (!text.contains("task") && (text.contains("manager") || text.contains("guard") || text.contains("assistant") || text.contains("sentinel") || text.contains("detector") || text.contains("monitor")))) -> AiDecisionType.TOGGLE_AUTOMATION to AiConfidence.HIGH
+            text.contains(Regex("(?i)\\b(delete|remove)\\b")) && (text.contains("automation") || text.contains("rule") || (!text.contains("task") && (text.contains("manager") || text.contains("guard") || text.contains("assistant") || text.contains("sentinel") || text.contains("detector") || text.contains("monitor")))) -> AiDecisionType.DELETE_AUTOMATION to AiConfidence.HIGH
             text.contains(Regex("(?i)\\b(every morning|when i finish|if i carry|when my workload|when a goal|create automation)\\b")) -> AiDecisionType.CREATE_AUTOMATION to AiConfidence.HIGH
 
             // Task Actions

@@ -210,7 +210,12 @@ class NexoraAutomationSystem {
     }
 
     fun deleteRule(idOrName: String): Boolean {
-        val removed = rules.removeAll { it.id == idOrName || it.name.equals(idOrName, ignoreCase = true) }
+        val clean = idOrName.trim().removeSuffix(".")
+        val removed = rules.removeAll { 
+            it.id.equals(clean, ignoreCase = true) || 
+            it.name.equals(clean, ignoreCase = true) ||
+            (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
+        }
         if (removed) {
             NexoraLogger.d("AUTOMATION", "Deleted rule: $idOrName")
         }
@@ -218,7 +223,12 @@ class NexoraAutomationSystem {
     }
 
     fun toggleRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? {
-        val index = rules.indexOfFirst { it.id == idOrName || it.name.contains(idOrName, ignoreCase = true) }
+        val clean = idOrName.trim().removeSuffix(".")
+        val index = rules.indexOfFirst { 
+            it.id.equals(clean, ignoreCase = true) || 
+            it.name.equals(clean, ignoreCase = true) ||
+            (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
+        }
         if (index != -1) {
             val existing = rules[index]
             val newEnabled = enabled ?: !existing.enabled
@@ -240,7 +250,22 @@ class NexoraAutomationSystem {
 
     fun findRule(query: String): AiAutomationRule? {
         val q = query.lowercase().trim()
-        return rules.find { it.name.lowercase().contains(q) || it.description.lowercase().contains(q) }
+        val direct = rules.find { 
+            it.id.equals(q, ignoreCase = true) ||
+            it.name.equals(q, ignoreCase = true) ||
+            it.name.lowercase().contains(q) || 
+            q.contains(it.name.lowercase()) ||
+            it.description.lowercase().contains(q) 
+        }
+        if (direct != null) return direct
+
+        val words = q.split(" ", "_", "-", ".").filter { 
+            it.length > 2 && it !in listOf("the", "my", "rule", "automation", "turn", "disable", "enable", "delete", "remove") 
+        }
+        return rules.find { rule ->
+            val ruleWords = rule.name.lowercase().split(" ", "_", "-")
+            words.any { w -> ruleWords.any { rw -> rw.contains(w) || w.contains(rw) } }
+        }
     }
 
     fun explainLastRun(query: String? = null): String {

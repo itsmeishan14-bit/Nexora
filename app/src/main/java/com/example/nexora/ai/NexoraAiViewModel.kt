@@ -121,6 +121,14 @@ class NexoraAiViewModel(
         loadAutomationRules()
     }
 
+    fun deleteAutomationRule(idOrName: String): Boolean {
+        val deleted = engine.deleteAutomationRule(idOrName)
+        if (deleted) {
+            loadAutomationRules()
+        }
+        return deleted
+    }
+
     fun analyze() {
         if (_uiState.value.isLoading) return
 
