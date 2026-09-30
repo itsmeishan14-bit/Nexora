@@ -7,7 +7,7 @@ import com.example.nexora.uii.NexoraGoal
 /**
  * A repository that keeps data in memory for deterministic evaluation.
  */
-class MockNexoraRepository : NexoraRepository(null) {
+open class MockNexoraRepository : NexoraRepository(null) {
     private val tasks = mutableListOf<PremiumTask>()
     private val goals = mutableListOf<NexoraGoal>()
     private val memories = mutableListOf<com.example.nexora.ai.AiMemoryItem>()
@@ -99,6 +99,76 @@ class MockNexoraRepository : NexoraRepository(null) {
 
     override suspend fun clearAllMemory() {
         memories.clear()
+    }
+
+    // ─────────────────────────────────────
+    // AUTOMATIONS (MOCK)
+    // ─────────────────────────────────────
+
+    private val automationRules = mutableListOf<com.example.nexora.ai.AiAutomationRule>()
+    private val automationExecutions = mutableListOf<com.example.nexora.ai.AutomationExecutionRecord>()
+
+    override fun observeAutomationRules(): kotlinx.coroutines.flow.Flow<List<com.example.nexora.ai.AiAutomationRule>> {
+        return kotlinx.coroutines.flow.flowOf(automationRules.toList())
+    }
+
+    override suspend fun getAutomationRules(): List<com.example.nexora.ai.AiAutomationRule> {
+        return automationRules.toList()
+    }
+
+    override suspend fun getAutomationRule(idOrName: String): com.example.nexora.ai.AiAutomationRule? {
+        val clean = idOrName.trim().removeSuffix(".")
+        return automationRules.find { 
+            it.id.equals(clean, ignoreCase = true) || 
+            it.name.equals(clean, ignoreCase = true) 
+        }
+    }
+
+    override suspend fun insertAutomationRule(rule: com.example.nexora.ai.AiAutomationRule): Boolean {
+        if (automationRules.any { it.name.equals(rule.name, ignoreCase = true) }) {
+            return false // duplicate name
+        }
+        automationRules.add(rule)
+        return true
+    }
+
+    override suspend fun updateAutomationRule(rule: com.example.nexora.ai.AiAutomationRule): Boolean {
+        val index = automationRules.indexOfFirst { it.id == rule.id }
+        if (index >= 0) {
+            automationRules[index] = rule
+            return true
+        }
+        return false
+    }
+
+    override suspend fun deleteAutomationRule(idOrName: String): Boolean {
+        val clean = idOrName.trim().removeSuffix(".")
+        return automationRules.removeAll { 
+            it.id.equals(clean, ignoreCase = true) || 
+            it.name.equals(clean, ignoreCase = true) 
+        }
+    }
+
+    override suspend fun deleteAllAutomationRules() {
+        automationRules.clear()
+    }
+
+    override suspend fun insertAutomationExecution(record: com.example.nexora.ai.AutomationExecutionRecord) {
+        automationExecutions.add(record)
+    }
+
+    override fun observeAutomationExecutions(limit: Int): kotlinx.coroutines.flow.Flow<List<com.example.nexora.ai.AutomationExecutionRecord>> {
+        return kotlinx.coroutines.flow.flowOf(automationExecutions.takeLast(limit).reversed())
+    }
+
+    override suspend fun getRecentAutomationExecutions(limit: Int): List<com.example.nexora.ai.AutomationExecutionRecord> {
+        return automationExecutions.takeLast(limit).reversed()
+    }
+
+    override suspend fun trimAutomationExecutions(keepCount: Int) {
+        while (automationExecutions.size > keepCount) {
+            automationExecutions.removeAt(0)
+        }
     }
 
     // Initialize with data

@@ -45,6 +45,10 @@ class NexoraAiEngine(
         return result
     }
 
+    fun observeAutomationRules(): kotlinx.coroutines.flow.Flow<List<AiAutomationRule>> {
+        return brain.observeAutomationRules()
+    }
+
     fun getAutomationRules(): List<AiAutomationRule> {
         return brain.getAutomationRules()
     }

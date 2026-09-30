@@ -12,6 +12,10 @@ import com.example.nexora.ai.AiRecommendationHistory
 import com.example.nexora.ai.AiRecommendationType
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
+import com.example.nexora.ai.AiActionType
+import com.example.nexora.ai.AiAutomationRule
+import com.example.nexora.ai.AutomationExecutionRecord
+import com.example.nexora.ai.AutomationTriggerType
 import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -25,6 +29,7 @@ open class NexoraRepository(
     private val goalDao = database?.goalDao()
     private val dailyProgressDao = database?.dailyProgressDao()
     private val aiLearningDao = database?.aiLearningDao()
+    private val aiAutomationDao = database?.aiAutomationDao()
 
     // ─────────────────────────────────────
     // TASKS
@@ -417,5 +422,140 @@ open class NexoraRepository(
 
     open suspend fun clearAllMemory() {
         aiMemoryDao?.deleteAllMemory()
+    }
+
+    // ─────────────────────────────────────
+    // AUTOMATIONS
+    // ─────────────────────────────────────
+
+    open fun observeAutomationRules(): Flow<List<AiAutomationRule>> {
+        val dao = aiAutomationDao ?: return flowOf(emptyList())
+        return dao.observeAllRules().map { entities ->
+            entities.map { mapAutomationRuleEntityToDomain(it) }
+        }
+    }
+
+    open suspend fun getAutomationRules(): List<AiAutomationRule> {
+        val dao = aiAutomationDao ?: return emptyList()
+        return dao.getAllRulesOnce().map { mapAutomationRuleEntityToDomain(it) }
+    }
+
+    open suspend fun getAutomationRule(idOrName: String): AiAutomationRule? {
+        val dao = aiAutomationDao ?: return null
+        val byId = dao.getRuleById(idOrName)
+        if (byId != null) return mapAutomationRuleEntityToDomain(byId)
+        return dao.getRuleByName(idOrName)?.let { mapAutomationRuleEntityToDomain(it) }
+    }
+
+    open suspend fun insertAutomationRule(rule: AiAutomationRule): Boolean {
+        val dao = aiAutomationDao ?: return false
+        val entity = mapAutomationRuleDomainToEntity(rule)
+        dao.insertRule(entity)
+        return true
+    }
+
+    open suspend fun updateAutomationRule(rule: AiAutomationRule): Boolean {
+        val dao = aiAutomationDao ?: return false
+        val entity = mapAutomationRuleDomainToEntity(rule)
+        dao.updateRule(entity)
+        return true
+    }
+
+    open suspend fun deleteAutomationRule(idOrName: String): Boolean {
+        val dao = aiAutomationDao ?: return false
+        val existing = getAutomationRule(idOrName) ?: return false
+        dao.deleteRuleById(existing.id)
+        return true
+    }
+
+    open suspend fun deleteAllAutomationRules() {
+        aiAutomationDao?.deleteAllRules()
+    }
+
+    open suspend fun insertAutomationExecution(record: AutomationExecutionRecord) {
+        val dao = aiAutomationDao ?: return
+        dao.insertExecution(mapAutomationExecutionDomainToEntity(record))
+    }
+
+    open fun observeAutomationExecutions(limit: Int = 50): Flow<List<AutomationExecutionRecord>> {
+        val dao = aiAutomationDao ?: return flowOf(emptyList())
+        return dao.observeRecentExecutions(limit).map { entities ->
+            entities.map { mapAutomationExecutionEntityToDomain(it) }
+        }
+    }
+
+    open suspend fun getRecentAutomationExecutions(limit: Int = 50): List<AutomationExecutionRecord> {
+        val dao = aiAutomationDao ?: return emptyList()
+        return dao.getRecentExecutionsOnce(limit).map { mapAutomationExecutionEntityToDomain(it) }
+    }
+
+    open suspend fun trimAutomationExecutions(keepCount: Int = 50) {
+        aiAutomationDao?.trimExecutions(keepCount)
+    }
+
+    private fun mapAutomationRuleEntityToDomain(entity: AiAutomationRuleEntity): AiAutomationRule {
+        return AiAutomationRule(
+            id = entity.id,
+            name = entity.name,
+            description = entity.description,
+            triggerType = try { AutomationTriggerType.valueOf(entity.triggerType) } catch (e: Exception) { AutomationTriggerType.DAY_STARTED },
+            enabled = entity.enabled,
+            cooldownMillis = entity.cooldownMillis,
+            lastTriggeredAt = entity.lastTriggeredAt,
+            lastTriggeredFingerprint = entity.lastTriggeredFingerprint,
+            isStateChanging = entity.isStateChanging,
+            targetActionType = entity.targetActionType?.let { try { AiActionType.valueOf(it) } catch (e: Exception) { null } },
+            conditionExpression = entity.conditionExpression,
+            lastRunReason = entity.lastRunReason,
+            runCount = entity.runCount,
+            createdAt = entity.createdAt
+        )
+    }
+
+    private fun mapAutomationRuleDomainToEntity(rule: AiAutomationRule): AiAutomationRuleEntity {
+        return AiAutomationRuleEntity(
+            id = rule.id,
+            name = rule.name,
+            description = rule.description,
+            triggerType = rule.triggerType.name,
+            enabled = rule.enabled,
+            cooldownMillis = rule.cooldownMillis,
+            lastTriggeredAt = rule.lastTriggeredAt,
+            lastTriggeredFingerprint = rule.lastTriggeredFingerprint,
+            isStateChanging = rule.isStateChanging,
+            targetActionType = rule.targetActionType?.name,
+            conditionExpression = rule.conditionExpression,
+            lastRunReason = rule.lastRunReason,
+            runCount = rule.runCount,
+            createdAt = rule.createdAt
+        )
+    }
+
+    private fun mapAutomationExecutionEntityToDomain(entity: AutomationExecutionEntity): AutomationExecutionRecord {
+        return AutomationExecutionRecord(
+            id = entity.id,
+            ruleId = entity.ruleId,
+            ruleName = entity.ruleName,
+            timestamp = entity.timestamp,
+            triggerType = try { AutomationTriggerType.valueOf(entity.triggerType) } catch (e: Exception) { AutomationTriggerType.DAY_STARTED },
+            conditionMatched = entity.conditionMatched,
+            evidence = entity.evidence,
+            actionTaken = entity.actionTaken,
+            success = entity.success
+        )
+    }
+
+    private fun mapAutomationExecutionDomainToEntity(record: AutomationExecutionRecord): AutomationExecutionEntity {
+        return AutomationExecutionEntity(
+            id = record.id,
+            ruleId = record.ruleId,
+            ruleName = record.ruleName,
+            timestamp = record.timestamp,
+            triggerType = record.triggerType.name,
+            conditionMatched = record.conditionMatched,
+            evidence = record.evidence,
+            actionTaken = record.actionTaken,
+            success = record.success
+        )
     }
 }

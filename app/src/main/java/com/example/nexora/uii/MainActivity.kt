@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
                 val repository = remember { NexoraRepository(database) }
 
                 val aiEngine = remember {
-                    val automationSystem = NexoraAutomationSystem()
+                    val automationSystem = NexoraAutomationSystem(repository)
                     val contextBuilder = AiContextBuilder(repository)
                     val localIntentResolver = LocalAiIntentResolver(automationSystem = automationSystem)
                     val localProvider = LocalAiProvider(intentResolver = localIntentResolver)

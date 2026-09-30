@@ -49,6 +49,11 @@ class NexoraAiViewModel(
         analyze()
         loadAutomationRules()
         loadInitialHomeState()
+        viewModelScope.launch {
+            engine.observeAutomationRules().collect { rules ->
+                _uiState.value = _uiState.value.copy(automationRules = rules)
+            }
+        }
     }
 
     private fun loadInitialHomeState() {

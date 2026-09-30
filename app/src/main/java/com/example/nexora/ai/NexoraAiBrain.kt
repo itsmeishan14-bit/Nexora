@@ -120,6 +120,8 @@ class NexoraAiBrain(
         return automationSystem.evaluateTriggers(trigger, context)
     }
 
+    fun observeAutomationRules(): kotlinx.coroutines.flow.Flow<List<AiAutomationRule>> = automationSystem.observeRules()
+
     fun getAutomationRules(): List<AiAutomationRule> = automationSystem.getRules()
 
     fun updateAutomationRule(rule: AiAutomationRule) {

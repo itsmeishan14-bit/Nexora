@@ -8,6 +8,8 @@ import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 
+import androidx.sqlite.execSQL
+
 @Database(
     entities = [
         TaskEntity::class,
@@ -17,8 +19,10 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
         AiOutcomeEntity::class,
         AiEvaluationEntity::class,
         AiMemoryEntity::class,
+        AiAutomationRuleEntity::class,
+        AutomationExecutionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class NexoraDatabase : RoomDatabase() {
@@ -33,6 +37,8 @@ abstract class NexoraDatabase : RoomDatabase() {
 
     abstract fun aiMemoryDao(): AiMemoryDao
 
+    abstract fun aiAutomationDao(): AiAutomationDao
+
     companion object {
 
         @Volatile
@@ -40,16 +46,54 @@ abstract class NexoraDatabase : RoomDatabase() {
 
         /**
          * Migration from version 2 to 3.
-         * 
-         * This migration preserves data in all core and AI-related tables.
-         * If schema changes (columns added/renamed) were made between v2 and v3,
-         * they should be executed here using connection.execSQL(...).
          */
         private val MIGRATION_2_3 = Migration(2, 3) { connection: SQLiteConnection ->
-            // Implementation note: SQLite preserves data by default during migrations.
-            // We only need to execute SQL if columns or tables were added/modified.
-            // For version 2 -> 3, we ensure the schema is updated while keeping
-            // existing user tasks, goals, and AI context/memory.
+            // Schema updated between v2 and v3
+        }
+
+        /**
+         * Migration from version 3 to 4.
+         * Creates persistent tables for AI automation rules and execution records.
+         * All existing task, goal, progress, and learning data is preserved.
+         */
+        private val MIGRATION_3_4 = Migration(3, 4) { connection: SQLiteConnection ->
+            connection.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_automation_rule` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `description` TEXT NOT NULL,
+                    `triggerType` TEXT NOT NULL,
+                    `enabled` INTEGER NOT NULL,
+                    `cooldownMillis` INTEGER NOT NULL,
+                    `lastTriggeredAt` INTEGER NOT NULL,
+                    `lastTriggeredFingerprint` TEXT,
+                    `isStateChanging` INTEGER NOT NULL,
+                    `targetActionType` TEXT,
+                    `conditionExpression` TEXT,
+                    `lastRunReason` TEXT,
+                    `runCount` INTEGER NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            connection.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `automation_execution_record` (
+                    `id` TEXT NOT NULL,
+                    `ruleId` TEXT NOT NULL,
+                    `ruleName` TEXT NOT NULL,
+                    `timestamp` INTEGER NOT NULL,
+                    `triggerType` TEXT NOT NULL,
+                    `conditionMatched` TEXT NOT NULL,
+                    `evidence` TEXT NOT NULL,
+                    `actionTaken` TEXT NOT NULL,
+                    `success` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
         }
 
         fun getDatabase(context: Context): NexoraDatabase {
@@ -66,7 +110,7 @@ abstract class NexoraDatabase : RoomDatabase() {
                         )
                         .addMigrations(
                             MIGRATION_2_3,
-                            // Add future migrations here (e.g., MIGRATION_3_4)
+                            MIGRATION_3_4
                         )
                         .build()
 
