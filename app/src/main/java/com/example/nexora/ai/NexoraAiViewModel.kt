@@ -2,9 +2,11 @@ package com.example.nexora.ai
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -115,23 +117,30 @@ class NexoraAiViewModel(
     }
 
     fun loadAutomationRules() {
-        _uiState.value = _uiState.value.copy(
-            automationRules = engine.getAutomationRules()
-        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val rules = engine.getAutomationRules()
+            _uiState.update { it.copy(automationRules = rules) }
+        }
     }
 
     fun toggleAutomationRule(rule: AiAutomationRule) {
-        val updated = rule.copy(enabled = !rule.enabled)
-        engine.updateAutomationRule(updated)
-        loadAutomationRules()
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = rule.copy(enabled = !rule.enabled)
+            engine.updateAutomationRule(updated)
+            val rules = engine.getAutomationRules()
+            _uiState.update { it.copy(automationRules = rules) }
+        }
     }
 
     fun deleteAutomationRule(idOrName: String): Boolean {
-        val deleted = engine.deleteAutomationRule(idOrName)
-        if (deleted) {
-            loadAutomationRules()
+        viewModelScope.launch(Dispatchers.IO) {
+            val deleted = engine.deleteAutomationRule(idOrName)
+            if (deleted) {
+                val rules = engine.getAutomationRules()
+                _uiState.update { it.copy(automationRules = rules) }
+            }
         }
-        return deleted
+        return true
     }
 
     fun analyze() {

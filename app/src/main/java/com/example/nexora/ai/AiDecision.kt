@@ -32,6 +32,7 @@ enum class AiDecisionType {
     PREDICT_TASK_RISK,
     PREDICT_WORKLOAD,
     PREDICT_PRODUCTIVITY,
+    EXPLANATION,
     NO_ACTION
 }
 

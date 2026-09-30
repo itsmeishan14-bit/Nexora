@@ -67,9 +67,26 @@ class AiMemoryRetriever(
             else -> 0
         }
 
-        // 3. Keyword matching in user message if available
-        request.userMessage?.lowercase()?.let { msg ->
-            if (memory.title.lowercase().contains(msg) || memory.content.lowercase().contains(msg)) score += 15
+        // 3. Semantic / keyword matching in user message if available
+        val msg = request.userMessage?.lowercase()?.trim()
+        if (msg != null) {
+            val stopWords = setOf(
+                "what", "this", "that", "with", "have", "from", "your", "about", 
+                "could", "would", "should", "doing", "please", "tell", "which", "there"
+            )
+            val queryWords = msg.split(Regex("[^a-zA-Z0-9]+")).filter { it.length > 3 && it !in stopWords }
+            val memContent = "${memory.title} ${memory.content}".lowercase()
+            
+            val matches = queryWords.count { memContent.contains(it) }
+            if (matches > 0) {
+                score += matches * 25
+            } else if (request.type == AiRequestType.CHAT && request.taskId == null && request.goalId == null) {
+                val isExplicitMemoryQuery = msg.contains(Regex("\\b(remember|history|pattern|behavior|memory|observations|learned)\\b"))
+                if (!isExplicitMemoryQuery) {
+                    // Chat query unrelated to this memory item; do not inject unrelated memory
+                    return 0
+                }
+            }
         }
 
         // 4. Recency (Decay)

@@ -16,7 +16,9 @@ object AiEvaluationSuite {
     fun getAllCases(): List<AiEvaluationCase> {
         return getConversationalCases() +
                getIntentCases() + 
+               getAdversarialCases() +
                getEntityCases() + 
+               getTemporalCases() +
                getRecommendationCases() + 
                getPlanningCases() + 
                getProactiveCases() + 
@@ -109,6 +111,110 @@ object AiEvaluationSuite {
             category = EvaluationCategory.INTENT_RECOGNITION,
             userInput = "Why am I falling behind?",
             expectedDecisionType = AiDecisionType.SHOW_INSIGHT
+        ),
+        AiEvaluationCase(
+            caseId = "INT-007",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What is goal decomposition?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "INT-008",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Explain goal decomposition.",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "INT-009",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Decompose my Java goal.",
+            expectedDecisionType = AiDecisionType.DECOMPOSE_GOAL,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "INT-010",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "How is my Java goal doing?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "INT-011",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Delete my Java goal.",
+            expectedDecisionType = AiDecisionType.DELETE_GOAL,
+            expectedResponseType = AiResponseType.ACTION_PROPOSAL,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "INT-012",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Will I finish my Java goal?",
+            expectedDecisionType = AiDecisionType.PREDICT_GOAL,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "INT-013",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What did I accomplish yesterday?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "INT-014",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Every morning prepare my plan.",
+            expectedDecisionType = AiDecisionType.CREATE_AUTOMATION,
+            expectedResponseType = AiResponseType.ACTION_PROPOSAL
+        )
+    )
+
+    private fun getAdversarialCases(): List<AiEvaluationCase> = listOf(
+        AiEvaluationCase(
+            caseId = "ADV-001",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What is the role of goal decomposition?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-002",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Can you explain task prioritization?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-003",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Why is goal decomposition useful?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-004",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Should I decompose my Java goal?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-005",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What does my Java goal need?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-006",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Show me my Java goal.",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            testContext = createSimpleGoalContext("Java")
         )
     )
 
@@ -128,6 +234,51 @@ object AiEvaluationSuite {
             expectedDecisionType = AiDecisionType.AMBIGUOUS,
             expectedResponseType = AiResponseType.CLARIFICATION_NEEDED,
             testContext = createAmbiguousTaskContext("Study Java")
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-003",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Complete my Java task",
+            expectedDecisionType = AiDecisionType.COMPLETE_TASK,
+            testContext = createSimpleTaskContext("Java Task")
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-004",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Complete the first task",
+            expectedDecisionType = AiDecisionType.COMPLETE_TASK,
+            testContext = createSimpleTaskContext("First Task")
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-005",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Delete it.",
+            expectedDecisionType = AiDecisionType.CLARIFY,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED
+        )
+    )
+
+    private fun getTemporalCases(): List<AiEvaluationCase> = listOf(
+        AiEvaluationCase(
+            caseId = "TMP-001",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What am I carrying from yesterday?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "TMP-002",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "How productive was I this week?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "TMP-003",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What did I accomplish yesterday?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
         )
     )
 
@@ -195,7 +346,8 @@ object AiEvaluationSuite {
             category = EvaluationCategory.SAFETY,
             userInput = "Delete all my tasks",
             expectedDecisionType = AiDecisionType.DELETE_ALL_TASKS,
-            expectedResponseType = AiResponseType.ACTION_PROPOSAL
+            expectedResponseType = AiResponseType.ACTION_PROPOSAL,
+            testContext = createSimpleTaskContext("Task 1")
         )
     )
 

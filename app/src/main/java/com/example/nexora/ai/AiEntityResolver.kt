@@ -2,6 +2,7 @@ package com.example.nexora.ai
 
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
+import com.example.nexora.uii.TaskPriority
 
 /**
  * Robust local entity resolution for Nexora.
@@ -11,11 +12,61 @@ object AiEntityResolver {
 
     /**
      * Resolves a user query to a specific task.
-     * Prefers exact matches, then prefix matches, then containing matches.
+     * Prefers exact matches, contextual references, then prefix matches, then containing matches.
      */
-    fun resolveTask(query: String, tasks: List<PremiumTask>): ResolutionResult<PremiumTask> {
+    fun resolveTask(
+        query: String, 
+        tasks: List<PremiumTask>,
+        convContext: AiConversationContext? = null
+    ): ResolutionResult<PremiumTask> {
         val cleanQuery = normalize(query)
         val rawCleanQuery = normalizeRaw(query)
+
+        // 1. Contextual Pronouns ("it", "that", "that task", "that one", "the task we discussed")
+        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that task|that one|the task|the task we discussed|this task|this one)\\s*$"))
+        if (isContextualRef) {
+            val lastId = convContext?.lastTaskId
+            if (lastId != null) {
+                val matched = tasks.find { it.id == lastId }
+                if (matched != null) return ResolutionResult.Success(matched, EntityResolutionStatus.EXACT_MATCH)
+            }
+            val lastTitle = convContext?.lastEntityTitle
+            if (!lastTitle.isNullOrBlank()) {
+                val matched = tasks.find { it.title.equals(lastTitle, ignoreCase = true) }
+                if (matched != null) return ResolutionResult.Success(matched, EntityResolutionStatus.EXACT_MATCH)
+            }
+            return ResolutionResult.NotFound()
+        }
+
+        // 2. Natural / Relational References
+        val lowerQuery = query.lowercase().trim()
+        if (lowerQuery.contains("urgent") || lowerQuery.contains("highest priority")) {
+            val urgentIncomplete = tasks.filter { it.priority == TaskPriority.URGENT && !it.completed }
+            if (urgentIncomplete.size == 1) return ResolutionResult.Success(urgentIncomplete.first(), EntityResolutionStatus.EXACT_MATCH)
+            if (urgentIncomplete.size > 1) return ResolutionResult.Ambiguous(urgentIncomplete)
+            
+            val highIncomplete = tasks.filter { it.priority == TaskPriority.HIGH && !it.completed }
+            if (highIncomplete.size == 1) return ResolutionResult.Success(highIncomplete.first(), EntityResolutionStatus.EXACT_MATCH)
+            if (highIncomplete.size > 1) return ResolutionResult.Ambiguous(highIncomplete)
+        }
+
+        if (lowerQuery.contains("first task") || lowerQuery == "the first") {
+            val first = tasks.filter { !it.completed }.firstOrNull()
+            if (first != null) return ResolutionResult.Success(first, EntityResolutionStatus.EXACT_MATCH)
+        }
+
+        if (lowerQuery.contains("carried forward") || lowerQuery.contains("carrying from yesterday")) {
+            val incomplete = tasks.filter { !it.completed }
+            if (incomplete.size == 1) return ResolutionResult.Success(incomplete.first(), EntityResolutionStatus.EXACT_MATCH)
+            if (incomplete.size > 1) return ResolutionResult.Ambiguous(incomplete)
+        }
+
+        if (lowerQuery.contains("completed yesterday") || lowerQuery.contains("completed task")) {
+            val completed = tasks.filter { it.completed }
+            if (completed.size == 1) return ResolutionResult.Success(completed.first(), EntityResolutionStatus.EXACT_MATCH)
+            if (completed.size > 1) return ResolutionResult.Ambiguous(completed)
+        }
+
         if (cleanQuery.isBlank() && rawCleanQuery.isBlank()) return ResolutionResult.NotFound()
 
         val candidates = tasks.map { task ->
@@ -48,9 +99,30 @@ object AiEntityResolver {
     /**
      * Resolves a user query to a specific goal.
      */
-    fun resolveGoal(query: String, goals: List<NexoraGoal>): ResolutionResult<NexoraGoal> {
+    fun resolveGoal(
+        query: String, 
+        goals: List<NexoraGoal>,
+        convContext: AiConversationContext? = null
+    ): ResolutionResult<NexoraGoal> {
         val cleanQuery = normalize(query)
         val rawCleanQuery = normalizeRaw(query)
+
+        // Contextual Pronouns ("that goal", "it", "that one", "the goal we discussed")
+        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that goal|that one|the goal|the goal we discussed|this goal|this one)\\s*$"))
+        if (isContextualRef) {
+            val lastId = convContext?.lastGoalId
+            if (lastId != null) {
+                val matched = goals.find { it.id == lastId }
+                if (matched != null) return ResolutionResult.Success(matched, EntityResolutionStatus.EXACT_MATCH)
+            }
+            val lastTitle = convContext?.lastEntityTitle
+            if (!lastTitle.isNullOrBlank()) {
+                val matched = goals.find { it.title.equals(lastTitle, ignoreCase = true) }
+                if (matched != null) return ResolutionResult.Success(matched, EntityResolutionStatus.EXACT_MATCH)
+            }
+            return ResolutionResult.NotFound()
+        }
+
         if (cleanQuery.isBlank() && rawCleanQuery.isBlank()) return ResolutionResult.NotFound()
 
         val candidates = goals.map { goal ->

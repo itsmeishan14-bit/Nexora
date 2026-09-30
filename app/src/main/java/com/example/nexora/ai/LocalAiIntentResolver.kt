@@ -1,6 +1,9 @@
 package com.example.nexora.ai
 
 import com.example.nexora.uii.TaskPriority
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 class LocalAiIntentResolver(
     private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
@@ -32,10 +35,12 @@ class LocalAiIntentResolver(
             }
             langResult.isCancellation -> handleCancel()
             else -> when (langResult.intent) {
-                AiDecisionType.SHOW_INSIGHT -> handleShowInsight(langResult, context)
+                AiDecisionType.EXPLANATION -> handleExplanation(query, langResult)
+                AiDecisionType.SHOW_INSIGHT -> handleShowInsight(langResult, query, context)
                 AiDecisionType.CREATE_TASK -> handleCreateTask(langResult, context)
                 AiDecisionType.COMPLETE_TASK -> handleCompleteTask(langResult, context)
                 AiDecisionType.DELETE_TASK -> handleDeleteTask(langResult, context)
+                AiDecisionType.DELETE_GOAL -> handleDeleteGoal(langResult, context)
                 AiDecisionType.UPDATE_TASK -> handleUpdateTask(langResult, context)
                 AiDecisionType.CREATE_GOAL -> handleCreateGoal(langResult, context)
                 AiDecisionType.DECOMPOSE_GOAL -> handleDecomposeGoal(langResult, context)
@@ -129,19 +134,196 @@ class LocalAiIntentResolver(
             lastIntent = langResult.intent,
             lastTaskId = response.decision.taskId ?: conversationContext.lastTaskId,
             lastGoalId = response.decision.goalId ?: conversationContext.lastGoalId,
-            lastEntityTitle = langResult.entities["title"]?.toString() ?: conversationContext.lastEntityTitle,
+            lastEntityTitle = response.decision.taskTitle ?: langResult.entities["title"]?.toString() ?: conversationContext.lastEntityTitle,
             activeClarification = langResult.clarificationNeeded,
             pendingAction = response.actions.firstOrNull()?.takeIf { it.requiresConfirmation },
             candidateIds = response.candidateTaskIds.takeIf { it.isNotEmpty() } ?: conversationContext.candidateIds
         )
     }
 
-    private fun handleShowInsight(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
-        val query = langResult.entities["query"]?.toString()?.lowercase() ?: ""
+    private fun handleShowInsight(langResult: AiLanguageResult, query: String, context: AiContext): AiModelStructuredResponse {
+        val q = query.lowercase().trim()
+        val entityQuery = langResult.entities["query"]?.toString()?.lowercase() ?: ""
+
+        // 1. Follow-up conversational reasoning: "why?" / "why is it behind?"
+        if (q == "why" || q == "why?" || q.startsWith("why is it") || q.startsWith("why is that")) {
+            val lastGoalId = conversationContext.lastGoalId
+            if (lastGoalId != null) {
+                val goal = context.goals.find { it.id == lastGoalId }
+                if (goal != null) {
+                    val linkedIncomplete = context.tasks.filter { it.goalTitle == goal.title && !it.completed }
+                    val linkedCompleted = context.tasks.filter { it.goalTitle == goal.title && it.completed }
+                    val daysRemaining = parseTargetDateDaysRemaining(goal.targetDate)
+                    val deadlineMsg = if (daysRemaining != null) " Target date is in $daysRemaining days." else ""
+                    val explanation = "Your \"${goal.title}\" goal is behind because it has had no completed linked tasks recently (${linkedCompleted.size} completed, ${linkedIncomplete.size} pending).$deadlineMsg Progress is currently at ${(goal.progress * 100).toInt()}%."
+                    return AiModelStructuredResponse(
+                        decision = AiDecision(
+                            type = AiDecisionType.SHOW_INSIGHT,
+                            title = "Goal Status: ${goal.title}",
+                            reason = explanation,
+                            goalId = goal.id,
+                            taskTitle = goal.title
+                        ),
+                        textResponse = explanation,
+                        modelName = "local-heuristic"
+                    )
+                }
+            }
+            
+            val lastTaskId = conversationContext.lastTaskId
+            if (lastTaskId != null) {
+                val task = context.tasks.find { it.id == lastTaskId }
+                if (task != null) {
+                    val explanation = "\"${task.title}\" is prioritized based on ${task.priority.name.lowercase()} priority and duration (${task.duration})."
+                    return AiModelStructuredResponse(
+                        decision = AiDecision(
+                            type = AiDecisionType.SHOW_INSIGHT,
+                            title = "Task Reasoning: ${task.title}",
+                            reason = explanation,
+                            taskId = task.id,
+                            taskTitle = task.title
+                        ),
+                        textResponse = explanation,
+                        modelName = "local-heuristic"
+                    )
+                }
+            }
+
+            // General "why am I falling behind"
+            val carried = context.carriedTasks
+            val workload = context.personalContext.workload.state
+            val reason = "You are falling behind because your workload ($workload, ${context.incompleteTasks.size} tasks) exceeds typical capacity, and you have $carried carried-forward tasks."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Workload Assessment",
+                    reason = reason
+                ),
+                textResponse = reason,
+                modelName = "local-heuristic"
+            )
+        }
+
+        // 2. Goal Triage / Falling behind
+        if (q.contains("which goal") && (q.contains("behind") || q.contains("stagnat") || q.contains("risk") || q.contains("least"))) {
+            val activeGoals = context.activeGoals
+            if (activeGoals.isEmpty()) {
+                return notFoundResult("You don't have any active goals configured.")
+            }
+            val behindGoal = activeGoals.minByOrNull { it.progress } ?: activeGoals.first()
+            val text = "Your \"${behindGoal.title}\" goal has received the least recent activity (${(behindGoal.progress * 100).toInt()}% progress)."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Goal Needing Attention",
+                    reason = text,
+                    goalId = behindGoal.id,
+                    taskTitle = behindGoal.title
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        // 3. Specific Goal Inspection ("how is my Java goal doing", "is my Java goal on track", "show my Java goal")
+        if (q.contains("goal") && (q.contains("how is") || q.contains("on track") || q.contains("status") || q.contains("show") || q.contains("view") || q.contains("need") || q.contains("should i"))) {
+            val goalTitle = langResult.entities["title"]?.toString() ?: entityQuery
+            val resolution = AiEntityResolver.resolveGoal(goalTitle, context.goals, conversationContext)
+            if (resolution is ResolutionResult.Success) {
+                val goal = resolution.entity
+                val linked = context.tasks.filter { it.goalTitle == goal.title }
+                val done = linked.count { it.completed }
+                val pending = linked.count { !it.completed }
+                val text = "Goal \"${goal.title}\" is at ${(goal.progress * 100).toInt()}% progress ($done completed tasks, $pending pending). Target date: ${goal.targetDate}."
+                return AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.SHOW_INSIGHT,
+                        title = "Goal: ${goal.title}",
+                        reason = text,
+                        goalId = goal.id,
+                        taskTitle = goal.title
+                    ),
+                    textResponse = text,
+                    modelName = "local-heuristic"
+                )
+            }
+        }
+
+        // 4. Temporal Insights (Yesterday, Carried, Weekly)
+        if (q.contains("yesterday") || q.contains("accomplish")) {
+            val yesterdayStr = java.time.LocalDate.now().minusDays(1).toString()
+            val completedCount = context.completedTasks.size
+            val text = "Yesterday ($yesterdayStr): According to your records, you had $completedCount completed tasks."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Yesterday's Accomplishments",
+                    reason = text
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        if (q.contains("carrying") || q.contains("carried")) {
+            val text = "You have ${context.carriedTasks} task(s) carried forward from yesterday. Resolving the highest-priority carried task first will help clear focus."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Carried Tasks",
+                    reason = text
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        if (q.contains("this week") || q.contains("last week")) {
+            val trend = context.personalContext.productivityTrend.name.lowercase()
+            val text = "This week: You have completed ${context.completedTasks.size} tasks, with ${context.incompleteTasks.size} active tasks remaining and a $trend productivity trend."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Weekly Overview",
+                    reason = text
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        if (q.contains("why am i") || q.contains("falling behind") || q.contains("behind")) {
+            val carried = context.carriedTasks
+            val workload = context.personalContext.workload.state
+            val text = "Based on your recent activity: You have $carried tasks carried forward, and your workload is currently $workload. Focusing on one high-impact task at a time will help you get back on track."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Productivity Insights",
+                    reason = text
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        if (q.contains("remember") || q.contains("memory")) {
+            val text = "I've stored that observation in your active profile to refine future recommendations."
+            return AiModelStructuredResponse(
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Learned Memory",
+                    reason = text
+                ),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
         return when {
-            query.contains("goal") -> listGoals(context)
-            query.contains("productivity") || query.contains("pattern") -> showProductivity(context, AiPlanner())
-            query.contains("progress") -> showProgress(context)
+            q.contains("goal") -> listGoals(context)
+            q.contains("productivity") || q.contains("pattern") -> showProductivity(context, AiPlanner())
+            q.contains("progress") -> showProgress(context)
             else -> listTasks(context)
         }
     }
@@ -231,7 +413,7 @@ class LocalAiIntentResolver(
         }
 
         val title = langResult.entities["title"]?.toString() ?: ""
-        val resolution = AiEntityResolver.resolveTask(title, context.tasks)
+        val resolution = AiEntityResolver.resolveTask(title, context.tasks, conversationContext)
         
         return when (resolution) {
             is ResolutionResult.Success -> {
@@ -280,7 +462,7 @@ class LocalAiIntentResolver(
         val resolution = if (taskId != null) {
             context.tasks.find { it.id == taskId }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
         } else {
-            AiEntityResolver.resolveTask(title, context.tasks)
+            AiEntityResolver.resolveTask(title, context.tasks, conversationContext)
         }
 
         return when (resolution) {
@@ -321,7 +503,7 @@ class LocalAiIntentResolver(
 
     private fun handleDeleteTask(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
         val title = langResult.entities["title"]?.toString() ?: ""
-        val resolution = AiEntityResolver.resolveTask(title, context.tasks)
+        val resolution = AiEntityResolver.resolveTask(title, context.tasks, conversationContext)
         
         return when (resolution) {
             is ResolutionResult.Success -> {
@@ -529,8 +711,13 @@ class LocalAiIntentResolver(
     }
 
     private fun handleDecomposeGoal(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val goalId = langResult.entities["goalId"] as? Long
         val title = langResult.entities["title"]?.toString() ?: ""
-        val resolution = AiEntityResolver.resolveGoal(title, context.goals)
+        val resolution = if (goalId != null) {
+            context.goals.find { it.id == goalId }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
+        } else {
+            AiEntityResolver.resolveGoal(title, context.goals, conversationContext)
+        }
         
         return when (resolution) {
             is ResolutionResult.Success -> {
@@ -540,7 +727,8 @@ class LocalAiIntentResolver(
                         type = AiDecisionType.DECOMPOSE_GOAL,
                         title = "Decompose Goal",
                         reason = "Breaking down ${goal.title} into steps.",
-                        goalId = goal.id
+                        goalId = goal.id,
+                        taskTitle = goal.title
                     ),
                     actions = listOf(
                         AiAction(
@@ -557,6 +745,45 @@ class LocalAiIntentResolver(
             }
             is ResolutionResult.Ambiguous -> ambiguousResult("Which goal should I break down?", resolution.candidates.map { it.id })
             else -> notFoundResult("I couldn't find the goal you want to break down.")
+        }
+    }
+
+    private fun handleDeleteGoal(langResult: AiLanguageResult, context: AiContext): AiModelStructuredResponse {
+        val goalId = langResult.entities["goalId"] as? Long
+        val title = langResult.entities["title"]?.toString() ?: ""
+        val resolution = if (goalId != null) {
+            context.goals.find { it.id == goalId }?.let { ResolutionResult.Success(it) } ?: ResolutionResult.NotFound()
+        } else {
+            AiEntityResolver.resolveGoal(title, context.goals, conversationContext)
+        }
+        
+        return when (resolution) {
+            is ResolutionResult.Success -> {
+                val goal = resolution.entity
+                AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.DELETE_GOAL,
+                        title = "Delete Goal",
+                        reason = "Permanently delete goal \"${goal.title}\"",
+                        goalId = goal.id,
+                        taskTitle = goal.title
+                    ),
+                    actions = listOf(
+                        AiAction(
+                            type = AiActionType.DELETE_GOAL,
+                            title = "Delete Goal",
+                            description = "Are you sure you want to delete goal \"${goal.title}\"?",
+                            goalId = goal.id,
+                            priority = AiPriority.HIGH,
+                            requiresConfirmation = true
+                        )
+                    ),
+                    textResponse = "I found the goal \"${goal.title}\". Do you want me to delete it?",
+                    modelName = "local-heuristic"
+                )
+            }
+            is ResolutionResult.Ambiguous -> ambiguousResult("Multiple goals match \"$title\". Which one should I delete?", resolution.candidates.map { it.id })
+            else -> notFoundResult("I couldn't find a goal matching \"$title\".")
         }
     }
 
@@ -587,7 +814,13 @@ class LocalAiIntentResolver(
         val next = recommendations.find { it.type == AiRecommendationType.NEXT_TASK }
         
         val textResponse = if (next != null) {
-            next.message
+            val task = context.tasks.find { it.id == next.relatedTaskId }
+            val factors = next.evidence.joinToString("; ") { it.evidence }
+            val why = if (factors.isNotBlank()) factors else next.message
+            val goalConn = if (task?.goalTitle != null) " Linked to goal '${task.goalTitle}'." else ""
+            val effort = if (task != null) " Estimated effort: ${task.duration}." else ""
+            
+            "Next recommended task: \"${next.title}\".\nWhy: $why$goalConn$effort"
         } else {
             "You have no urgent tasks. Consider reviewing your goals or planning for tomorrow."
         }
@@ -595,9 +828,10 @@ class LocalAiIntentResolver(
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.START_TASK,
-                title = "Next Task",
-                reason = "Finding your next best step...",
-                taskId = next?.relatedTaskId
+                title = next?.title ?: "Next Task",
+                reason = textResponse,
+                taskId = next?.relatedTaskId,
+                confidence = next?.confidence ?: AiConfidence.MEDIUM
             ),
             textResponse = textResponse,
             modelName = "local-heuristic"
@@ -806,6 +1040,48 @@ class LocalAiIntentResolver(
         )
     }
 
+    private fun handleExplanation(query: String, langResult: AiLanguageResult): AiModelStructuredResponse {
+        val q = query.lowercase().trim()
+        val concept = langResult.entities["concept"]?.toString()?.lowercase() ?: q
+
+        val textResponse = when {
+            concept.contains("goal decomposition") || q.contains("goal decomposition") -> {
+                "Goal decomposition is the process of breaking down a high-level objective into smaller, concrete milestones and actionable tasks. In Nexora, decomposing a goal creates linked sub-tasks so you can make consistent, measurable daily progress without feeling overwhelmed."
+            }
+            concept.contains("task prioritization") || q.contains("prioritization") || q.contains("priority") -> {
+                "Task prioritization is the method of ranking tasks by urgency, impact, and goal alignment. Nexora uses priority tiers (Urgent, High, Medium, Low) to ensure your most critical work is completed first."
+            }
+            concept.contains("time blocking") || q.contains("time block") -> {
+                "Time blocking is a productivity strategy where you schedule dedicated blocks of time for specific tasks or categories, minimizing distractions and eliminating context switching."
+            }
+            concept.contains("carry forward") || q.contains("carrying") -> {
+                "Carrying forward refers to postponing unfinished tasks to the following day. Nexora monitors carry-forward frequency to identify tasks that may be too large or ambiguous and suggest breaking them down."
+            }
+            concept.contains("workload") || concept.contains("capacity") -> {
+                "Workload capacity represents the sustainable number of tasks and focus minutes you can complete in a single day, calibrated from your recent completion history."
+            }
+            concept.contains("eisenhower") -> {
+                "The Eisenhower Matrix categorizes tasks into four quadrants based on urgency and importance: Do first (urgent & important), Schedule (important, not urgent), Delegate (urgent, not important), and Eliminate (neither)."
+            }
+            concept.contains("pomodoro") -> {
+                "The Pomodoro Technique breaks work into intervals, typically 25 minutes of deep focus followed by a 5-minute break, maintaining high focus and preventing cognitive fatigue."
+            }
+            else -> {
+                "Goal decomposition and structured task planning allow you to convert ambitious objectives into manageable daily steps. You can ask Nexora to break down any of your active goals whenever you're ready."
+            }
+        }
+
+        return AiModelStructuredResponse(
+            decision = AiDecision(
+                type = AiDecisionType.EXPLANATION,
+                title = "Concept Explanation",
+                reason = textResponse
+            ),
+            textResponse = textResponse,
+            modelName = "local-heuristic"
+        )
+    }
+
     private fun noAction(query: String, context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
         val textResponse = "I'm here to assist. Try asking me 'What should I do next?', 'Plan my day', or ask me to create or manage a task or goal."
 
@@ -998,6 +1274,17 @@ class LocalAiIntentResolver(
             textResponse = responseText,
             modelName = "local-heuristic"
         )
+    }
+
+    private fun parseTargetDateDaysRemaining(targetDate: String): Long? {
+        return try {
+            val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
+            val date = LocalDate.parse(targetDate, formatter)
+            val today = LocalDate.now()
+            ChronoUnit.DAYS.between(today, date)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)

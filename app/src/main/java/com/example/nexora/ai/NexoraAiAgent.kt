@@ -131,6 +131,13 @@ class NexoraAiAgent(
         val langResult = pipeline.process(msg, context)
         
         return when {
+            // Case: Educational explanation - return immediately with informational explanation
+            langResult.intent == AiDecisionType.EXPLANATION -> {
+                val expl = langResult.entities["explanation"]?.toString() 
+                    ?: "Goal decomposition is the process of breaking high-level goals into smaller, actionable milestones and tasks."
+                AgentReasoning(status = WorkflowStatus.COMPLETED, finalMessage = expl)
+            }
+
             // Case: Clean up / Organize
             msg.lowercase().contains("clean") || msg.lowercase().contains("organize") || msg.lowercase().contains("overload") -> {
                 handleCleanupWorkflow(request, context, workflow)
@@ -485,11 +492,30 @@ class NexoraAiAgent(
     }
 
     private fun buildConfirmationResponse(workflow: AgentWorkflow, step: AgentWorkflowStep, message: String?): AiResponse {
+        val action = mapStepToAction(step)
+        val decisionType = when (action.type) {
+            AiActionType.CREATE_TASK -> AiDecisionType.CREATE_TASK
+            AiActionType.COMPLETE_TASK -> AiDecisionType.COMPLETE_TASK
+            AiActionType.UPDATE_TASK -> AiDecisionType.UPDATE_TASK
+            AiActionType.DELETE_TASK -> AiDecisionType.DELETE_TASK
+            AiActionType.DECOMPOSE_GOAL -> AiDecisionType.DECOMPOSE_GOAL
+            AiActionType.DELETE_GOAL -> AiDecisionType.DELETE_GOAL
+            AiActionType.CREATE_GOAL -> AiDecisionType.CREATE_GOAL
+            AiActionType.RESCHEDULE_TASK -> AiDecisionType.RESCHEDULE_TASK
+            else -> AiDecisionType.CREATE_TASK
+        }
         return AiResponse(
             responseType = AiResponseType.ACTION_PROPOSAL,
             title = "Confirmation Required",
             message = message ?: "I need your approval to proceed with: ${step.description}",
-            proposedActions = listOf(mapStepToAction(step)),
+            proposedActions = listOf(action),
+            decision = AiDecision(
+                type = decisionType,
+                title = "Confirmation Required",
+                reason = message ?: step.description,
+                taskId = action.taskId,
+                goalId = action.goalId
+            ),
             confidence = step.confidence,
             workflow = workflow.copy(status = WorkflowStatus.WAITING_FOR_CONFIRMATION)
         )

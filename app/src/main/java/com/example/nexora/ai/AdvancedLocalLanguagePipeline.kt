@@ -52,6 +52,26 @@ class AdvancedLocalLanguagePipeline {
         // 6. Contextual Resolution (it, the first one, etc.)
         val resolvedEntities = resolveContextualReferences(entities, convContext, context, normalized)
 
+        // 7. Ambiguity and Safety Check: If an action target is completely missing and not in context, ask clarification!
+        if ((intentResult.first == AiDecisionType.DELETE_TASK || intentResult.first == AiDecisionType.DELETE_GOAL || intentResult.first == AiDecisionType.COMPLETE_TASK) &&
+            resolvedEntities["taskId"] == null && resolvedEntities["goalId"] == null &&
+            (resolvedEntities["title"]?.toString().isNullOrBlank() || resolvedEntities["title"] == "It" || resolvedEntities["title"] == "That")
+        ) {
+            val actionName = if (intentResult.first == AiDecisionType.COMPLETE_TASK) "complete" else "delete"
+            val question = "Which task or goal would you like to $actionName?"
+            return AiLanguageResult(
+                intent = AiDecisionType.CLARIFY,
+                confidence = AiConfidence.LOW,
+                clarificationNeeded = AiClarification(
+                    question = question,
+                    intent = intentResult.first,
+                    missingField = "title",
+                    originalQuery = message
+                ),
+                textResponse = question
+            )
+        }
+
         return AiLanguageResult(
             intent = intentResult.first,
             confidence = intentResult.second,
@@ -97,60 +117,160 @@ class AdvancedLocalLanguagePipeline {
     }
 
     private fun detectIntent(text: String): Pair<AiDecisionType, AiConfidence> {
-        return when {
-            // Conversational Intents (Greetings, Thanks, Capability Questions, Goodbye)
-            text.contains(Regex("(?i)\\b(hello|hi|hey|greetings|good morning|good afternoon|good evening)\\b")) -> AiDecisionType.GREETING to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(thanks|thank you|appreciated|awesome|cool|great|perfect)\\b")) -> AiDecisionType.THANKS to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(bye|goodbye|see you|see ya|goodnight)\\b")) -> AiDecisionType.GOODBYE to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(what can you do|who are you|how are you|tell me about yourself|what are your capabilities|features|what do you do)\\b")) -> AiDecisionType.GENERAL_CONVERSATION to AiConfidence.HIGH
+        val lower = text.lowercase().trim()
 
-            // Predictive Intelligence Queries
-            text.contains(Regex("(?i)\\b(will i finish|when will i finish|estimated completion|goal finish|finish my goal|work on for|focus on for)\\b")) -> AiDecisionType.PREDICT_GOAL to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(postpone|delay risk|at risk|task at risk|most likely to postpone|delay)\\b")) && text.contains("task") -> AiDecisionType.PREDICT_TASK_RISK to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(taking on too much|schedule realistic|workload risk|overload risk|too much today|unrealistic)\\b")) -> AiDecisionType.PREDICT_WORKLOAD to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(how productive|productivity trend|completion pace|my pace|accurate|accuracy|calibration|prediction quality)\\b")) -> AiDecisionType.PREDICT_PRODUCTIVITY to AiConfidence.HIGH
+        // 1. BROAD INTENT: EXPLANATION / CONCEPTUAL DEFINITION
+        // Educational queries must NEVER collide with action directives
+        val isExplanation = lower.matches(Regex("(?i)^\\s*(what is|what are|explain|can you explain|what does .+ mean|why is .+ useful|why is .+ important|role of|what is the role of)\\b.*")) ||
+            lower.contains(Regex("(?i)\\b(explain goal decomposition|what is goal decomposition|role of goal decomposition|why is goal decomposition|meaning of goal decomposition)\\b")) ||
+            lower.contains(Regex("(?i)\\b(explain task prioritization|what is task prioritization|role of task prioritization)\\b")) ||
+            lower.contains(Regex("(?i)\\b(explain time blocking|what is time blocking|explain carry forward|what is carry forward)\\b"))
 
-            // Cancel / Stop
-            text.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b")) -> AiDecisionType.CANCEL to AiConfidence.HIGH
-
-            // Bulk Actions (Check these before single actions)
-            text.contains(Regex("(?i)delete|remove|clear")) && text.contains(Regex("(?i)\\b(all|every)\\b")) -> AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
-            text.contains(Regex("(?i)complete|finish|done|checked off|mark")) && text.contains(Regex("(?i)\\b(all|every)\\b")) -> AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
-
-            // Automations Management
-            text.contains(Regex("(?i)\\b(show|list|view|active)\\b")) && text.contains("automation") -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(why did|explain|reason for)\\b")) && (text.contains("run") || text.contains("automation") || text.contains("trigger")) -> AiDecisionType.EXPLAIN_AUTOMATION to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(turn off|disable|enable|turn on|toggle)\\b")) && (text.contains("automation") || text.contains("rule") || (!text.contains("task") && (text.contains("manager") || text.contains("guard") || text.contains("assistant") || text.contains("sentinel") || text.contains("detector") || text.contains("monitor")))) -> AiDecisionType.TOGGLE_AUTOMATION to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(delete|remove)\\b")) && (text.contains("automation") || text.contains("rule") || (!text.contains("task") && (text.contains("manager") || text.contains("guard") || text.contains("assistant") || text.contains("sentinel") || text.contains("detector") || text.contains("monitor")))) -> AiDecisionType.DELETE_AUTOMATION to AiConfidence.HIGH
-            text.contains(Regex("(?i)\\b(every morning|when i finish|if i carry|when my workload|when a goal|create automation)\\b")) -> AiDecisionType.CREATE_AUTOMATION to AiConfidence.HIGH
-
-            // Task Actions
-            text.contains(Regex("(?i)create|add|new|remind")) && text.contains(Regex("(?i)task|todo")) -> AiDecisionType.CREATE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)complete|finish|done|checked off|mark|handled")) -> AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)delete|remove|destroy|trash|clear")) && !text.contains(Regex("(?i)all|every")) -> AiDecisionType.DELETE_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)change|update|edit|priority|rename|modify|set")) -> AiDecisionType.UPDATE_TASK to AiConfidence.MEDIUM
-            
-            // Planning
-            text.contains(Regex("(?i)plan")) && text.contains(Regex("(?i)day|today|schedule")) -> AiDecisionType.DAILY_PLAN to AiConfidence.HIGH
-            text.contains(Regex("(?i)next|focus|do next|do now|what's next")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
-            text.contains(Regex("(?i)break down|decompose|steps|milestones")) -> AiDecisionType.DECOMPOSE_GOAL to AiConfidence.MEDIUM
-            
-            // Goal Actions
-            text.contains(Regex("(?i)create|add|new")) && text.contains("goal") -> AiDecisionType.CREATE_GOAL to AiConfidence.MEDIUM
-            
-            // Analysis & Info
-            text.contains(Regex("(?i)show|list|view|display")) && text.contains("task") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
-            text.contains(Regex("(?i)show|list|view|display")) && text.contains("goal") -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
-            text.contains(Regex("(?i)unfinished|incomplete|pending|to do|todo")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
-            text.contains(Regex("(?i)productivity|pattern|consistency|how am i doing|stats|history")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
-            text.contains(Regex("(?i)clean|organize|overload|messy")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
-            text.contains(Regex("(?i)highest priority|most important|urgent")) -> AiDecisionType.START_TASK to AiConfidence.HIGH
-            
-            // Questions
-            text.contains(Regex("(?i)why|reason|behind|falling behind")) -> AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
-
-            else -> AiDecisionType.NO_ACTION to AiConfidence.LOW
+        if (isExplanation) {
+            return AiDecisionType.EXPLANATION to AiConfidence.HIGH
         }
+
+        // 2. BROAD INTENT: CONVERSATION
+        if (lower.contains(Regex("(?i)\\b(hello|hi|hey|greetings|good morning|good afternoon|good evening)\\b"))) {
+            return AiDecisionType.GREETING to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(thanks|thank you|appreciated|awesome|cool|great|perfect)\\b"))) {
+            return AiDecisionType.THANKS to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(bye|goodbye|see you|see ya|goodnight)\\b"))) {
+            return AiDecisionType.GOODBYE to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(what can you do|who are you|how are you|tell me about yourself|what are your capabilities|features|what do you do)\\b"))) {
+            return AiDecisionType.GENERAL_CONVERSATION to AiConfidence.HIGH
+        }
+
+        // 3. BROAD INTENT: CANCEL
+        if (lower.contains(Regex("(?i)\\bcancel\\b|\\bnever mind\\b|\\bdon't\\b|\\bstop\\b"))) {
+            return AiDecisionType.CANCEL to AiConfidence.HIGH
+        }
+
+        // 4. BROAD INTENT: AUTOMATIONS
+        val isAutomationKeyword = lower.contains("automation") || lower.contains("rule") ||
+            lower.contains("assistant") || lower.contains("workload manager") ||
+            lower.contains("goal progress guard") || lower.contains("conflict detector") ||
+            lower.contains("morning plan")
+        if (isAutomationKeyword) {
+            return when {
+                lower.contains(Regex("(?i)\\b(why did|explain|reason for)\\b")) -> AiDecisionType.EXPLAIN_AUTOMATION to AiConfidence.HIGH
+                lower.contains(Regex("(?i)\\b(turn off|disable|enable|turn on|toggle)\\b")) -> AiDecisionType.TOGGLE_AUTOMATION to AiConfidence.HIGH
+                lower.contains(Regex("(?i)\\b(delete|remove)\\b")) -> AiDecisionType.DELETE_AUTOMATION to AiConfidence.HIGH
+                lower.contains(Regex("(?i)\\b(show|list|view|active)\\b")) -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.HIGH
+                lower.contains(Regex("(?i)\\b(create|add|new)\\b")) -> AiDecisionType.CREATE_AUTOMATION to AiConfidence.HIGH
+                else -> AiDecisionType.LIST_AUTOMATIONS to AiConfidence.MEDIUM
+            }
+        }
+        if (lower.contains(Regex("(?i)\\b(every morning|when i finish|if i carry|when my workload|when a goal)\\b"))) {
+            return AiDecisionType.CREATE_AUTOMATION to AiConfidence.HIGH
+        }
+
+        // 5. BROAD INTENT: PREDICTION
+        if (lower.contains(Regex("(?i)\\b(will i finish|when will i finish|estimated completion|goal finish|finish my goal)\\b"))) {
+            return AiDecisionType.PREDICT_GOAL to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(postpone|delay risk|at risk|task at risk|most likely to postpone|delay)\\b")) && lower.contains("task")) {
+            return AiDecisionType.PREDICT_TASK_RISK to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(taking on too much|schedule realistic|workload risk|overload risk|too much today|unrealistic)\\b"))) {
+            return AiDecisionType.PREDICT_WORKLOAD to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(productivity trend|completion pace|my pace|accurate|accuracy|calibration|prediction quality)\\b")) ||
+            (lower.contains("how productive") && !lower.contains("this week") && !lower.contains("last week") && !lower.contains("yesterday") && !lower.contains("was i"))
+        ) {
+            return AiDecisionType.PREDICT_PRODUCTIVITY to AiConfidence.HIGH
+        }
+
+        // 6. BROAD INTENT: PLANNING
+        if (lower.contains(Regex("(?i)\\bplan\\b")) && lower.contains(Regex("(?i)\\b(day|today|schedule)\\b"))) {
+            return AiDecisionType.DAILY_PLAN to AiConfidence.HIGH
+        }
+
+        // 7. BROAD INTENT: RECOMMENDATION
+        if (lower.contains(Regex("(?i)\\b(next task|what should i do next|what to work on|what's next|what should i focus on|do next|do now|what to do next|which task)\\b")) ||
+            lower.contains(Regex("(?i)\\bhighest priority|most important|urgent\\b")) && !lower.contains("create") && !lower.contains("add")
+        ) {
+            return AiDecisionType.START_TASK to AiConfidence.HIGH
+        }
+
+        // 8. BROAD INTENT: BULK ACTIONS (Checked before single actions)
+        if (lower.contains(Regex("(?i)\\b(delete|remove|clear)\\b")) && 
+            (lower.contains(Regex("(?i)\\b(all|every|everything)\\b")) || lower == "delete all" || lower.startsWith("delete all") || lower.contains("all tasks"))
+        ) {
+            return AiDecisionType.DELETE_ALL_TASKS to AiConfidence.HIGH
+        }
+        if (lower.contains(Regex("(?i)\\b(complete|finish|done|checked off|mark)\\b")) && 
+            (lower.contains(Regex("(?i)\\b(all|every|everything)\\b")) || lower == "complete all" || lower.startsWith("complete all") || lower.contains("all tasks"))
+        ) {
+            return AiDecisionType.COMPLETE_ALL_TASKS to AiConfidence.HIGH
+        }
+
+        // 9. BROAD INTENT: ACTIONS
+        // Goal Decomposition: Directive on a goal
+        val isDecomposeDirective = (lower.contains("break down") || lower.contains("decompose")) && 
+            (lower.contains("goal") || lower.contains("into tasks") || lower.contains("into steps")) &&
+            !lower.startsWith("should i") && !lower.contains("should i decompose")
+        if (isDecomposeDirective) {
+            return AiDecisionType.DECOMPOSE_GOAL to AiConfidence.HIGH
+        }
+
+        // Task Creation
+        if (lower.contains(Regex("(?i)\\b(create|add|new|remind me to)\\b")) && lower.contains(Regex("(?i)\\b(task|todo)\\b"))) {
+            return AiDecisionType.CREATE_TASK to AiConfidence.HIGH
+        }
+
+        // Goal Creation
+        if (lower.contains(Regex("(?i)\\b(create|add|new)\\b")) && lower.contains(Regex("(?i)\\b(goal|objective)\\b"))) {
+            return AiDecisionType.CREATE_GOAL to AiConfidence.HIGH
+        }
+
+        // Complete Task
+        val isCompleteDirective = lower.startsWith("complete ") || lower.startsWith("finish ") || 
+            lower.startsWith("mark ") || lower.contains("as complete") || lower.contains("as done") ||
+            lower.contains(Regex("(?i)\\b(complete|finish|done|checked off)\\b"))
+        if (isCompleteDirective) {
+            return AiDecisionType.COMPLETE_TASK to AiConfidence.HIGH
+        }
+
+        // Delete Task or Goal
+        if (lower.contains(Regex("(?i)\\b(delete|remove|destroy|trash|clear)\\b"))) {
+            return if (lower.contains("goal")) {
+                AiDecisionType.DELETE_GOAL to AiConfidence.HIGH
+            } else {
+                AiDecisionType.DELETE_TASK to AiConfidence.HIGH
+            }
+        }
+
+        // Update Task
+        if (lower.contains(Regex("(?i)\\b(change|update|edit|priority|rename|modify|set)\\b")) && (lower.contains("task") || lower.contains("it"))) {
+            return AiDecisionType.UPDATE_TASK to AiConfidence.MEDIUM
+        }
+
+        // 10. BROAD INTENT: ANALYSIS / INFORMATION / TEMPORAL INSIGHT
+        if (lower.contains(Regex("(?i)\\b(yesterday|accomplish|carrying|this week|last week|progress|stats|history|falling behind|behind|why am i|how am i doing)\\b"))) {
+            return AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+        }
+
+        if (lower.contains(Regex("(?i)\\b(show|list|view|display)\\b"))) {
+            return AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+        }
+
+        if (lower.contains("goal") && (lower.contains("how is") || lower.contains("on track") || lower.contains("status") || lower.contains("falling behind") || lower.contains("need") || lower.contains("should i"))) {
+            return AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+        }
+
+        if (lower.contains(Regex("(?i)\\b(remember|memory|recall)\\b"))) {
+            return AiDecisionType.SHOW_INSIGHT to AiConfidence.MEDIUM
+        }
+
+        if (lower.contains(Regex("(?i)why|reason")) && (lower.contains("behind") || lower.contains("delay") || lower.contains("stagnat"))) {
+            return AiDecisionType.SHOW_INSIGHT to AiConfidence.HIGH
+        }
+
+        return AiDecisionType.NO_ACTION to AiConfidence.LOW
     }
 
     private fun extractEntities(text: String, intent: AiDecisionType): Map<String, Any> {
@@ -172,8 +292,14 @@ class AdvancedLocalLanguagePipeline {
             text.contains("medium priority") -> entities["priority"] = "MEDIUM"
         }
 
-        // Extract Task/Goal Title
+        // Extract Task/Goal/Concept Title
         val rawTitle = when (intent) {
+            AiDecisionType.EXPLANATION -> {
+                text.replace(Regex("(?i)^\\s*(what is the role of|what is|what are|explain to me|can you explain|explain|what does|mean|why is|useful|important|role of)\\s*"), "")
+                    .replace(Regex("(?i)\\b(the|a|an|concept of)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+            }
             AiDecisionType.CREATE_TASK -> {
                 val explicitMatch = Regex("(?i)(?:called|named|title)\\s+[\"']?([^\"']+)[\"']?").find(text)
                 if (explicitMatch != null) {
@@ -199,13 +325,24 @@ class AdvancedLocalLanguagePipeline {
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
+            AiDecisionType.DELETE_GOAL -> {
+                text.replace(Regex("(?i)\\b(delete|remove|destroy|trash|clear|the|my|a|an|goal|objective|it)\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+            }
             AiDecisionType.DECOMPOSE_GOAL -> {
-                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective)\\b"), " ")
+                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps)\\b"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
             AiDecisionType.DELETE_ALL_TASKS, AiDecisionType.COMPLETE_ALL_TASKS -> ""
-            else -> ""
+            else -> {
+                if (text.contains("goal")) {
+                    text.replace(Regex("(?i)\\b(show|how is|is|on track|status|why is|falling behind|my|the|goal|doing|need|should i|decompose)\\b"), " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                } else ""
+            }
         }
         
         val cleanTitle = if (rawTitle.isNotBlank()) rawTitle.replaceFirstChar { it.uppercase() }.trim() else ""

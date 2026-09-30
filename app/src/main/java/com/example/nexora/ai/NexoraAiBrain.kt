@@ -138,10 +138,21 @@ class NexoraAiBrain(
 
     private fun shouldUseAgent(request: AiRequest, context: AiContext): Boolean {
         if (request.type != AiRequestType.CHAT) return false
-        val msg = request.userMessage?.lowercase() ?: ""
+        val msg = request.userMessage?.lowercase()?.trim() ?: ""
         
-        // Predictive or conversational questions should route through chat pipeline, not agent
-        if (msg.contains("will i") || msg.contains("when will i") || msg.contains("can i") || msg.contains("what should i")) {
+        // Never route educational, explanation, or definition queries to the multi-step agent
+        if (msg.startsWith("what is") || msg.startsWith("what are") || msg.startsWith("what does") ||
+            msg.startsWith("explain") || msg.startsWith("why is") || msg.startsWith("tell me about") ||
+            msg.startsWith("define") || msg.startsWith("how does") || msg.startsWith("why does")
+        ) {
+            return false
+        }
+
+        // Predictive, conversational, or advisory questions should route through chat pipeline, not agent
+        if (msg.contains("will i") || msg.contains("when will i") || msg.contains("can i") || 
+            msg.contains("what should i") || msg.contains("should i") || msg.contains("how is my") || 
+            msg.contains("how are my") || msg.contains("show my") || msg.contains("list my")
+        ) {
             return false
         }
 
@@ -198,7 +209,12 @@ class NexoraAiBrain(
                 responseType = AiResponseType.INFORMATION,
                 title = "Nexora Context Analysis",
                 message = statusSummary,
-                confidence = personal.confidence
+                confidence = personal.confidence,
+                decision = AiDecision(
+                    type = AiDecisionType.SHOW_INSIGHT,
+                    title = "Nexora Context Analysis",
+                    reason = statusSummary
+                )
             )
         }
 
@@ -316,7 +332,11 @@ class NexoraAiBrain(
 
         // Add memory insights to the message if relevant
         val memoryInsight = relevantMemory.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN }?.content
-        val baseMessage = llmResponse?.text ?: plan.summary
+        val baseMessage = if (llmResponse != null && !llmResponse.text.startsWith("Task prioritization") && !llmResponse.text.startsWith("Goal decomposition")) {
+            llmResponse.text
+        } else {
+            plan.summary
+        }
         val finalMessage = if (memoryInsight != null) "$baseMessage\n\nNote: $memoryInsight" else baseMessage
 
         val response = AiResponse(
@@ -575,6 +595,7 @@ class NexoraAiBrain(
             AiDecisionType.DECOMPOSE_GOAL -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.DAILY_PLAN -> AiResponseType.PLAN
             AiDecisionType.SHOW_INSIGHT -> AiResponseType.INFORMATION
+            AiDecisionType.EXPLANATION -> AiResponseType.INFORMATION
             AiDecisionType.WARNING -> AiResponseType.WARNING
             AiDecisionType.AMBIGUOUS -> AiResponseType.CLARIFICATION_NEEDED
             AiDecisionType.CLARIFY -> AiResponseType.CLARIFICATION_NEEDED

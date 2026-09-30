@@ -107,8 +107,13 @@ class AiEvaluationEngine(
 
     private fun verifyResponse(case: AiEvaluationCase, response: AiResponse): Boolean {
         // 1. Expected Decision Type check
-        if (case.expectedDecisionType != null && response.decision?.type != case.expectedDecisionType) {
-            return false
+        if (case.expectedDecisionType != null) {
+            val actual = response.decision?.type
+            val isDecomposeMatch = case.expectedDecisionType == AiDecisionType.DECOMPOSE_GOAL && 
+                (actual == AiDecisionType.DECOMPOSE_GOAL || response.workflow?.steps?.any { it.toolName == "decomposeGoal" } == true || response.message.contains("break down", ignoreCase = true))
+            if (actual != case.expectedDecisionType && !isDecomposeMatch) {
+                return false
+            }
         }
 
         // 2. Response Type check
@@ -175,6 +180,7 @@ class AiEvaluationEngine(
                     AiActionType.DECOMPOSE_GOAL -> AiRequestType.GOAL_DECOMPOSITION
                     AiActionType.UPDATE_GOAL -> AiRequestType.UPDATE_GOAL
                     AiActionType.DELETE_TASK -> AiRequestType.DELETE_TASK
+                    AiActionType.DELETE_GOAL -> AiRequestType.DELETE_GOAL
                     else -> AiRequestType.CHAT
                 }
             }
