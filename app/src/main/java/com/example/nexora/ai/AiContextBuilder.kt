@@ -64,7 +64,8 @@ open class AiContextBuilder(
             adaptiveProfile = adaptiveProfile,
             recentOutcomes = recentOutcomes,
             recentEvaluations = recentEvaluations,
-            personalContext = personalContext
+            personalContext = personalContext,
+            history = history
         )
     }
 

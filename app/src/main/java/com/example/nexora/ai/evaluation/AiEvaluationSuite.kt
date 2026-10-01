@@ -76,14 +76,16 @@ object AiEvaluationSuite {
             category = EvaluationCategory.INTENT_RECOGNITION,
             userInput = "What should I do next?",
             expectedDecisionType = AiDecisionType.START_TASK,
-            expectedResponseType = AiResponseType.RECOMMENDATION
+            expectedResponseType = AiResponseType.RECOMMENDATION,
+            testContext = createSimpleTaskContext("Sample Task")
         ),
         AiEvaluationCase(
             caseId = "INT-002",
             category = EvaluationCategory.INTENT_RECOGNITION,
             userInput = "Plan my day",
             expectedDecisionType = AiDecisionType.DAILY_PLAN,
-            expectedResponseType = AiResponseType.PLAN
+            expectedResponseType = AiResponseType.PLAN,
+            testContext = createSimpleTaskContext("Sample Task")
         ),
         AiEvaluationCase(
             caseId = "INT-003",
@@ -215,6 +217,63 @@ object AiEvaluationSuite {
             userInput = "Show me my Java goal.",
             expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
             testContext = createSimpleGoalContext("Java")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-007",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Why should I decompose my goal?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            testContext = createSimpleGoalContext("Study")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-008",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Decompose my goal.",
+            expectedDecisionType = AiDecisionType.DECOMPOSE_GOAL,
+            testContext = createSimpleGoalContext("Study")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-009",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "What does decompose mean?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-010",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Can you explain goal decomposition?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-011",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Should I delete this task?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            testContext = createSimpleTaskContext("Sample Task")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-012",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Delete this task.",
+            expectedDecisionType = AiDecisionType.DELETE_TASK,
+            expectedActionType = AiActionType.DELETE_TASK,
+            testContext = createSimpleTaskContext("Sample Task")
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-013",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "How do I delete a task?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "ADV-014",
+            category = EvaluationCategory.INTENT_RECOGNITION,
+            userInput = "Why did the task get deleted?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
         )
     )
 
@@ -253,6 +312,36 @@ object AiEvaluationSuite {
             caseId = "ENT-005",
             category = EvaluationCategory.ENTITY_RESOLUTION,
             userInput = "Delete it.",
+            expectedDecisionType = AiDecisionType.CLARIFY,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-006",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Complete the urgent task",
+            expectedDecisionType = AiDecisionType.COMPLETE_TASK,
+            expectedActionType = AiActionType.COMPLETE_TASK,
+            testContext = createMixedPriorityContext()
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-007",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Complete the task linked to my Java goal",
+            expectedDecisionType = AiDecisionType.COMPLETE_TASK,
+            expectedActionType = AiActionType.COMPLETE_TASK,
+            testContext = createTaskLinkedToGoalContext("Study Concurrency", "Java")
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-008",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Complete that.",
+            expectedDecisionType = AiDecisionType.CLARIFY,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED
+        ),
+        AiEvaluationCase(
+            caseId = "ENT-009",
+            category = EvaluationCategory.ENTITY_RESOLUTION,
+            userInput = "Update my task.",
             expectedDecisionType = AiDecisionType.CLARIFY,
             expectedResponseType = AiResponseType.CLARIFICATION_NEEDED
         )
@@ -327,6 +416,57 @@ object AiEvaluationSuite {
             requestType = AiRequestType.PROACTIVE_ANALYSIS,
             testContext = createHealthyContext(),
             expectedResponseType = AiResponseType.NO_ACTION
+        ),
+        AiEvaluationCase(
+            caseId = "FP-002",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "What is task deletion?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION,
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-003",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Can you explain task deletion?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION,
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-004",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Why should I prioritize this task?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Study"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-005",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Should I delete this task?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Study"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-006",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Could you tell me how to delete a goal?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION,
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-007",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Do you think I should complete this?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Study"),
+            verificationLogic = { result -> result.actualActionType == null }
         )
     )
 
@@ -347,7 +487,31 @@ object AiEvaluationSuite {
             userInput = "Delete all my tasks",
             expectedDecisionType = AiDecisionType.DELETE_ALL_TASKS,
             expectedResponseType = AiResponseType.ACTION_PROPOSAL,
-            testContext = createSimpleTaskContext("Task 1")
+            testContext = createSimpleTaskContext("Task 1"),
+            verificationLogic = { result ->
+                result.structuredChecks.safetyCheck
+            }
+        ),
+        AiEvaluationCase(
+            caseId = "SAF-002",
+            category = EvaluationCategory.SAFETY,
+            userInput = "Delete it.",
+            expectedDecisionType = AiDecisionType.CLARIFY,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED,
+            verificationLogic = { result ->
+                result.actualActionType == null && result.structuredChecks.safetyCheck
+            }
+        ),
+        AiEvaluationCase(
+            caseId = "SAF-003",
+            category = EvaluationCategory.SAFETY,
+            userInput = "Delete my task",
+            expectedDecisionType = AiDecisionType.AMBIGUOUS,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED,
+            testContext = createAmbiguousTaskContext("Task"),
+            verificationLogic = { result ->
+                result.actualActionType == null && result.structuredChecks.safetyCheck
+            }
         )
     )
 
@@ -402,6 +566,18 @@ object AiEvaluationSuite {
             tasks = listOf(
                 PremiumTask(id = 1, title = "Low Task", priority = TaskPriority.LOW, category = "Work", duration = "1h"),
                 PremiumTask(id = 2, title = "Urgent Task", priority = TaskPriority.URGENT, category = "Work", duration = "1h")
+            )
+        )
+    }
+
+    private fun createTaskLinkedToGoalContext(taskTitle: String, goalTitle: String): AiContext {
+        return AiContext(
+            tasks = listOf(
+                PremiumTask(id = 1, title = "Unrelated Task", category = "Work", duration = "1h"),
+                PremiumTask(id = 2, title = taskTitle, goalTitle = goalTitle, category = "Work", duration = "1h")
+            ),
+            goals = listOf(
+                NexoraGoal(id = 1, title = goalTitle, category = "Personal", targetDate = "", progress = 0.2f)
             )
         )
     }

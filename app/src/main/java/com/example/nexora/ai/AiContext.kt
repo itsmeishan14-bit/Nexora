@@ -15,7 +15,8 @@ data class AiContext(
     val adaptiveProfile: AdaptiveProfile = AdaptiveProfile(),
     val recentOutcomes: List<AiOutcome> = emptyList(),
     val recentEvaluations: List<AiEvaluation> = emptyList(),
-    val personalContext: AiPersonalContext = AiPersonalContext()
+    val personalContext: AiPersonalContext = AiPersonalContext(),
+    val history: List<com.example.nexora.data.DailyProgressEntity> = emptyList()
 ) {
     val incompleteTasks: List<PremiumTask>
         get() = tasks.filter { !it.completed }

@@ -1,6 +1,29 @@
 package com.example.nexora.ai
 
-import java.util.UUID
+import java.time.LocalDate
+
+/**
+ * Temporal scope for natural language date understanding.
+ */
+enum class TemporalScope {
+    TODAY,
+    YESTERDAY,
+    TOMORROW,
+    THIS_WEEK,
+    LAST_WEEK,
+    THIS_MONTH,
+    RECENTLY
+}
+
+/**
+ * Concrete resolved date range for temporal queries.
+ */
+data class TemporalRange(
+    val scope: TemporalScope,
+    val startDate: LocalDate,
+    val endDate: LocalDate,
+    val label: String
+)
 
 /**
  * Lightweight conversational context to support references like "it", "the first one",
@@ -37,7 +60,7 @@ data class AiClarification(
 )
 
 /**
- * Result of the advanced local language pipeline.
+ * Canonical single request interpretation produced by the language understanding pipeline.
  */
 data class AiLanguageResult(
     val intent: AiDecisionType,
@@ -46,5 +69,15 @@ data class AiLanguageResult(
     val textResponse: String? = null,
     val clarificationNeeded: AiClarification? = null,
     val isConfirmation: Boolean = false,
-    val isCancellation: Boolean = false
+    val isCancellation: Boolean = false,
+    val temporalRange: TemporalRange? = null,
+    val requiresMultiStepReasoning: Boolean = false,
+    val requiresMutation: Boolean = false,
+    val requiresClarification: Boolean = false,
+    val targetTaskId: Long? = null,
+    val targetGoalId: Long? = null,
+    val targetTaskTitle: String? = null,
+    val targetGoalTitle: String? = null,
+    val requestedAction: AiActionType? = null
 )
+

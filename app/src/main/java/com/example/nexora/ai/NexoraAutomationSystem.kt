@@ -1,12 +1,14 @@
 package com.example.nexora.ai
 
 import com.example.nexora.data.NexoraRepository
+import com.example.nexora.uii.TaskPriority
 import com.example.nexora.util.NexoraLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -65,43 +67,73 @@ class NexoraAutomationSystem(
         )
     }
 
+    private val persistenceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
     init {
         loadInitialState()
     }
 
+    private fun isMainThread(): Boolean {
+        return try {
+            android.os.Looper.getMainLooper()?.thread == Thread.currentThread()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun loadInitialState() {
         synchronized(rulesLock) {
+            rules.clear()
+            rules.addAll(DEFAULT_RULES)
+            _rulesFlow.value = rules.toList()
+
             if (repository != null) {
-                try {
-                    runBlocking(Dispatchers.IO) {
-                        val existing = repository.getAutomationRules()
-                        if (existing.isEmpty()) {
-                            // Safe initial setup: insert default core rules once
-                            for (defaultRule in DEFAULT_RULES) {
-                                repository.insertAutomationRule(defaultRule)
+                if (isMainThread()) {
+                    // Non-blocking async load on UI thread
+                    persistenceScope.launch {
+                        try {
+                            val existing = repository.getAutomationRules()
+                            val recentLogs = repository.getRecentAutomationExecutions(50)
+                            synchronized(rulesLock) {
+                                if (existing.isNotEmpty()) {
+                                    rules.clear()
+                                    rules.addAll(existing)
+                                }
+                                executionLogs.clear()
+                                executionLogs.addAll(recentLogs.reversed())
+                                _rulesFlow.value = rules.toList()
                             }
-                            rules.clear()
-                            rules.addAll(repository.getAutomationRules())
-                        } else {
-                            // Load existing persisted rules (preserves user automations, custom state, runCounts, and cooldowns)
-                            rules.clear()
-                            rules.addAll(existing)
+                        } catch (e: Exception) {
+                            NexoraLogger.e("AUTOMATION", "Failed to load rules asynchronously", e)
                         }
-                        val recentLogs = repository.getRecentAutomationExecutions(50)
-                        executionLogs.clear()
-                        executionLogs.addAll(recentLogs.reversed())
+                    }
+                } else {
+                    // Synchronous load in test or background thread
+                    try {
+                        runBlocking(Dispatchers.IO) {
+                            val existing = repository.getAutomationRules()
+                            if (existing.isEmpty()) {
+                                for (defaultRule in DEFAULT_RULES) {
+                                    repository.insertAutomationRule(defaultRule)
+                                }
+                                rules.clear()
+                                rules.addAll(repository.getAutomationRules())
+                            } else {
+                                rules.clear()
+                                rules.addAll(existing)
+                            }
+                            val recentLogs = repository.getRecentAutomationExecutions(50)
+                            executionLogs.clear()
+                            executionLogs.addAll(recentLogs.reversed())
+                            _rulesFlow.value = rules.toList()
+                        }
+                    } catch (e: Exception) {
+                        NexoraLogger.e("AUTOMATION", "Failed to load rules from persistent repository, falling back to defaults", e)
+                        rules.clear()
+                        rules.addAll(DEFAULT_RULES)
                         _rulesFlow.value = rules.toList()
                     }
-                } catch (e: Exception) {
-                    NexoraLogger.e("AUTOMATION", "Failed to load rules from persistent repository, falling back to defaults", e)
-                    rules.clear()
-                    rules.addAll(DEFAULT_RULES)
-                    _rulesFlow.value = rules.toList()
                 }
-            } else {
-                rules.clear()
-                rules.addAll(DEFAULT_RULES)
-                _rulesFlow.value = rules.toList()
             }
         }
     }
@@ -266,7 +298,10 @@ class NexoraAutomationSystem(
         context: AiContext,
         trigger: AutomationTriggerType
     ): Boolean {
-        val expr = rule.conditionExpression?.lowercase() ?: ""
+        val expr = rule.conditionExpression?.lowercase()?.trim() ?: ""
+        if (expr.isBlank()) {
+            return true
+        }
         return when {
             expr.contains("workload") || expr.contains("overload") -> {
                 context.incompleteTasks.size > context.adaptiveProfile.preferredDailyWorkload
@@ -277,7 +312,13 @@ class NexoraAutomationSystem(
             expr.contains("goal") -> {
                 context.activeGoals.any { it.progress < 0.2f }
             }
-            else -> true
+            expr.contains("urgent") || expr.contains("conflict") -> {
+                context.incompleteTasks.count { it.priority == TaskPriority.URGENT } >= 2
+            }
+            expr.contains("morning") || expr.contains("daily plan") -> {
+                trigger == AutomationTriggerType.DAY_STARTED
+            }
+            else -> false // FAIL SAFELY: Unknown conditions must never trigger silently!
         }
     }
 
@@ -409,22 +450,12 @@ class NexoraAutomationSystem(
     }
 
     fun explainLastRun(query: String? = null): String {
-        val logs = if (repository != null) {
-            try {
-                runBlocking(Dispatchers.IO) {
-                    repository.getRecentAutomationExecutions(50)
-                }
-            } catch (e: Exception) {
-                synchronized(rulesLock) { executionLogs.toList() }
-            }
-        } else {
-            synchronized(rulesLock) { executionLogs.toList() }
-        }
+        val logs = synchronized(rulesLock) { executionLogs.toList() }
 
         val targetLog = if (!query.isNullOrBlank()) {
             logs.find { it.ruleName.lowercase().contains(query.lowercase()) }
         } else {
-            logs.firstOrNull()
+            logs.lastOrNull()
         }
 
         if (targetLog == null) {

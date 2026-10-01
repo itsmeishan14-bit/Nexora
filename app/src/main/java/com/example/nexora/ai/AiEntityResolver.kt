@@ -22,8 +22,8 @@ object AiEntityResolver {
         val cleanQuery = normalize(query)
         val rawCleanQuery = normalizeRaw(query)
 
-        // 1. Contextual Pronouns ("it", "that", "that task", "that one", "the task we discussed")
-        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that task|that one|the task|the task we discussed|this task|this one)\\s*$"))
+        // 1. Contextual Pronouns & References ("it", "that", "that task", "the previous task", "previous task", "that one", "the task we discussed")
+        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that task|the task|this task|the previous task|previous task|that one|this one|the task we discussed|last task)\\s*$"))
         if (isContextualRef) {
             val lastId = convContext?.lastTaskId
             if (lastId != null) {
@@ -38,7 +38,25 @@ object AiEntityResolver {
             return ResolutionResult.NotFound()
         }
 
-        // 2. Natural / Relational References
+        // 2. Goal-linked task references ("the Java task", "the task linked to my Java goal", "the task linked to Java")
+        val goalLinkMatch = Regex("(?i)(?:the\\s+)?([a-zA-Z0-9_-]+)\\s+task|(?:(?:task\\s+)?(?:linked\\s+to|for)\\s+(?:my\\s+)?([a-zA-Z0-9_-]+)(?:\\s+goal)?)").find(query)
+        val goalKeyword = goalLinkMatch?.let { 
+            it.groupValues[1].takeIf { g -> g.isNotBlank() && g.lowercase() !in listOf("first", "urgent", "previous", "next", "current") }
+                ?: it.groupValues[2].takeIf { g -> g.isNotBlank() }
+        }
+        if (goalKeyword != null) {
+            val linkedTasks = tasks.filter { 
+                it.goalTitle?.contains(goalKeyword, ignoreCase = true) == true ||
+                it.title.contains(goalKeyword, ignoreCase = true)
+            }
+            if (linkedTasks.size == 1) {
+                return ResolutionResult.Success(linkedTasks.first(), EntityResolutionStatus.EXACT_MATCH)
+            } else if (linkedTasks.size > 1) {
+                return ResolutionResult.Ambiguous(linkedTasks)
+            }
+        }
+
+        // 3. Natural / Relational References
         val lowerQuery = query.lowercase().trim()
         if (lowerQuery.contains("urgent") || lowerQuery.contains("highest priority")) {
             val urgentIncomplete = tasks.filter { it.priority == TaskPriority.URGENT && !it.completed }
@@ -51,8 +69,9 @@ object AiEntityResolver {
         }
 
         if (lowerQuery.contains("first task") || lowerQuery == "the first") {
-            val first = tasks.filter { !it.completed }.firstOrNull()
-            if (first != null) return ResolutionResult.Success(first, EntityResolutionStatus.EXACT_MATCH)
+            val incomplete = tasks.filter { !it.completed }
+            if (incomplete.size == 1) return ResolutionResult.Success(incomplete.first(), EntityResolutionStatus.EXACT_MATCH)
+            if (incomplete.size > 1) return ResolutionResult.Success(incomplete.first(), EntityResolutionStatus.EXACT_MATCH)
         }
 
         if (lowerQuery.contains("carried forward") || lowerQuery.contains("carrying from yesterday")) {

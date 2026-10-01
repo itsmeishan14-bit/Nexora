@@ -76,11 +76,27 @@ class AiProviderManager(
             NexoraLogger.w("AI", "Provider returned non-existent Task/Goal ID. Nullifying to prevent errors.")
         }
 
+        // Validate Actions: Filter out any mutation actions targeting non-existent tasks/goals
+        val validatedActions = response.actions.filter { action ->
+            when (action.type) {
+                AiActionType.COMPLETE_TASK, AiActionType.DELETE_TASK, AiActionType.UPDATE_TASK, AiActionType.RESCHEDULE_TASK -> {
+                    val id = action.taskId ?: (action.parameters["taskId"] as? Number)?.toLong()
+                    id == null || context.tasks.any { it.id == id }
+                }
+                AiActionType.DELETE_GOAL, AiActionType.UPDATE_GOAL, AiActionType.DECOMPOSE_GOAL -> {
+                    val id = action.goalId ?: (action.parameters["goalId"] as? Number)?.toLong()
+                    id == null || context.goals.any { it.id == id }
+                }
+                else -> true
+            }
+        }
+
         return response.copy(
             decision = response.decision.copy(
                 taskId = validatedTaskId,
                 goalId = validatedGoalId
-            )
+            ),
+            actions = validatedActions
         )
     }
 }

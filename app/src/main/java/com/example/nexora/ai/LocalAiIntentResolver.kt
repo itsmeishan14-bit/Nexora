@@ -249,15 +249,61 @@ class LocalAiIntentResolver(
             }
         }
 
-        // 4. Temporal Insights (Yesterday, Carried, Weekly)
-        if (q.contains("yesterday") || q.contains("accomplish")) {
-            val yesterdayStr = java.time.LocalDate.now().minusDays(1).toString()
-            val completedCount = context.completedTasks.size
-            val text = "Yesterday ($yesterdayStr): According to your records, you had $completedCount completed tasks."
+        // 4. Temporal Insights (Yesterday, Carried, Weekly, Monthly)
+        val tempRange = langResult.temporalRange
+        if (tempRange != null || q.contains("yesterday") || q.contains("accomplish") || q.contains("this week") || q.contains("last week") || q.contains("this month")) {
+            val scope = tempRange?.scope ?: when {
+                q.contains("yesterday") -> TemporalScope.YESTERDAY
+                q.contains("last week") -> TemporalScope.LAST_WEEK
+                q.contains("this week") -> TemporalScope.THIS_WEEK
+                q.contains("this month") -> TemporalScope.THIS_MONTH
+                else -> TemporalScope.RECENTLY
+            }
+            val start = tempRange?.startDate ?: when (scope) {
+                TemporalScope.YESTERDAY -> LocalDate.now().minusDays(1)
+                TemporalScope.LAST_WEEK -> LocalDate.now().minusWeeks(1).with(java.time.DayOfWeek.MONDAY)
+                TemporalScope.THIS_WEEK -> LocalDate.now().with(java.time.DayOfWeek.MONDAY)
+                TemporalScope.THIS_MONTH -> LocalDate.now().withDayOfMonth(1)
+                else -> LocalDate.now().minusDays(7)
+            }
+            val end = tempRange?.endDate ?: when (scope) {
+                TemporalScope.YESTERDAY -> LocalDate.now().minusDays(1)
+                TemporalScope.LAST_WEEK -> LocalDate.now().minusWeeks(1).with(java.time.DayOfWeek.SUNDAY)
+                TemporalScope.THIS_WEEK -> LocalDate.now()
+                TemporalScope.THIS_MONTH -> LocalDate.now()
+                else -> LocalDate.now()
+            }
+
+            if (scope == TemporalScope.YESTERDAY || q.contains("yesterday") || q.contains("accomplish")) {
+                val yesterday = LocalDate.now().minusDays(1)
+                val histRecord = context.history.find { it.date == yesterday.toString() }
+                val completedCount = histRecord?.tasksCompleted ?: 0
+                val focusMins = histRecord?.focusMinutes ?: 0
+                val text = "Yesterday ($yesterday): According to your records, you completed $completedCount tasks with $focusMins focus minutes logged."
+                return AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.SHOW_INSIGHT,
+                        title = "Yesterday's Accomplishments",
+                        reason = text
+                    ),
+                    textResponse = text,
+                    modelName = "local-heuristic"
+                )
+            }
+
+            val records = context.history.filter {
+                val d = it.date
+                d >= start.toString() && d <= end.toString()
+            }
+            val histCompleted = records.sumOf { it.tasksCompleted }
+            val isTodayInRange = !LocalDate.now().isBefore(start) && !LocalDate.now().isAfter(end)
+            val totalCompleted = histCompleted + (if (isTodayInRange) context.completedTasks.size else 0)
+            val trend = context.personalContext.productivityTrend.name.lowercase()
+            val text = "${scope.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }} ($start to $end): You completed $totalCompleted tasks, with ${context.incompleteTasks.size} active tasks remaining and a $trend productivity trend."
             return AiModelStructuredResponse(
                 decision = AiDecision(
                     type = AiDecisionType.SHOW_INSIGHT,
-                    title = "Yesterday's Accomplishments",
+                    title = "Temporal Productivity Overview",
                     reason = text
                 ),
                 textResponse = text,
@@ -271,20 +317,6 @@ class LocalAiIntentResolver(
                 decision = AiDecision(
                     type = AiDecisionType.SHOW_INSIGHT,
                     title = "Carried Tasks",
-                    reason = text
-                ),
-                textResponse = text,
-                modelName = "local-heuristic"
-            )
-        }
-
-        if (q.contains("this week") || q.contains("last week")) {
-            val trend = context.personalContext.productivityTrend.name.lowercase()
-            val text = "This week: You have completed ${context.completedTasks.size} tasks, with ${context.incompleteTasks.size} active tasks remaining and a $trend productivity trend."
-            return AiModelStructuredResponse(
-                decision = AiDecision(
-                    type = AiDecisionType.SHOW_INSIGHT,
-                    title = "Weekly Overview",
                     reason = text
                 ),
                 textResponse = text,
@@ -1047,6 +1079,15 @@ class LocalAiIntentResolver(
         val textResponse = when {
             concept.contains("goal decomposition") || q.contains("goal decomposition") -> {
                 "Goal decomposition is the process of breaking down a high-level objective into smaller, concrete milestones and actionable tasks. In Nexora, decomposing a goal creates linked sub-tasks so you can make consistent, measurable daily progress without feeling overwhelmed."
+            }
+            concept.contains("task deletion") || q.contains("task deletion") || q.contains("delete a task") || q.contains("delete task") -> {
+                "Task deletion permanently removes a task from your schedule. In Nexora, destructive actions require confirmation or explicit targets so you never lose work by accident."
+            }
+            concept.contains("goal deletion") || q.contains("goal deletion") || q.contains("delete a goal") || q.contains("delete goal") -> {
+                "Goal deletion removes a long-term goal and its associated progress tracking from your workspace. In Nexora, goal deletion requires explicit confirmation."
+            }
+            concept.contains("decompose") || q.contains("decompose") -> {
+                "To decompose a goal means to break down a high-level project into smaller, sequenced sub-tasks with clear deadlines and estimated durations."
             }
             concept.contains("task prioritization") || q.contains("prioritization") || q.contains("priority") -> {
                 "Task prioritization is the method of ranking tasks by urgency, impact, and goal alignment. Nexora uses priority tiers (Urgent, High, Medium, Low) to ensure your most critical work is completed first."

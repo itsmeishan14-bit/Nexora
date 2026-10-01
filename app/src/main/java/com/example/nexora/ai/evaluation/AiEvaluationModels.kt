@@ -46,6 +46,16 @@ data class ExpectedEntity(
     val id: Long? = null
 )
 
+data class StructuredCheckResult(
+    val intentCheck: Boolean = true,
+    val entityCheck: Boolean = true,
+    val safetyCheck: Boolean = true,
+    val groundingCheck: Boolean = true,
+    val responseCheck: Boolean = true
+) {
+    val allPassed: Boolean get() = intentCheck && entityCheck && safetyCheck && groundingCheck && responseCheck
+}
+
 /**
  * The result of running an evaluation case.
  */
@@ -61,7 +71,8 @@ data class AiEvaluationResult(
     val actualMessage: String,
     val latencies: PerformanceMetrics,
     val errors: List<String> = emptyList(),
-    val reasoningFactors: List<String> = emptyList()
+    val reasoningFactors: List<String> = emptyList(),
+    val structuredChecks: StructuredCheckResult = StructuredCheckResult()
 )
 
 data class PerformanceMetrics(
@@ -86,5 +97,6 @@ data class AiEvaluationReport(
     val timestamp: Long = System.currentTimeMillis(),
     val overallPassRate: Float,
     val categoryMetrics: List<AiEvaluationMetric>,
-    val results: List<AiEvaluationResult>
+    val results: List<AiEvaluationResult>,
+    val hardSafetyFailures: Int = 0
 )
