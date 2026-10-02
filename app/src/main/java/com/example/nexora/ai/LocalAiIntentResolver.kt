@@ -113,6 +113,7 @@ class LocalAiIntentResolver(
             AiActionType.CREATE_AUTOMATION -> AiDecisionType.CREATE_AUTOMATION
             AiActionType.TOGGLE_AUTOMATION -> AiDecisionType.TOGGLE_AUTOMATION
             AiActionType.DELETE_AUTOMATION -> AiDecisionType.DELETE_AUTOMATION
+            AiActionType.UPDATE_AUTOMATION -> AiDecisionType.UPDATE_AUTOMATION
         }
     }
 

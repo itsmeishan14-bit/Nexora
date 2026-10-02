@@ -15,6 +15,7 @@ import com.example.nexora.uii.PremiumTask
 import com.example.nexora.ai.AiActionType
 import com.example.nexora.ai.AiAutomationRule
 import com.example.nexora.ai.AutomationExecutionRecord
+import com.example.nexora.ai.AutomationExecutionStage
 import com.example.nexora.ai.AutomationTriggerType
 import com.example.nexora.uii.TaskPriority
 import kotlinx.coroutines.flow.Flow

@@ -11,6 +11,7 @@ enum class TemporalScope {
     TOMORROW,
     THIS_WEEK,
     LAST_WEEK,
+    NEXT_WEEK,
     THIS_MONTH,
     RECENTLY
 }

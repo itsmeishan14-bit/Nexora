@@ -17,19 +17,23 @@ class AdvancedLocalLanguagePipeline {
     fun process(
         message: String,
         context: AiContext,
-        convContext: AiConversationContext = AiConversationContext()
+        convContext: AiConversationContext = AiConversationContext(),
+        referenceDate: LocalDate = LocalDate.now()
     ): AiLanguageResult {
+        // Reset expired conversation context
+        val effectiveConvContext = if (convContext.isExpired()) AiConversationContext() else convContext
+
         // 1. Text Normalization
         val normalized = normalize(message)
         if (normalized.isBlank()) return AiLanguageResult(intent = AiDecisionType.NO_ACTION, confidence = AiConfidence.LOW)
 
         // 2. Check for Confirmation / Cancellation if there's a pending action
-        if (convContext.pendingAction != null) {
+        if (effectiveConvContext.pendingAction != null) {
             val isConfirm = isConfirmation(normalized)
             val isCancel = isCancellation(normalized)
 
             if (isConfirm) {
-                val action = convContext.pendingAction
+                val action = effectiveConvContext.pendingAction
                 return AiLanguageResult(
                     intent = mapActionToDecision(action.type),
                     confidence = AiConfidence.HIGH,
@@ -49,13 +53,13 @@ class AdvancedLocalLanguagePipeline {
         }
 
         // 3. Handle Active Clarification Follow-ups
-        if (convContext.activeClarification != null && !isNewDirective(normalized)) {
-            return handleClarificationFollowUp(normalized, convContext, context)
+        if (effectiveConvContext.activeClarification != null && !isNewDirective(normalized)) {
+            return handleClarificationFollowUp(normalized, effectiveConvContext, context)
         }
 
         // 4. Structural Semantic Classification
-        val temporalRange = resolveTemporalRange(normalized)
-        val structuralResult = classifyIntent(normalized, message, context, convContext, temporalRange)
+        val temporalRange = resolveTemporalRange(normalized, referenceDate)
+        val structuralResult = classifyIntent(normalized, message, context, effectiveConvContext, temporalRange)
 
         // 5. Entity & Parameter Extraction
         val entities = extractEntities(normalized, structuralResult.intent).toMutableMap()
@@ -66,7 +70,7 @@ class AdvancedLocalLanguagePipeline {
         }
 
         // 6. Contextual Reference Resolution ("it", "the previous task", "that goal")
-        val resolvedEntities = resolveContextualReferences(entities, convContext, context, normalized).toMutableMap()
+        val resolvedEntities = resolveContextualReferences(entities, effectiveConvContext, context, normalized).toMutableMap()
 
         // 7. Entity Grounding & Ambiguity Verification
         var finalIntent = structuralResult.intent
@@ -79,14 +83,15 @@ class AdvancedLocalLanguagePipeline {
         var targetGoalTitle: String? = null
 
         val queryTitle = resolvedEntities["title"]?.toString() ?: ""
+        val ambiguousTitles = listOf("It", "That", "This", "Task", "My task", "The task", "This task", "That task", "Something")
 
         // Task Action Entity Verification
         if (finalIntent in listOf(AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK)) {
             if (targetTaskId != null) {
                 val found = context.tasks.find { it.id == targetTaskId }
                 targetTaskTitle = found?.title
-            } else if (queryTitle.isNotBlank() && queryTitle !in listOf("It", "That", "This", "Task", "My task", "The task", "This task", "That task")) {
-                val match = AiEntityResolver.resolveTask(queryTitle, context.tasks, convContext)
+            } else if (queryTitle.isNotBlank() && queryTitle !in ambiguousTitles) {
+                val match = AiEntityResolver.resolveTask(queryTitle, context.tasks, effectiveConvContext)
                 when (match) {
                     is ResolutionResult.Success -> {
                         targetTaskId = match.entity.id
@@ -112,13 +117,13 @@ class AdvancedLocalLanguagePipeline {
                         finalConfidence = AiConfidence.MEDIUM
                     }
                 }
-            } else if (context.tasks.size == 1 && (queryTitle.isBlank() || queryTitle in listOf("It", "That", "This", "Task", "My task", "The task", "This task", "That task"))) {
+            } else if (context.tasks.size == 1 && (queryTitle.isBlank() || queryTitle in ambiguousTitles)) {
                 val single = context.tasks.first()
                 targetTaskId = single.id
                 targetTaskTitle = single.title
                 resolvedEntities["taskId"] = single.id
                 finalConfidence = AiConfidence.HIGH
-            } else if (context.tasks.size > 1 && (queryTitle.isBlank() || queryTitle in listOf("Task", "My task", "The task", "This task", "That task"))) {
+            } else if (context.tasks.size > 1 && (queryTitle.isBlank() || queryTitle in ambiguousTitles)) {
                 finalIntent = AiDecisionType.AMBIGUOUS
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
@@ -238,8 +243,8 @@ class AdvancedLocalLanguagePipeline {
         // ─────────────────────────────────────────────────────────────
         // 1. STRUCTURAL CLASS: EXPLANATION / DEFINITION / CONCEPT
         // Queries asking for conceptual explanations must NEVER mutate.
-        // ─────────────────────────────────────────────────────────────
-        val isExplanation = lower.matches(Regex("(?i)^\\s*(what is|what are|explain|can you explain|could you explain|what does .+ mean|why is .+ useful|why is .+ important|role of|what is the role of|meaning of|how does .+ work|how do i delete|how to delete|tell me how to delete|can you explain .+ deletion|what is task deletion)\\b.*")) ||
+        val isExplanation = temporalRange == null && !lower.contains("planned") && !lower.contains("scheduled") && (
+            lower.matches(Regex("(?i)^\\s*(explain|can you explain|could you explain|what does .+ mean|why is .+ useful|why is .+ important|role of|what is the role of|meaning of|how does .+ work|how do i delete|how to delete|tell me how to delete|can you explain .+ deletion|what is task deletion|what is goal deletion)\\b.*")) ||
             lower.contains(Regex("(?i)\\b(explain goal decomposition|what is goal decomposition|role of goal decomposition|why is goal decomposition|meaning of goal decomposition|what does decompose mean)\\b")) ||
             lower.contains(Regex("(?i)\\b(explain task prioritization|what is task prioritization|role of task prioritization)\\b")) ||
             lower.contains(Regex("(?i)\\b(explain time blocking|what is time blocking|how does time blocking work|explain carry forward|what is carry forward)\\b")) ||
@@ -248,7 +253,9 @@ class AdvancedLocalLanguagePipeline {
             lower.contains("what is task deletion") ||
             lower.contains("how do i delete a task") ||
             lower.contains("how do i delete a goal") ||
-            lower.contains("could you tell me how to delete")
+            lower.contains("could you tell me how to delete") ||
+            lower.matches(Regex("(?i)^\\s*what is\\s+(the\\s+)?(concept|role|purpose|definition|meaning)\\b.*"))
+        )
 
         if (isExplanation) {
             return StructuralClassification(
@@ -269,12 +276,27 @@ class AdvancedLocalLanguagePipeline {
             lower.startsWith("why should i") ||
             lower.startsWith("would you recommend") ||
             lower.startsWith("is it a good idea to") ||
+            lower.startsWith("can you tell me which task") ||
+            lower.startsWith("which task should i") ||
+            lower.contains("which task should i delete") ||
             lower.contains("should i delete") ||
             lower.contains("should i decompose") ||
             lower.contains("why should i prioritize") ||
             lower.contains("do you think i should complete")
 
         if (isAdvisoryQuestion) {
+            return StructuralClassification(
+                intent = AiDecisionType.SHOW_INSIGHT,
+                confidence = AiConfidence.HIGH,
+                requiresMultiStepReasoning = false,
+                requiresMutation = false
+            )
+        }
+
+        // Historical inquiries ("Did I complete my Java task yesterday?", "Did I finish...")
+        val isHistoricalInquiry = lower.startsWith("did i") || lower.startsWith("have i") ||
+            lower.contains("did i complete") || lower.contains("did i finish") || lower.contains("did i accomplish")
+        if (isHistoricalInquiry) {
             return StructuralClassification(
                 intent = AiDecisionType.SHOW_INSIGHT,
                 confidence = AiConfidence.HIGH,
@@ -415,30 +437,9 @@ class AdvancedLocalLanguagePipeline {
         }
 
         // ─────────────────────────────────────────────────────────────
-        // 10. STRUCTURAL CLASS: TEMPORAL QUERIES & INSIGHTS
-        // ─────────────────────────────────────────────────────────────
-        if (temporalRange != null) {
-            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
-        }
-
-        if (lower.contains(Regex("(?i)\\b(progress|stats|history|falling behind|behind|why am i|how am i doing|why did)\\b"))) {
-            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
-        }
-
-        if (lower.contains(Regex("(?i)\\b(show|list|view|display)\\b")) && (lower.contains("goal") || lower.contains("task"))) {
-            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
-        }
-
-        if (lower.contains("goal") && (lower.contains("how is") || lower.contains("on track") || lower.contains("status") || lower.contains("need"))) {
-            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
-        }
-
-        if (lower.contains(Regex("(?i)\\b(remember|memory|recall)\\b"))) {
-            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.MEDIUM)
-        }
-
-        // ─────────────────────────────────────────────────────────────
-        // 11. STRUCTURAL CLASS: DIRECTIVE ACTIONS (Single operations)
+        // 10. STRUCTURAL CLASS: DIRECTIVE ACTIONS (Single operations)
+        // Explicit commands (create, complete, delete, update) take precedence
+        // over temporal information queries.
         // ─────────────────────────────────────────────────────────────
 
         // Task Creation Directive
@@ -490,11 +491,39 @@ class AdvancedLocalLanguagePipeline {
             )
         }
 
+        // ─────────────────────────────────────────────────────────────
+        // 11. STRUCTURAL CLASS: TEMPORAL QUERIES & INSIGHTS
+        // ─────────────────────────────────────────────────────────────
+        if (temporalRange != null) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
+        }
+
+        if (lower.contains(Regex("(?i)\\b(progress|stats|history|falling behind|behind|why am i|how am i doing|why did)\\b"))) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
+        }
+
+        if (lower.contains(Regex("(?i)\\b(show|list|view|display)\\b")) && (lower.contains("goal") || lower.contains("task"))) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
+        }
+
+        if (lower.contains("goal") && (lower.contains("how is") || lower.contains("on track") || lower.contains("status") || lower.contains("need"))) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
+        }
+
+        if (lower.contains("how is it") || lower.contains("how are they") || lower.contains("how it is") || lower.contains("how is that") || lower.contains("how's it") ||
+            (lower.contains("doing") && (lower.contains("it") || lower.contains("they") || lower.contains("goal") || lower.contains("task")))
+        ) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
+        }
+
+        if (lower.contains(Regex("(?i)\\b(remember|memory|recall)\\b"))) {
+            return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.MEDIUM)
+        }
+
         return StructuralClassification(AiDecisionType.NO_ACTION, AiConfidence.LOW)
     }
 
-    private fun resolveTemporalRange(lower: String): TemporalRange? {
-        val today = LocalDate.now()
+    private fun resolveTemporalRange(lower: String, today: LocalDate = LocalDate.now()): TemporalRange? {
         return when {
             lower.contains("yesterday") -> {
                 val date = today.minusDays(1)
@@ -519,6 +548,11 @@ class AdvancedLocalLanguagePipeline {
                 val end = today.with(DayOfWeek.MONDAY).minusDays(1)
                 val start = end.minusDays(6)
                 TemporalRange(TemporalScope.LAST_WEEK, start, end, "Last Week ($start to $end)")
+            }
+            lower.contains("next week") -> {
+                val start = today.with(DayOfWeek.MONDAY).plusWeeks(1)
+                val end = start.plusDays(6)
+                TemporalRange(TemporalScope.NEXT_WEEK, start, end, "Next Week ($start to $end)")
             }
             lower.contains("this month") -> {
                 val start = today.withDayOfMonth(1)
@@ -763,6 +797,7 @@ class AdvancedLocalLanguagePipeline {
             AiActionType.CREATE_AUTOMATION -> AiDecisionType.CREATE_AUTOMATION
             AiActionType.TOGGLE_AUTOMATION -> AiDecisionType.TOGGLE_AUTOMATION
             AiActionType.DELETE_AUTOMATION -> AiDecisionType.DELETE_AUTOMATION
+            AiActionType.UPDATE_AUTOMATION -> AiDecisionType.UPDATE_AUTOMATION
         }
     }
 }

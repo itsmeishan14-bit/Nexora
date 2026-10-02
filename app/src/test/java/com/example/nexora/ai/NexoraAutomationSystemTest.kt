@@ -1,5 +1,6 @@
 package com.example.nexora.ai
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,7 +10,8 @@ class NexoraAutomationSystemTest {
     private val automationSystem = NexoraAutomationSystem()
 
     @Test
-    fun `test evaluate triggers fires workload manager`() {
+    fun `test evaluate triggers fires workload manager`() = runBlocking {
+        automationSystem.awaitInitialization()
         val context = AiContext(
             tasksPlannedToday = 15,
             adaptiveProfile = AdaptiveProfile(
@@ -24,7 +26,8 @@ class NexoraAutomationSystemTest {
     }
 
     @Test
-    fun `test automation cooldown prevents repeated firing`() {
+    fun `test automation cooldown prevents repeated firing`() = runBlocking {
+        automationSystem.awaitInitialization()
         val context = AiContext(
             tasksPlannedToday = 15,
             adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
@@ -41,7 +44,8 @@ class NexoraAutomationSystemTest {
     }
 
     @Test
-    fun `test automation fires task breakdown assistant on carry forward`() {
+    fun `test automation fires task breakdown assistant on carry forward`() = runBlocking {
+        automationSystem.awaitInitialization()
         val context = AiContext(
             carriedTasks = 5,
             adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
@@ -53,8 +57,9 @@ class NexoraAutomationSystemTest {
     }
 
     @Test
-    fun `test automation ignores disabled rules`() {
+    fun `test automation ignores disabled rules`() = runBlocking {
         val system = NexoraAutomationSystem()
+        system.awaitInitialization()
         val rule = system.getRules().first()
         
         system.updateRule(rule.copy(enabled = false))

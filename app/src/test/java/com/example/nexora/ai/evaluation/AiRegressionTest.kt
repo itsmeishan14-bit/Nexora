@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -73,6 +74,14 @@ class AiRegressionTest {
         assertNotNull("False positive metric should be present", falsePositiveMetric)
         assertEquals("False positive pass rate must be 100%", 1.0f, falsePositiveMetric!!.passRate, 0.001f)
 
+        val actionTruthMetric = report.categoryMetrics.find { it.category == EvaluationCategory.ACTION_TRUTHFULNESS.name }
+        assertNotNull("Action truthfulness metric should be present", actionTruthMetric)
+        assertEquals("Action truthfulness pass rate must be 100%", 1.0f, actionTruthMetric!!.passRate, 0.001f)
+
+        val groundingMetric = report.categoryMetrics.find { it.category == EvaluationCategory.GROUNDING.name }
+        assertNotNull("Grounding metric should be present", groundingMetric)
+        assertEquals("Grounding pass rate must be 100%", 1.0f, groundingMetric!!.passRate, 0.001f)
+
         val intentMetric = report.categoryMetrics.find { it.category == EvaluationCategory.INTENT_RECOGNITION.name }
         assertNotNull("Intent metric should be present", intentMetric)
         assertTrue("Intent recognition pass rate must be >= 90%", intentMetric!!.passRate >= 0.90f)
@@ -80,6 +89,22 @@ class AiRegressionTest {
         val entityMetric = report.categoryMetrics.find { it.category == EvaluationCategory.ENTITY_RESOLUTION.name }
         assertNotNull("Entity metric should be present", entityMetric)
         assertTrue("Entity resolution pass rate must be >= 90%", entityMetric!!.passRate >= 0.90f)
+
+        val temporalMetric = report.categoryMetrics.find { it.category == EvaluationCategory.TEMPORAL_REASONING.name }
+        assertNotNull("Temporal metric should be present", temporalMetric)
+        assertTrue("Temporal reasoning pass rate must be >= 90%", temporalMetric!!.passRate >= 0.90f)
+
+        val conversationalMetric = report.categoryMetrics.find { it.category == EvaluationCategory.CONVERSATIONAL_CONTINUITY.name }
+        assertNotNull("Conversational continuity metric should be present", conversationalMetric)
+        assertTrue("Conversational continuity pass rate must be >= 90%", conversationalMetric!!.passRate >= 0.90f)
+
+        val planningMetric = report.categoryMetrics.find { it.category == EvaluationCategory.DAILY_PLANNING.name }
+        assertNotNull("Planning metric should be present", planningMetric)
+        assertTrue("Planning pass rate must be >= 90%", planningMetric!!.passRate >= 0.90f)
+
+        val proactiveMetric = report.categoryMetrics.find { it.category == EvaluationCategory.PROACTIVE_DETECTION.name }
+        assertNotNull("Proactive metric should be present", proactiveMetric)
+        assertTrue("Proactive pass rate must be >= 90%", proactiveMetric!!.passRate >= 0.90f)
     }
 
     @Test
@@ -175,6 +200,141 @@ class AiRegressionTest {
             assertEquals("Query '$q' must be INFORMATION response", AiResponseType.INFORMATION, response.responseType)
             assertTrue("Query '$q' must NEVER produce mutation actions", response.proposedActions.isEmpty())
         }
+    }
+
+    @Test
+    fun `single automation instance operates across all components`() {
+        val sharedAutomation = NexoraAutomationSystem(repository)
+        val executor = AiActionExecutor(repository, sharedAutomation)
+        val providerManager = AiProviderManager(localProvider = LocalAiProvider())
+        val brain = NexoraAiBrain(
+            contextBuilder = MockAiContextBuilder(),
+            aiService = aiService,
+            providerManager = providerManager,
+            toolRegistry = toolRegistry,
+            repository = repository,
+            automationSystem = sharedAutomation
+        )
+        val engine = NexoraAiEngine(
+            contextBuilder = MockAiContextBuilder(),
+            aiService = aiService,
+            providerManager = providerManager,
+            actionExecutor = executor,
+            toolRegistry = toolRegistry,
+            repository = repository,
+            automationSystem = sharedAutomation
+        )
+
+        assertSame("AiEngine and ActionExecutor must share the exact same automation instance",
+            engine.automationSystem, executor.getAutomationSystem())
+        assertSame("AiEngine and NexoraAiBrain must share the exact same automation instance",
+            engine.automationSystem, engine.getBrain().automationSystem)
+    }
+
+    @Test
+    fun `context expiration resets stale conversation context`() = runBlocking {
+        val goals = listOf(NexoraGoal(id = 5, title = "Master Kotlin", progress = 0.5f, category = "Work", targetDate = ""))
+        val pipeline = AdvancedLocalLanguagePipeline()
+        val expiredContext = AiConversationContext(
+            lastGoalId = 5L,
+            timestamp = System.currentTimeMillis() - (1000 * 60 * 15) // 15 mins ago (> 10 min window)
+        )
+        assertTrue("Context should be expired", expiredContext.isExpired())
+
+        val result = pipeline.process(
+            message = "How is it doing?",
+            context = AiContext(goals = goals),
+            convContext = expiredContext
+        )
+        // With expired context, "it" should NOT resolve to goal 5
+        assertNull("Expired context must not resolve stale goalId", result.targetGoalId)
+    }
+
+    @Test
+    fun `entity continuation resolves pronoun to active goal`() = runBlocking {
+        val goals = listOf(NexoraGoal(id = 42, title = "Kotlin Goal", progress = 0.6f, category = "Work", targetDate = ""))
+        val brain = createBrain(emptyList(), goals)
+
+        // Turn 1: Show my Kotlin goal
+        val turn1 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Show my Kotlin goal"))
+        val convContext1 = turn1.conversationContext
+        assertNotNull(convContext1)
+        assertEquals(42L, convContext1!!.lastGoalId)
+
+        // Turn 2: How is it doing?
+        val turn2 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "How is it doing?", conversationContext = convContext1))
+        assertTrue("Turn 2 must describe the Kotlin Goal", turn2.message.contains("Kotlin Goal", ignoreCase = true))
+        assertEquals(42L, turn2.relatedGoalId)
+    }
+
+    @Test
+    fun `action continuation confirmation and cancellation lifecycle`() = runBlocking {
+        val goals = listOf(NexoraGoal(id = 10, title = "Kotlin Goal", progress = 0.5f, category = "Work", targetDate = ""))
+        val brain = createBrain(emptyList(), goals)
+
+        // Turn 1: Delete my Kotlin goal
+        val turn1 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Delete my Kotlin goal"))
+        assertEquals(AiResponseType.ACTION_PROPOSAL, turn1.responseType)
+        val pendingAction = turn1.conversationContext?.pendingAction
+        assertNotNull(pendingAction)
+        assertEquals(AiActionType.DELETE_GOAL, pendingAction!!.type)
+
+        // Turn 2: No -> Cancel
+        val turn2Cancel = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "No", conversationContext = turn1.conversationContext))
+        assertEquals(AiResponseType.NO_ACTION, turn2Cancel.responseType)
+        assertNull(turn2Cancel.conversationContext?.pendingAction)
+
+        // Turn 3: Re-request and Yes -> Confirm
+        val turn3 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Delete my Kotlin goal"))
+        val turn4Confirm = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Yes", conversationContext = turn3.conversationContext))
+        assertEquals(AiResponseType.ACTION_PROPOSAL, turn4Confirm.responseType)
+        assertFalse(turn4Confirm.proposedActions.first().requiresConfirmation)
+    }
+
+    @Test
+    fun `ambiguous continuation - the advanced one resolves correctly`() = runBlocking {
+        val tasks = listOf(
+            PremiumTask(id = 101, title = "Java Basics", duration = "1h", category = "Work"),
+            PremiumTask(id = 102, title = "Advanced Java", duration = "1h", category = "Work")
+        )
+        val brain = createBrain(tasks, emptyList())
+
+        // Turn 1: Delete the Java task
+        val turn1 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Delete the Java task"))
+        assertEquals(AiResponseType.CLARIFICATION_NEEDED, turn1.responseType)
+        val convContext1 = turn1.conversationContext
+        assertNotNull(convContext1?.activeClarification)
+
+        // Turn 2: The advanced one.
+        val turn2 = brain.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "The advanced one", conversationContext = convContext1))
+        assertEquals(AiResponseType.ACTION_PROPOSAL, turn2.responseType)
+        assertEquals(102L, turn2.relatedTaskId)
+    }
+
+    @Test
+    fun `context cache invalidation ensures fresh data after task creation`() = runBlocking {
+        val mockRepo = repository
+        val brain = NexoraAiBrain(
+            contextBuilder = AiContextBuilder(mockRepo),
+            aiService = aiService,
+            providerManager = AiProviderManager(localProvider = LocalAiProvider()),
+            toolRegistry = toolRegistry,
+            repository = mockRepo,
+            automationSystem = NexoraAutomationSystem(mockRepo)
+        )
+
+        // Initial request caches 0 tasks
+        val r1 = brain.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
+        assertEquals(0, brain.getLastContext()?.tasks?.size ?: 0)
+
+        // Mutate repository
+        mockRepo.addTask(PremiumTask(id = 1, title = "New Task", duration = "30m", category = "Work"))
+        // Brain's invalidateContext() is called
+        brain.invalidateContext()
+
+        // Next request sees fresh data
+        val r2 = brain.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
+        assertEquals(1, brain.getLastContext()?.tasks?.size)
     }
 
     private fun createBrain(tasks: List<PremiumTask>, goals: List<NexoraGoal>): NexoraAiBrain {

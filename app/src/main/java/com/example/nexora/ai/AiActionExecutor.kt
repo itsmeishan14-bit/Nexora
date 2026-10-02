@@ -13,6 +13,8 @@ open class AiActionExecutor(
 ) {
     fun getAutomationSystem(): NexoraAutomationSystem = automationSystem
 
+    var onActionExecuted: (() -> Unit)? = null
+
     private val validator = repository?.let { NexoraAiValidator(it) }
 
     open suspend fun execute(action: AiAction): AiActionResult {
@@ -59,11 +61,12 @@ open class AiActionExecutor(
                 AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
                 AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
                 AiActionType.CREATE_AUTOMATION -> createAutomation(action)
+                AiActionType.UPDATE_AUTOMATION -> updateAutomation(action)
                 AiActionType.TOGGLE_AUTOMATION -> toggleAutomation(action)
                 AiActionType.DELETE_AUTOMATION -> deleteAutomation(action)
             }
 
-            // 3. Verification Layer
+            // 3. Verification Layer: Check actual repository/system state
             if (executionResult.success) {
                 verifyAction(repo, action, executionResult)
             } else {
@@ -79,6 +82,10 @@ open class AiActionExecutor(
         
         // 4. Learning Loop: Record action outcome
         recordActionOutcome(action, result)
+
+        if (result.success) {
+            onActionExecuted?.invoke()
+        }
         
         return result
     }
@@ -92,56 +99,108 @@ open class AiActionExecutor(
             AiActionType.CREATE_TASK -> {
                 val taskId = executionResult.affectedTaskId ?: return executionResult
                 val task = repository.getTaskById(taskId)
-                if (task != null) executionResult else AiActionResult(false, "Verification failed: Task not found in DB after creation.")
+                if (task != null) executionResult else AiActionResult(false, "Verification failed: Task not found in DB after creation.", error = "Verification failed")
             }
             AiActionType.COMPLETE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
                 val task = repository.getTaskById(taskId)
-                if (task?.completed == true) executionResult else AiActionResult(false, "Verification failed: Task still marked incomplete.")
+                if (task?.completed == true) executionResult else AiActionResult(false, "Verification failed: Task still marked incomplete in database.", error = "Verification failed")
             }
             AiActionType.UPDATE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
-                val task = repository.getTaskById(taskId)
-                if (task == null) return AiActionResult(false, "Verification failed: Task lost after update.")
+                val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Verification failed: Task lost after update.", error = "Verification failed")
                 
                 val expectedPriority = action.parameters["priority"] as? String
                 if (expectedPriority != null && task.priority.name != expectedPriority) {
-                     return AiActionResult(false, "Verification failed: Priority mismatch. Expected $expectedPriority but found ${task.priority.name}")
+                     return AiActionResult(false, "Verification failed: Priority mismatch. Expected $expectedPriority but found ${task.priority.name}", error = "Verification failed")
+                }
+                val expectedTitle = action.parameters["title"] as? String
+                if (expectedTitle != null && task.title != expectedTitle) {
+                    return AiActionResult(false, "Verification failed: Title mismatch. Expected \"$expectedTitle\" but found \"${task.title}\"", error = "Verification failed")
+                }
+                val expectedDuration = action.parameters["duration"] as? String
+                if (expectedDuration != null && task.duration != expectedDuration) {
+                    return AiActionResult(false, "Verification failed: Duration mismatch. Expected \"$expectedDuration\" but found \"${task.duration}\"", error = "Verification failed")
                 }
                 executionResult
             }
             AiActionType.DELETE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
                 val task = repository.getTaskById(taskId)
-                if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists after deletion.")
+                if (task == null) executionResult else AiActionResult(false, "Verification failed: Task still exists in database after deletion.", error = "Verification failed")
             }
             AiActionType.RESCHEDULE_TASK -> {
                 val taskId = action.taskId ?: return executionResult
-                val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Verification failed: Task lost after rescheduling.")
+                val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Verification failed: Task lost after rescheduling.", error = "Verification failed")
                 val expectedPriority = action.parameters["priority"] as? String
                 if (expectedPriority != null && task.priority.name != expectedPriority) {
-                    return AiActionResult(false, "Verification failed: Rescheduled priority mismatch. Expected $expectedPriority but found ${task.priority.name}")
+                    return AiActionResult(false, "Verification failed: Rescheduled priority mismatch. Expected $expectedPriority but found ${task.priority.name}", error = "Verification failed")
                 }
                 executionResult
             }
             AiActionType.CREATE_GOAL -> {
                 val goalId = executionResult.affectedGoalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
-                if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found in DB after creation.")
+                if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found in database after creation.", error = "Verification failed")
             }
             AiActionType.UPDATE_GOAL -> {
                 val goalId = action.goalId ?: return executionResult
-                val goal = repository.getGoalById(goalId)
-                if (goal != null) executionResult else AiActionResult(false, "Verification failed: Goal not found after update.")
+                val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Verification failed: Goal not found after update.", error = "Verification failed")
+                val expectedTitle = action.parameters["title"] as? String
+                if (expectedTitle != null && goal.title != expectedTitle) {
+                    return AiActionResult(false, "Verification failed: Goal title mismatch. Expected \"$expectedTitle\" but found \"${goal.title}\"", error = "Verification failed")
+                }
+                executionResult
             }
             AiActionType.DELETE_GOAL -> {
                 val goalId = action.goalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
-                if (goal == null) executionResult else AiActionResult(false, "Verification failed: Goal still exists after deletion.")
+                if (goal == null) executionResult else AiActionResult(false, "Verification failed: Goal still exists after deletion.", error = "Verification failed")
             }
-            AiActionType.DELETE_ALL_TASKS, AiActionType.COMPLETE_ALL_TASKS -> {
-                // Result already contains verification logic for these bulk actions
-                executionResult
+            AiActionType.DELETE_ALL_TASKS -> {
+                val remaining = repository.observeTasksOnce().size
+                if (remaining == 0) executionResult else AiActionResult(false, "Verification failed: $remaining tasks still remain after delete-all.", error = "Verification failed")
+            }
+            AiActionType.COMPLETE_ALL_TASKS -> {
+                val remainingIncomplete = repository.getIncompleteTasksOnce().size
+                if (remainingIncomplete == 0) executionResult else AiActionResult(false, "Verification failed: $remainingIncomplete tasks still incomplete after complete-all.", error = "Verification failed")
+            }
+            AiActionType.CREATE_AUTOMATION -> {
+                val name = action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String ?: action.parameters["title"] as? String ?: ""
+                val clean = name.trim().removeSuffix(".")
+                val found = automationSystem.getRules().find { 
+                    it.name.equals(clean, ignoreCase = true) || it.id.equals(clean, ignoreCase = true) 
+                }
+                if (found != null) executionResult else AiActionResult(false, "Verification failed: Automation rule \"$name\" not found after creation.", error = "Verification failed")
+            }
+            AiActionType.UPDATE_AUTOMATION -> {
+                val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String ?: ""
+                val clean = target.trim().removeSuffix(".")
+                val found = automationSystem.getRules().find { 
+                    it.name.equals(clean, ignoreCase = true) || it.id.equals(clean, ignoreCase = true) 
+                }
+                if (found != null) executionResult else AiActionResult(false, "Verification failed: Automation rule \"$target\" not found after update.", error = "Verification failed")
+            }
+            AiActionType.TOGGLE_AUTOMATION -> {
+                val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String ?: ""
+                val clean = target.trim().removeSuffix(".")
+                val expectedEnabled = action.parameters["enabled"] as? Boolean
+                val found = automationSystem.getRules().find { 
+                    it.name.equals(clean, ignoreCase = true) || it.id.equals(clean, ignoreCase = true) 
+                }
+                if (found != null && (expectedEnabled == null || found.enabled == expectedEnabled)) {
+                    executionResult
+                } else {
+                    AiActionResult(false, "Verification failed: Automation rule \"$target\" toggle state did not update.", error = "Verification failed")
+                }
+            }
+            AiActionType.DELETE_AUTOMATION -> {
+                val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String ?: ""
+                val clean = target.trim().removeSuffix(".")
+                val stillExists = automationSystem.getRules().any { 
+                    it.id.equals(clean, ignoreCase = true) || it.name.equals(clean, ignoreCase = true)
+                }
+                if (!stillExists) executionResult else AiActionResult(false, "Verification failed: Automation rule \"$target\" still exists after deletion.", error = "Verification failed")
             }
             else -> executionResult
         }
@@ -375,7 +434,7 @@ open class AiActionExecutor(
         )
     }
 
-    private fun createAutomation(action: AiAction): AiActionResult {
+    private suspend fun createAutomation(action: AiAction): AiActionResult {
         val name = action.parameters["ruleName"] as? String 
             ?: action.parameters["name"] as? String 
             ?: action.parameters["title"] as? String
@@ -398,7 +457,24 @@ open class AiActionExecutor(
         }
     }
 
-    private fun toggleAutomation(action: AiAction): AiActionResult {
+    private suspend fun updateAutomation(action: AiAction): AiActionResult {
+        val target = action.parameters["ruleId"] as? String 
+            ?: action.parameters["ruleName"] as? String 
+            ?: action.parameters["name"] as? String
+            ?: action.parameters["title"] as? String
+        if (target.isNullOrBlank()) {
+            return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
+        }
+        val existing = automationSystem.findRule(target)
+            ?: return AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
+        val newName = action.parameters["newName"] as? String ?: action.parameters["name"] as? String ?: existing.name
+        val newDescription = action.parameters["description"] as? String ?: existing.description
+        val updated = existing.copy(name = newName, description = newDescription)
+        automationSystem.updateRule(updated)
+        return AiActionResult(true, "Automation rule updated: ${updated.name}")
+    }
+
+    private suspend fun toggleAutomation(action: AiAction): AiActionResult {
         val target = action.parameters["ruleId"] as? String 
             ?: action.parameters["ruleName"] as? String 
             ?: action.parameters["name"] as? String
@@ -415,7 +491,7 @@ open class AiActionExecutor(
         }
     }
 
-    private fun deleteAutomation(action: AiAction): AiActionResult {
+    private suspend fun deleteAutomation(action: AiAction): AiActionResult {
         val target = action.parameters["ruleId"] as? String 
             ?: action.parameters["ruleName"] as? String 
             ?: action.parameters["name"] as? String

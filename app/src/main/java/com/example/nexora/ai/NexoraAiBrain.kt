@@ -100,6 +100,8 @@ class NexoraAiBrain(
         lastContextBuiltAt = 0
     }
 
+    fun getLastContext(): AiContext? = lastContext
+
     private suspend fun getContext(request: AiRequest): AiContext {
         val now = System.currentTimeMillis()
         
@@ -119,7 +121,7 @@ class NexoraAiBrain(
         return context
     }
 
-    private fun evaluateAutomations(request: AiRequest, context: AiContext): List<AiProactiveSignal> {
+    private suspend fun evaluateAutomations(request: AiRequest, context: AiContext): List<AiProactiveSignal> {
         val trigger = when (request.type) {
             AiRequestType.CREATE_TASK -> AutomationTriggerType.TASK_CREATED
             AiRequestType.COMPLETE_TASK -> AutomationTriggerType.TASK_COMPLETED
@@ -136,15 +138,15 @@ class NexoraAiBrain(
 
     fun getAutomationRules(): List<AiAutomationRule> = automationSystem.getRules()
 
-    fun updateAutomationRule(rule: AiAutomationRule) {
+    suspend fun updateAutomationRule(rule: AiAutomationRule) {
         automationSystem.updateRule(rule)
     }
 
-    fun addAutomationRule(rule: AiAutomationRule): Boolean = automationSystem.addRule(rule)
+    suspend fun addAutomationRule(rule: AiAutomationRule): Boolean = automationSystem.addRule(rule)
 
-    fun deleteAutomationRule(idOrName: String): Boolean = automationSystem.deleteRule(idOrName)
+    suspend fun deleteAutomationRule(idOrName: String): Boolean = automationSystem.deleteRule(idOrName)
 
-    fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? = automationSystem.toggleRule(idOrName, enabled)
+    suspend fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? = automationSystem.toggleRule(idOrName, enabled)
 
     fun explainAutomationRun(query: String? = null): String = automationSystem.explainLastRun(query)
 
@@ -202,6 +204,8 @@ class NexoraAiBrain(
             authorizedParams["userConfirmed"] = true
             val authorizedAction = action.copy(requiresConfirmation = false, parameters = authorizedParams)
             
+            invalidateContext()
+
             return AiResponse(
                 responseType = AiResponseType.ACTION_PROPOSAL,
                 title = "Executing Confirmed Action",
@@ -276,10 +280,17 @@ class NexoraAiBrain(
                         "You have ${context.carriedTasks} task(s) carried forward from yesterday. Resolving the highest-priority carried task first will help clear focus."
                     } else {
                         val record = context.history.find { it.date == range.startDate.toString() }
-                        val completed = record?.tasksCompleted ?: 0
-                        val focus = record?.focusMinutes ?: 0
-                        "Yesterday (${range.startDate}): According to your records, you had $completed completed tasks with $focus minutes of focused work."
+                        if (record == null) {
+                            "Yesterday (${range.startDate}): No historical activity records found for this date."
+                        } else {
+                            val completed = record.tasksCompleted
+                            val focus = record.focusMinutes
+                            "Yesterday (${range.startDate}): According to your records, you had $completed completed tasks with $focus minutes of focused work."
+                        }
                     }
+                }
+                TemporalScope.NEXT_WEEK -> {
+                    "Next Week (${range.startDate} to ${range.endDate}): You have ${context.incompleteTasks.size} active tasks remaining across your goals."
                 }
                 TemporalScope.THIS_WEEK, TemporalScope.LAST_WEEK -> {
                     val weeklyRecords = context.history.filter {
@@ -352,7 +363,9 @@ class NexoraAiBrain(
                 }
                 AiDecisionType.PREDICT_WORKLOAD -> {
                     val overload = predictiveEngine.predictWorkloadOverload(context)
-                    val msg = overload?.let { "${it.prediction}. Evidence: ${it.evidence}" } ?: "Workload data is currently balanced."
+                    val msg = if (overload?.prediction == "INSUFFICIENT_DATA") {
+                        "I don't have enough historical data to make a reliable prediction."
+                    } else overload?.let { "${it.prediction}. Evidence: ${it.evidence}" } ?: "Workload data is currently balanced."
                     AiResponse(
                         responseType = AiResponseType.INFORMATION,
                         title = "Workload Prediction",
@@ -365,6 +378,8 @@ class NexoraAiBrain(
                     val trend = predictiveEngine.predictProductivityTrend(context)
                     val msg = if (lower.contains("accurate") || lower.contains("accuracy") || lower.contains("calibration")) {
                         "Predictions are calibrated against your actual completion data, historical task durations, and adaptive personal capacity baseline."
+                    } else if (trend?.prediction == "INSUFFICIENT_DATA") {
+                        "I don't have enough historical data to make a reliable prediction."
                     } else {
                         trend?.let { "${it.prediction}. ${it.evidence}" } ?: "Productivity execution rate is stable."
                     }
@@ -856,6 +871,80 @@ class NexoraAiBrain(
             }
         }
 
+        // Historical task inquiry ("Did I complete my Java task yesterday?", "Did I finish...")
+        if (lower.contains("did i complete") || lower.contains("did i finish") || lower.contains("have i completed")) {
+            val query = langResult.entities["title"]?.toString() ?: ""
+            val task = context.tasks.find { it.title.contains(query, ignoreCase = true) }
+            val msg = if (task != null) {
+                if (task.completed) {
+                    "Yes, \"${task.title}\" was completed."
+                } else {
+                    "No, \"${task.title}\" is still incomplete."
+                }
+            } else {
+                "I could not find a record for that task in your history."
+            }
+            return AiResponse(
+                responseType = AiResponseType.INFORMATION,
+                title = "Task History",
+                message = msg,
+                confidence = AiConfidence.HIGH,
+                decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Task History", reason = msg),
+                conversationContext = convContext.copy(lastIntent = AiDecisionType.SHOW_INSIGHT, timestamp = System.currentTimeMillis())
+            )
+        }
+
+        // Entity status inquiries ("Show my Kotlin goal", "How is it doing?", "Show my Java task")
+        if (langResult.intent == AiDecisionType.SHOW_INSIGHT && langResult.temporalRange == null) {
+            val query = langResult.entities["title"]?.toString() ?: ""
+            val targetGoal = langResult.targetGoalId?.let { id -> context.goals.find { it.id == id } }
+                ?: if (query.isNotBlank() && !query.equals("it", ignoreCase = true)) context.goals.find { it.title.contains(query, ignoreCase = true) } else null
+                ?: if (lower.contains("goal") || lower.contains("it")) convContext.lastGoalId?.let { id -> context.goals.find { it.id == id } } else null
+
+            if (targetGoal != null && (lower.contains("goal") || lower.contains("it") || lower.contains("how is") || query.isNotBlank())) {
+                val linked = context.tasks.filter { it.goalTitle == targetGoal.title }
+                val completedCount = linked.count { it.completed }
+                val msg = "Goal \"${targetGoal.title}\": ${(targetGoal.progress * 100).toInt()}% progress, ${linked.size} sub-tasks ($completedCount completed)."
+                return AiResponse(
+                    responseType = AiResponseType.INFORMATION,
+                    title = "Goal Overview",
+                    message = msg,
+                    confidence = AiConfidence.HIGH,
+                    relatedGoalId = targetGoal.id,
+                    decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Goal Overview", reason = msg, goalId = targetGoal.id),
+                    conversationContext = convContext.copy(
+                        lastIntent = AiDecisionType.SHOW_INSIGHT,
+                        lastGoalId = targetGoal.id,
+                        lastEntityTitle = targetGoal.title,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+
+            val targetTask = langResult.targetTaskId?.let { id -> context.tasks.find { it.id == id } }
+                ?: if (query.isNotBlank() && !query.equals("it", ignoreCase = true)) context.tasks.find { it.title.contains(query, ignoreCase = true) } else null
+                ?: if (lower.contains("task") || lower.contains("it")) convContext.lastTaskId?.let { id -> context.tasks.find { it.id == id } } else null
+
+            if (targetTask != null && (lower.contains("task") || lower.contains("it") || query.isNotBlank())) {
+                val status = if (targetTask.completed) "completed" else "incomplete"
+                val msg = "Task \"${targetTask.title}\" is currently $status (priority: ${targetTask.priority}, duration: ${targetTask.duration})."
+                return AiResponse(
+                    responseType = AiResponseType.INFORMATION,
+                    title = "Task Overview",
+                    message = msg,
+                    confidence = AiConfidence.HIGH,
+                    relatedTaskId = targetTask.id,
+                    decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Task Overview", reason = msg, taskId = targetTask.id),
+                    conversationContext = convContext.copy(
+                        lastIntent = AiDecisionType.SHOW_INSIGHT,
+                        lastTaskId = targetTask.id,
+                        lastEntityTitle = targetTask.title,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+
         // 12. Fallback to General Analysis & Provider with Grounding
         return handleChat(request, context, relevantMemory)
     }
@@ -1288,6 +1377,7 @@ class NexoraAiBrain(
             AiDecisionType.CREATE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.TOGGLE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.DELETE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
+            AiDecisionType.UPDATE_AUTOMATION -> AiResponseType.ACTION_PROPOSAL
             AiDecisionType.LIST_AUTOMATIONS -> AiResponseType.INFORMATION
             AiDecisionType.EXPLAIN_AUTOMATION -> AiResponseType.INFORMATION
             AiDecisionType.GREETING -> AiResponseType.INFORMATION

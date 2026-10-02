@@ -26,7 +26,8 @@ class NexoraAiValidator(
             AiActionType.COMPLETE_ALL_TASKS,
             AiActionType.CREATE_AUTOMATION,
             AiActionType.TOGGLE_AUTOMATION,
-            AiActionType.DELETE_AUTOMATION -> ValidationResult.Valid
+            AiActionType.DELETE_AUTOMATION,
+            AiActionType.UPDATE_AUTOMATION -> ValidationResult.Valid
         }
     }
 

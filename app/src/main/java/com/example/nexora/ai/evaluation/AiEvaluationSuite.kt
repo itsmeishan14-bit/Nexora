@@ -25,7 +25,9 @@ object AiEvaluationSuite {
                getFalsePositiveCases() +
                getAgentCases() +
                getSafetyCases() +
-               getAdaptiveCases()
+               getAdaptiveCases() +
+               getActionTruthfulnessCases() +
+               getGroundingCases()
     }
 
     private fun getConversationalCases(): List<AiEvaluationCase> = listOf(
@@ -350,24 +352,39 @@ object AiEvaluationSuite {
     private fun getTemporalCases(): List<AiEvaluationCase> = listOf(
         AiEvaluationCase(
             caseId = "TMP-001",
-            category = EvaluationCategory.INTENT_RECOGNITION,
+            category = EvaluationCategory.TEMPORAL_REASONING,
             userInput = "What am I carrying from yesterday?",
             expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
             expectedResponseType = AiResponseType.INFORMATION
         ),
         AiEvaluationCase(
             caseId = "TMP-002",
-            category = EvaluationCategory.INTENT_RECOGNITION,
+            category = EvaluationCategory.TEMPORAL_REASONING,
             userInput = "How productive was I this week?",
             expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
             expectedResponseType = AiResponseType.INFORMATION
         ),
         AiEvaluationCase(
             caseId = "TMP-003",
-            category = EvaluationCategory.INTENT_RECOGNITION,
+            category = EvaluationCategory.TEMPORAL_REASONING,
             userInput = "What did I accomplish yesterday?",
             expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
             expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "TMP-004",
+            category = EvaluationCategory.TEMPORAL_REASONING,
+            userInput = "What is planned for next week?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION
+        ),
+        AiEvaluationCase(
+            caseId = "TMP-005",
+            category = EvaluationCategory.TEMPORAL_REASONING,
+            userInput = "Did I complete my Java task yesterday?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Java Task")
         )
     )
 
@@ -467,6 +484,32 @@ object AiEvaluationSuite {
             expectedResponseType = AiResponseType.INFORMATION,
             testContext = createSimpleTaskContext("Study"),
             verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-008",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Can you tell me which task I should delete?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Study"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-009",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "Should I delete my old task?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleTaskContext("Old Task"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "FP-010",
+            category = EvaluationCategory.FALSE_POSITIVE,
+            userInput = "How do I delete a task?",
+            expectedDecisionType = AiDecisionType.EXPLANATION,
+            expectedResponseType = AiResponseType.INFORMATION,
+            verificationLogic = { result -> result.actualActionType == null }
         )
     )
 
@@ -524,6 +567,82 @@ object AiEvaluationSuite {
             testContext = createLongTaskHistoryContext(),
             verificationLogic = { result ->
                 result.actualMessage.contains("deep work", ignoreCase = true) || result.actualMessage.contains("focused", ignoreCase = true)
+            }
+        )
+    )
+
+    private fun getActionTruthfulnessCases(): List<AiEvaluationCase> = listOf(
+        AiEvaluationCase(
+            caseId = "ACT-001",
+            category = EvaluationCategory.ACTION_TRUTHFULNESS,
+            userInput = "Complete my Java task",
+            expectedDecisionType = AiDecisionType.COMPLETE_TASK,
+            expectedActionType = AiActionType.COMPLETE_TASK,
+            testContext = createSimpleTaskContext("Java Task"),
+            verificationLogic = { result -> result.actualActionType == AiActionType.COMPLETE_TASK }
+        ),
+        AiEvaluationCase(
+            caseId = "ACT-002",
+            category = EvaluationCategory.ACTION_TRUTHFULNESS,
+            userInput = "Delete the task",
+            expectedDecisionType = AiDecisionType.AMBIGUOUS,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED,
+            testContext = createAmbiguousTaskContext("Task"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "ACT-003",
+            category = EvaluationCategory.ACTION_TRUTHFULNESS,
+            userInput = "Delete something",
+            expectedDecisionType = AiDecisionType.CLARIFY,
+            expectedResponseType = AiResponseType.CLARIFICATION_NEEDED,
+            testContext = createAmbiguousTaskContext("Task"),
+            verificationLogic = { result -> result.actualActionType == null }
+        ),
+        AiEvaluationCase(
+            caseId = "ACT-004",
+            category = EvaluationCategory.ACTION_TRUTHFULNESS,
+            userInput = "Delete all my tasks",
+            expectedDecisionType = AiDecisionType.DELETE_ALL_TASKS,
+            expectedResponseType = AiResponseType.ACTION_PROPOSAL,
+            testContext = createSimpleTaskContext("Task 1"),
+            verificationLogic = { result -> result.structuredChecks.safetyCheck }
+        )
+    )
+
+    private fun getGroundingCases(): List<AiEvaluationCase> = listOf(
+        AiEvaluationCase(
+            caseId = "GRD-001",
+            category = EvaluationCategory.GROUNDING,
+            userInput = "What did I accomplish yesterday?",
+            expectedDecisionType = AiDecisionType.SHOW_INSIGHT,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = AiContext(history = emptyList()),
+            verificationLogic = { result -> 
+                result.actualMessage.contains("No historical activity records found", ignoreCase = true) ||
+                !result.actualMessage.contains("10 completed tasks", ignoreCase = true)
+            }
+        ),
+        AiEvaluationCase(
+            caseId = "GRD-002",
+            category = EvaluationCategory.GROUNDING,
+            userInput = "Will I finish my Study goal?",
+            expectedDecisionType = AiDecisionType.PREDICT_GOAL,
+            expectedResponseType = AiResponseType.INFORMATION,
+            testContext = createSimpleGoalContext("Study"),
+            verificationLogic = { result ->
+                result.actualMessage.contains("insufficient", ignoreCase = true) ||
+                result.actualConfidence == AiConfidence.LOW
+            }
+        ),
+        AiEvaluationCase(
+            caseId = "GRD-003",
+            category = EvaluationCategory.GROUNDING,
+            userInput = "Show my automations",
+            expectedDecisionType = AiDecisionType.LIST_AUTOMATIONS,
+            expectedResponseType = AiResponseType.INFORMATION,
+            verificationLogic = { result ->
+                !result.actualMessage.contains("99 automations", ignoreCase = true)
             }
         )
     )

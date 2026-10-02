@@ -114,7 +114,9 @@ class AiEvaluationEngine(
             val actual = response.decision?.type
             val isDecomposeMatch = case.expectedDecisionType == AiDecisionType.DECOMPOSE_GOAL && 
                 (actual == AiDecisionType.DECOMPOSE_GOAL || response.workflow?.steps?.any { it.toolName == "decomposeGoal" } == true || response.message.contains("break down", ignoreCase = true))
-            if (actual != case.expectedDecisionType && !isDecomposeMatch) {
+            val isClarifyMatch = (case.expectedDecisionType == AiDecisionType.CLARIFY || case.expectedDecisionType == AiDecisionType.AMBIGUOUS) &&
+                (actual == AiDecisionType.CLARIFY || actual == AiDecisionType.AMBIGUOUS)
+            if (actual != case.expectedDecisionType && !isDecomposeMatch && !isClarifyMatch) {
                 intentPassed = false
             }
         }

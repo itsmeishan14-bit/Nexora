@@ -17,9 +17,10 @@ class NexoraAutomationPersistenceTest {
     }
 
     @Test
-    fun `TEST 1 - Fresh database initializes default automations exactly once and restart does not duplicate`() {
+    fun `TEST 1 - Fresh database initializes default automations exactly once and restart does not duplicate`() = runBlocking {
         // Fresh initialization
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         val initialRules = systemA.getRules()
         assertEquals("Default rules should be initialized once", 6, initialRules.size)
         assertTrue(initialRules.any { it.name == "Morning Plan Assistant" })
@@ -27,6 +28,7 @@ class NexoraAutomationPersistenceTest {
 
         // Simulate app restart: destroy systemA, create systemB using the same repository
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val restartedRules = systemB.getRules()
         assertEquals("Restart must not duplicate default rules", 6, restartedRules.size)
         assertEquals(
@@ -36,13 +38,14 @@ class NexoraAutomationPersistenceTest {
     }
 
     @Test
-    fun `TEST 2 - User-created automation survives app restart`() {
+    fun `TEST 2 - User-created automation survives app restart`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         val customRule = AiAutomationRule(
             name = "Study Every Morning",
             description = "Prepares study materials at 8 AM",
             triggerType = AutomationTriggerType.DAY_STARTED,
-            conditionExpression = "study",
+            conditionExpression = "morning",
             cooldownMillis = 1800000
         )
         val added = systemA.addRule(customRule)
@@ -51,6 +54,7 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val loadedRules = systemB.getRules()
         assertEquals(7, loadedRules.size)
 
@@ -58,14 +62,15 @@ class NexoraAutomationPersistenceTest {
         assertNotNull("Custom rule must survive app restart", retrievedRule)
         assertEquals("Prepares study materials at 8 AM", retrievedRule!!.description)
         assertEquals(AutomationTriggerType.DAY_STARTED, retrievedRule.triggerType)
-        assertEquals("study", retrievedRule.conditionExpression)
+        assertEquals("morning", retrievedRule.conditionExpression)
         assertEquals(1800000L, retrievedRule.cooldownMillis)
         assertTrue(retrievedRule.enabled)
     }
 
     @Test
-    fun `TEST 3 - Rule enabled-disabled toggle state survives app restart`() {
+    fun `TEST 3 - Rule enabled-disabled toggle state survives app restart`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         
         // Disable Morning Plan Assistant
         val disabled = systemA.toggleRule("Morning Plan Assistant", enabled = false)
@@ -74,6 +79,7 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val ruleInB = systemB.getRules().find { it.name == "Morning Plan Assistant" }
         assertNotNull(ruleInB)
         assertFalse("Disabled state must persist across restart", ruleInB!!.enabled)
@@ -85,14 +91,16 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app again
         val systemC = NexoraAutomationSystem(repository)
+        systemC.awaitInitialization()
         val ruleInC = systemC.getRules().find { it.name == "Morning Plan Assistant" }
         assertNotNull(ruleInC)
         assertTrue("Re-enabled state must persist across restart", ruleInC!!.enabled)
     }
 
     @Test
-    fun `TEST 4 - Deleted automation remains deleted after app restart`() {
+    fun `TEST 4 - Deleted automation remains deleted after app restart`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         assertTrue(systemA.getRules().any { it.name == "Morning Plan Assistant" })
 
         // Delete rule
@@ -103,14 +111,16 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         assertFalse("Deleted rule must remain deleted after restart",
             systemB.getRules().any { it.name == "Morning Plan Assistant" })
         assertEquals(5, systemB.getRules().size)
     }
 
     @Test
-    fun `TEST 5 - Duplicate protection persists after app restart`() {
+    fun `TEST 5 - Duplicate protection persists after app restart`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         val newRule = AiAutomationRule(
             name = "Deep Work Protocol",
             description = "Blocks focus time",
@@ -120,6 +130,7 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val duplicateAttempt = AiAutomationRule(
             name = "Deep Work Protocol",
             description = "Different description",
@@ -131,8 +142,9 @@ class NexoraAutomationPersistenceTest {
     }
 
     @Test
-    fun `TEST 6 - Cooldowns survive app restart and prevent duplicate execution`() {
+    fun `TEST 6 - Cooldowns survive app restart and prevent duplicate execution`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         val context = AiContext(
             tasksPlannedToday = 20,
             adaptiveProfile = AdaptiveProfile(
@@ -151,6 +163,7 @@ class NexoraAutomationPersistenceTest {
 
         // 2. Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val triggeredRuleB = systemB.getRules().first { it.name == "Workload Manager" }
         assertEquals("lastTriggeredAt must persist across restart", triggeredAt, triggeredRuleB.lastTriggeredAt)
         assertEquals("runCount must persist across restart", 1, triggeredRuleB.runCount)
@@ -161,8 +174,9 @@ class NexoraAutomationPersistenceTest {
     }
 
     @Test
-    fun `TEST 7 - Execution history and explainLastRun survive app restart`() {
+    fun `TEST 7 - Execution history and explainLastRun survive app restart`() = runBlocking {
         val systemA = NexoraAutomationSystem(repository)
+        systemA.awaitInitialization()
         val context = AiContext(
             tasksPlannedToday = 20,
             adaptiveProfile = AdaptiveProfile(
@@ -179,6 +193,7 @@ class NexoraAutomationPersistenceTest {
 
         // Restart app
         val systemB = NexoraAutomationSystem(repository)
+        systemB.awaitInitialization()
         val explanationB = systemB.explainLastRun("Workload Manager")
         assertTrue("Execution history must survive app restart", explanationB.contains("Workload Manager"))
         assertTrue("Execution details must survive app restart", explanationB.contains("WORKLOAD_CHANGED"))
@@ -187,6 +202,7 @@ class NexoraAutomationPersistenceTest {
     @Test
     fun `TEST 8 - Execution history is bounded in persistent storage`() = runBlocking {
         val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
         
         // Insert 60 executions into repository
         for (i in 1..60) {
@@ -211,6 +227,7 @@ class NexoraAutomationPersistenceTest {
     @Test
     fun `TEST 9 - End-to-end Action Executor CRUD with persistence and outcome integrity`() = runBlocking {
         val automationSystem = NexoraAutomationSystem(repository)
+        automationSystem.awaitInitialization()
         val actionExecutor = AiActionExecutor(repository, automationSystem)
         val contextBuilder = AiContextBuilder(repository)
         val localIntentResolver = LocalAiIntentResolver(automationSystem = automationSystem)
@@ -293,7 +310,7 @@ class NexoraAutomationPersistenceTest {
     }
 
     @Test
-    fun `TEST 10 - Persistence failure prevents false trigger signals`() {
+    fun `TEST 10 - Persistence failure prevents false trigger signals`() = runBlocking {
         // A repository that intentionally rejects updates
         val failingRepo = object : MockNexoraRepository() {
             override suspend fun updateAutomationRule(rule: AiAutomationRule): Boolean {
@@ -302,6 +319,7 @@ class NexoraAutomationPersistenceTest {
         }
 
         val system = NexoraAutomationSystem(failingRepo)
+        system.awaitInitialization()
         val context = AiContext(
             tasksPlannedToday = 20,
             adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH)
@@ -309,5 +327,165 @@ class NexoraAutomationPersistenceTest {
 
         val signals = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
         assertEquals("Trigger should NOT be emitted if persistence fails", 0, signals.size)
+    }
+
+    @Test
+    fun `TEST 11 - Full 11-step lifecycle create, runtime, persist, reload, toggle, reload, delete, reload`() = runBlocking {
+        // 1. Create automation
+        val system1 = NexoraAutomationSystem(repository)
+        system1.awaitInitialization()
+        val rule = AiAutomationRule(
+            id = "custom_lifecycle_1",
+            name = "Productivity Guardian",
+            description = "Monitors daily productivity patterns",
+            triggerType = AutomationTriggerType.DAY_STARTED,
+            conditionExpression = "morning",
+            enabled = true
+        )
+        val created = system1.addRule(rule)
+        assertTrue("Rule creation must succeed", created)
+
+        // 2. Confirm it appears in runtime state
+        val inRuntime1 = system1.getRules().find { it.name == "Productivity Guardian" }
+        assertNotNull("Rule must appear in runtime state", inRuntime1)
+        assertTrue("Rule must be enabled", inRuntime1!!.enabled)
+
+        // 3. Confirm it is persisted in repository
+        val persisted1 = repository.getAutomationRule("Productivity Guardian")
+        assertNotNull("Rule must be persisted in repository", persisted1)
+        assertTrue(persisted1!!.enabled)
+
+        // 4. Reload / recreate the automation manager
+        val system2 = NexoraAutomationSystem(repository)
+        system2.awaitInitialization()
+
+        // 5. Confirm the rule still exists
+        val inRuntime2 = system2.getRules().find { it.name == "Productivity Guardian" }
+        assertNotNull("Rule must exist after manager reload", inRuntime2)
+
+        // 6. Toggle it (disable)
+        val toggled = system2.toggleRule("Productivity Guardian", enabled = false)
+        assertNotNull("Toggle must return updated rule", toggled)
+        assertFalse("Toggled rule must be disabled", toggled!!.enabled)
+
+        // 7. Reload again
+        val system3 = NexoraAutomationSystem(repository)
+        system3.awaitInitialization()
+
+        // 8. Confirm the toggle persisted
+        val inRuntime3 = system3.getRules().find { it.name == "Productivity Guardian" }
+        assertNotNull(inRuntime3)
+        assertFalse("Disabled state must persist across reload", inRuntime3!!.enabled)
+
+        // 9. Delete it
+        val deleted = system3.deleteRule("Productivity Guardian")
+        assertTrue("Delete must succeed", deleted)
+        assertNull(system3.getRules().find { it.name == "Productivity Guardian" })
+
+        // 10. Reload again
+        val system4 = NexoraAutomationSystem(repository)
+        system4.awaitInitialization()
+
+        // 11. Confirm it remains deleted
+        val inRuntime4 = system4.getRules().find { it.name == "Productivity Guardian" }
+        assertNull("Rule must remain deleted across reload", inRuntime4)
+        assertNull("Rule must be gone from persistent storage", repository.getAutomationRule("Productivity Guardian"))
+    }
+
+    @Test
+    fun `TEST 12 - Custom condition engine handles supported, unsupported, blank, and malformed expressions deterministically`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+
+        val contextOverloaded = AiContext(tasksPlannedToday = 20, adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH))
+        val contextUnderloaded = AiContext(tasksPlannedToday = 2, adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH))
+
+        // 1. Supported condition: True
+        val ruleOverload = AiAutomationRule(
+            id = "c_overload",
+            name = "Overload Sentinel",
+            description = "Overload detection rule",
+            triggerType = AutomationTriggerType.WORKLOAD_CHANGED,
+            conditionExpression = "overload"
+        )
+        system.addRule(ruleOverload)
+        val signalsTrue = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextOverloaded)
+        assertTrue("Supported condition evaluated to true should emit signal", signalsTrue.any { it.title == "Overload Sentinel" })
+
+        // 2. Supported condition: False
+        val systemFresh = NexoraAutomationSystem(repository)
+        systemFresh.awaitInitialization()
+        val signalsFalse = systemFresh.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextUnderloaded)
+        assertFalse("Supported condition evaluated to false should not emit signal", signalsFalse.any { it.title == "Overload Sentinel" })
+
+        // 3. Unsupported condition: must return false and NOT silently match
+        val ruleUnsupported = AiAutomationRule(
+            id = "c_unsupported",
+            name = "Fake Condition Rule",
+            description = "Rule with unsupported condition",
+            triggerType = AutomationTriggerType.WORKLOAD_CHANGED,
+            conditionExpression = "xyz_arbitrary_unsupported_condition_123"
+        )
+        system.addRule(ruleUnsupported)
+        val signalsUnsupported = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextOverloaded)
+        assertFalse("Unsupported condition must never silently match", signalsUnsupported.any { it.title == "Fake Condition Rule" })
+
+        // 4. Blank condition: must return false and not fire
+        val ruleBlank = AiAutomationRule(
+            id = "c_blank",
+            name = "Blank Rule",
+            description = "Blank condition rule",
+            triggerType = AutomationTriggerType.WORKLOAD_CHANGED,
+            conditionExpression = "   "
+        )
+        system.addRule(ruleBlank)
+        val signalsBlank = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextOverloaded)
+        assertFalse("Blank condition must not fire", signalsBlank.any { it.title == "Blank Rule" })
+
+        // 5. Malformed condition: must return false and not fire
+        val ruleMalformed = AiAutomationRule(
+            id = "c_malformed",
+            name = "Malformed Rule",
+            description = "Malformed condition rule",
+            triggerType = AutomationTriggerType.WORKLOAD_CHANGED,
+            conditionExpression = "&& || == !"
+        )
+        system.addRule(ruleMalformed)
+        val signalsMalformed = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextOverloaded)
+        assertFalse("Malformed condition must not fire", signalsMalformed.any { it.title == "Malformed Rule" })
+
+        // 6. Disabled rule: must never execute
+        system.toggleRule("Overload Sentinel", enabled = false)
+        val signalsDisabled = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, contextOverloaded)
+        assertFalse("Disabled rule must never fire", signalsDisabled.any { it.title == "Overload Sentinel" })
+    }
+
+    @Test
+    fun `TEST 13 - Automation execution truthfulness distinguishes proposal from blocked stages`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val context = AiContext(tasksPlannedToday = 20, adaptiveProfile = AdaptiveProfile(preferredDailyWorkload = 5, confidence = AdaptiveConfidence.HIGH))
+
+        // First run emits ACTION_PROPOSED
+        val signals1 = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
+        assertEquals(1, signals1.size)
+        val history1 = repository.getRecentAutomationExecutions(5)
+        val lastRecord1 = history1.first { it.ruleName == "Workload Manager" }
+        assertEquals(AutomationExecutionStage.ACTION_PROPOSED, lastRecord1.stage)
+
+        // Immediate second run is blocked by cooldown
+        val signals2 = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
+        assertEquals(0, signals2.size)
+        val history2 = repository.getRecentAutomationExecutions(5)
+        val lastRecord2 = history2.first { it.ruleName == "Workload Manager" }
+        assertEquals(AutomationExecutionStage.BLOCKED_BY_COOLDOWN, lastRecord2.stage)
+
+        // Disabled rule run is blocked by disabled rule
+        system.toggleRule("Workload Manager", enabled = false)
+        val signals3 = system.evaluateTriggers(AutomationTriggerType.WORKLOAD_CHANGED, context)
+        assertEquals(0, signals3.size)
+        val history3 = repository.getRecentAutomationExecutions(5)
+        val lastRecord3 = history3.first { it.ruleName == "Workload Manager" }
+        assertEquals(AutomationExecutionStage.BLOCKED_BY_DISABLED_RULE, lastRecord3.stage)
     }
 }

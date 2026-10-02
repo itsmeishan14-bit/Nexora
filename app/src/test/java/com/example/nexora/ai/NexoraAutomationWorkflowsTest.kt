@@ -37,6 +37,9 @@ class NexoraAutomationWorkflowsTest {
             repository = repository,
             automationSystem = automationSystem
         )
+        runBlocking {
+            automationSystem.awaitInitialization()
+        }
     }
 
     @Test

@@ -176,7 +176,7 @@ object AiEntityResolver {
      */
     private fun normalize(text: String): String {
         return text.lowercase()
-            .replace(Regex("(?i)\\b(the|my|a|an|task|goal|called|as|complete|mark|delete|update|change|to|for|with)\\b"), " ")
+            .replace(Regex("(?i)\\b(the|my|a|an|task|goal|called|as|complete|mark|delete|update|change|to|for|with|one)\\b"), " ")
             .replace(Regex("[^a-z0-9\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -198,11 +198,19 @@ object AiEntityResolver {
     private fun scoreMatch(query: String, target: String): Int {
         if (query.isBlank() || target.isBlank()) return 0
         if (query == target) return 100
+
+        val queryWords = query.split(" ").filter { it.length >= 2 }
+        val targetWords = target.split(" ").toSet()
+
+        // If query is a single word and it matches a distinct word in target,
+        // treat it consistently (75) regardless of prefix vs infix position to prevent false bias
+        if (queryWords.size == 1 && queryWords.first() in targetWords) {
+            return 75
+        }
+
         if (target.startsWith(query) || query.startsWith(target)) return 80
         if (target.contains(query) || query.contains(target)) return 60
         
-        val queryWords = query.split(" ").filter { it.length >= 2 }
-        val targetWords = target.split(" ").toSet()
         if (queryWords.isEmpty()) return 0
         
         val matchingWords = queryWords.count { it in targetWords }

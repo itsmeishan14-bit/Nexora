@@ -22,6 +22,14 @@ class NexoraAiEngine(
         automationSystem = automationSystem
     )
 
+    init {
+        actionExecutor.onActionExecuted = {
+            brain.invalidateContext()
+        }
+    }
+
+    fun getBrain(): NexoraAiBrain = brain
+
     /**
      * Unified entry point for all AI requests.
      */
@@ -45,6 +53,10 @@ class NexoraAiEngine(
         return result
     }
 
+    fun invalidateContext() {
+        brain.invalidateContext()
+    }
+
     fun observeAutomationRules(): kotlinx.coroutines.flow.Flow<List<AiAutomationRule>> {
         return brain.observeAutomationRules()
     }
@@ -53,19 +65,19 @@ class NexoraAiEngine(
         return brain.getAutomationRules()
     }
 
-    fun updateAutomationRule(rule: AiAutomationRule) {
+    suspend fun updateAutomationRule(rule: AiAutomationRule) {
         brain.updateAutomationRule(rule)
     }
 
-    fun addAutomationRule(rule: AiAutomationRule): Boolean {
+    suspend fun addAutomationRule(rule: AiAutomationRule): Boolean {
         return brain.addAutomationRule(rule)
     }
 
-    fun deleteAutomationRule(idOrName: String): Boolean {
+    suspend fun deleteAutomationRule(idOrName: String): Boolean {
         return brain.deleteAutomationRule(idOrName)
     }
 
-    fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? {
+    suspend fun toggleAutomationRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? {
         return brain.toggleAutomationRule(idOrName, enabled)
     }
 

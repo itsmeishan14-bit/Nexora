@@ -4,12 +4,13 @@ import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.TaskPriority
 import com.example.nexora.util.NexoraLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * Manages automation rules, dynamic condition evaluation, and execution history logging.
@@ -342,7 +343,7 @@ class NexoraAutomationSystem(
     ): Pair<Boolean, String> {
         val raw = rule.conditionExpression?.trim() ?: ""
         if (raw.isBlank()) {
-            return Pair(true, "Unconditional trigger for $trigger")
+            return Pair(false, "Blank condition expression does not match")
         }
 
         val expr = raw.lowercase()
@@ -354,8 +355,9 @@ class NexoraAutomationSystem(
 
         return when {
             expr.contains("workload") || expr.contains("overload") -> {
-                val overloaded = context.incompleteTasks.size > context.adaptiveProfile.preferredDailyWorkload
-                Pair(overloaded, if (overloaded) "Incomplete tasks (${context.incompleteTasks.size}) exceed capacity (${context.adaptiveProfile.preferredDailyWorkload})" else "Workload within normal limits")
+                val overloaded = (context.incompleteTasks.size > context.adaptiveProfile.preferredDailyWorkload) ||
+                                 (context.tasksPlannedToday > context.adaptiveProfile.preferredDailyWorkload)
+                Pair(overloaded, if (overloaded) "Incomplete tasks (${context.incompleteTasks.size}) or planned tasks (${context.tasksPlannedToday}) exceed capacity (${context.adaptiveProfile.preferredDailyWorkload})" else "Workload within normal limits")
             }
             expr.contains("carried") || expr.contains("carry") -> {
                 val hasCarried = context.carriedTasks >= 2

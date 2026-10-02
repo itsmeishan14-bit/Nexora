@@ -37,7 +37,10 @@ enum class EvaluationCategory {
     SAFETY,
     CONVERSATIONAL_CONTINUITY,
     ADAPTIVE_BEHAVIOR,
-    FALSE_POSITIVE
+    FALSE_POSITIVE,
+    TEMPORAL_REASONING,
+    ACTION_TRUTHFULNESS,
+    GROUNDING
 }
 
 data class ExpectedEntity(
