@@ -70,6 +70,18 @@ data class AiAutomationRule(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+enum class AutomationExecutionStage {
+    TRIGGER_DETECTED,
+    CONDITION_MATCHED,
+    ACTION_PROPOSED,
+    ACTION_EXECUTED,
+    ACTION_SUCCEEDED,
+    ACTION_FAILED,
+    ACTION_SKIPPED,
+    BLOCKED_BY_COOLDOWN,
+    BLOCKED_BY_DISABLED_RULE
+}
+
 data class AutomationExecutionRecord(
     val id: String = UUID.randomUUID().toString(),
     val ruleId: String,
@@ -79,7 +91,8 @@ data class AutomationExecutionRecord(
     val conditionMatched: String,
     val evidence: String,
     val actionTaken: String,
-    val success: Boolean
+    val success: Boolean,
+    val stage: AutomationExecutionStage = if (success) AutomationExecutionStage.ACTION_PROPOSED else AutomationExecutionStage.ACTION_FAILED
 )
 
 enum class AutomationTriggerType {

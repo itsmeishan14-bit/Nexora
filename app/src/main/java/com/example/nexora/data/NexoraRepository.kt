@@ -532,6 +532,19 @@ open class NexoraRepository(
     }
 
     private fun mapAutomationExecutionEntityToDomain(entity: AutomationExecutionEntity): AutomationExecutionRecord {
+        val stageParsed = try {
+            if (entity.actionTaken.startsWith("[STAGE:")) {
+                val stageName = entity.actionTaken.substringAfter("[STAGE:").substringBefore("]")
+                AutomationExecutionStage.valueOf(stageName)
+            } else null
+        } catch (_: Exception) { null }
+
+        val cleanAction = if (entity.actionTaken.startsWith("[STAGE:")) {
+            entity.actionTaken.substringAfter("] ")
+        } else {
+            entity.actionTaken
+        }
+
         return AutomationExecutionRecord(
             id = entity.id,
             ruleId = entity.ruleId,
@@ -540,8 +553,9 @@ open class NexoraRepository(
             triggerType = try { AutomationTriggerType.valueOf(entity.triggerType) } catch (e: Exception) { AutomationTriggerType.DAY_STARTED },
             conditionMatched = entity.conditionMatched,
             evidence = entity.evidence,
-            actionTaken = entity.actionTaken,
-            success = entity.success
+            actionTaken = cleanAction,
+            success = entity.success,
+            stage = stageParsed ?: if (entity.success) AutomationExecutionStage.ACTION_PROPOSED else AutomationExecutionStage.ACTION_FAILED
         )
     }
 
@@ -554,7 +568,7 @@ open class NexoraRepository(
             triggerType = record.triggerType.name,
             conditionMatched = record.conditionMatched,
             evidence = record.evidence,
-            actionTaken = record.actionTaken,
+            actionTaken = "[STAGE:${record.stage.name}] ${record.actionTaken}",
             success = record.success
         )
     }
