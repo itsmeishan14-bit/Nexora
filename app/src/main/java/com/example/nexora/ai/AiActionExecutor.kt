@@ -9,7 +9,7 @@ import com.example.nexora.util.NexoraSecurity
 
 open class AiActionExecutor(
     private val repository: NexoraRepository?,
-    private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem()
+    private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem(repository)
 ) {
     fun getAutomationSystem(): NexoraAutomationSystem = automationSystem
 
@@ -174,10 +174,14 @@ open class AiActionExecutor(
                 if (found != null) executionResult else AiActionResult(false, "Verification failed: Automation rule \"$name\" not found after creation.", error = "Verification failed")
             }
             AiActionType.UPDATE_AUTOMATION -> {
+                val newName = action.parameters["newName"] as? String ?: action.parameters["name"] as? String
                 val target = action.parameters["ruleId"] as? String ?: action.parameters["ruleName"] as? String ?: action.parameters["name"] as? String ?: ""
-                val clean = target.trim().removeSuffix(".")
+                val cleanTarget = target.trim().removeSuffix(".")
+                val cleanNewName = newName?.trim()?.removeSuffix(".")
                 val found = automationSystem.getRules().find { 
-                    it.name.equals(clean, ignoreCase = true) || it.id.equals(clean, ignoreCase = true) 
+                    (cleanNewName != null && it.name.equals(cleanNewName, ignoreCase = true)) ||
+                    it.name.equals(cleanTarget, ignoreCase = true) || 
+                    it.id.equals(cleanTarget, ignoreCase = true) 
                 }
                 if (found != null) executionResult else AiActionResult(false, "Verification failed: Automation rule \"$target\" not found after update.", error = "Verification failed")
             }
@@ -208,19 +212,23 @@ open class AiActionExecutor(
 
     private suspend fun recordActionOutcome(action: AiAction, result: AiActionResult) {
         val repo = repository ?: return
-        val outcome = AiOutcome(
-            id = java.util.UUID.randomUUID().toString(),
-            recommendationId = null,
-            actionId = action.id,
-            type = if (result.success) AiOutcomeType.SUCCESS else AiOutcomeType.FAILED,
-            timestamp = System.currentTimeMillis(),
-            relatedTaskId = result.affectedTaskId ?: action.taskId,
-            relatedGoalId = result.affectedGoalId ?: action.goalId,
-            expectedResult = action.title,
-            actualResult = result.message,
-            evidence = if (result.success) "Action execution returned success." else "Error: ${result.error}"
-        )
-        repo.saveOutcome(outcome)
+        try {
+            val outcome = AiOutcome(
+                id = java.util.UUID.randomUUID().toString(),
+                recommendationId = null,
+                actionId = action.id,
+                type = if (result.success) AiOutcomeType.SUCCESS else AiOutcomeType.FAILED,
+                timestamp = System.currentTimeMillis(),
+                relatedTaskId = result.affectedTaskId ?: action.taskId,
+                relatedGoalId = result.affectedGoalId ?: action.goalId,
+                expectedResult = action.title,
+                actualResult = result.message,
+                evidence = if (result.success) "Action execution returned success." else "Error: ${result.error}"
+            )
+            repo.saveOutcome(outcome)
+        } catch (e: Exception) {
+            NexoraLogger.e("EXECUTOR", "Failed to record telemetry outcome for action: ${action.title}", e)
+        }
     }
 
     private suspend fun createTask(repository: NexoraRepository, action: AiAction): AiActionResult {
@@ -467,11 +475,21 @@ open class AiActionExecutor(
         }
         val existing = automationSystem.findRule(target)
             ?: return AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
-        val newName = action.parameters["newName"] as? String ?: action.parameters["name"] as? String ?: existing.name
-        val newDescription = action.parameters["description"] as? String ?: existing.description
+        val newName = action.parameters["newName"] as? String 
+            ?: action.parameters["newTitle"] as? String 
+            ?: action.parameters["name"] as? String 
+            ?: action.parameters["title"] as? String 
+            ?: existing.name
+        val newDescription = action.parameters["newDescription"] as? String 
+            ?: action.parameters["description"] as? String 
+            ?: existing.description
         val updated = existing.copy(name = newName, description = newDescription)
-        automationSystem.updateRule(updated)
-        return AiActionResult(true, "Automation rule updated: ${updated.name}")
+        val success = automationSystem.updateRule(updated)
+        return if (success) {
+            AiActionResult(true, "Automation rule updated: ${updated.name}")
+        } else {
+            AiActionResult(false, "Failed to persist automation rule update: \"${updated.name}\".", error = "Persistence failed")
+        }
     }
 
     private suspend fun toggleAutomation(action: AiAction): AiActionResult {
@@ -499,11 +517,13 @@ open class AiActionExecutor(
         if (target.isNullOrBlank()) {
             return AiActionResult(false, "Automation rule ID or name missing.", error = "Rule ID missing")
         }
-        val deleted = automationSystem.deleteRule(target)
+        val existing = automationSystem.findRule(target)
+            ?: return AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
+        val deleted = automationSystem.deleteRule(existing.id)
         return if (deleted) {
-            AiActionResult(true, "Automation rule deleted: $target.")
+            AiActionResult(true, "Automation rule deleted: ${existing.name}")
         } else {
-            AiActionResult(false, "Automation rule not found matching: \"$target\".", error = "Rule not found")
+            AiActionResult(false, "Failed to delete automation rule: \"${existing.name}\".", error = "Rule not found or persistence failed")
         }
     }
 }

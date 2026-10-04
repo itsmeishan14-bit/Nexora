@@ -75,9 +75,11 @@ open class MockNexoraRepository : NexoraRepository(null) {
         goals.removeAll { it.id == goal.id }
     }
 
+    var failSaveOutcome: Boolean = false
     private val outcomes = mutableListOf<com.example.nexora.ai.AiOutcome>()
 
     override suspend fun saveOutcome(outcome: com.example.nexora.ai.AiOutcome) {
+        if (failSaveOutcome) throw java.io.IOException("Outcome write failure")
         outcomes.add(outcome)
     }
 
@@ -112,7 +114,14 @@ open class MockNexoraRepository : NexoraRepository(null) {
         return kotlinx.coroutines.flow.flowOf(automationRules.toList())
     }
 
+    var failGetAutomationRules: Boolean = false
+    var failInsertAutomation: Boolean = false
+    var failUpdateAutomation: Boolean = false
+    var failDeleteAutomation: Boolean = false
+    var failInsertExecution: Boolean = false
+
     override suspend fun getAutomationRules(): List<com.example.nexora.ai.AiAutomationRule> {
+        if (failGetAutomationRules) throw java.io.IOException("Automation rules read failure")
         return automationRules.toList()
     }
 
@@ -125,6 +134,7 @@ open class MockNexoraRepository : NexoraRepository(null) {
     }
 
     override suspend fun insertAutomationRule(rule: com.example.nexora.ai.AiAutomationRule): Boolean {
+        if (failInsertAutomation) return false
         if (automationRules.any { it.name.equals(rule.name, ignoreCase = true) }) {
             return false // duplicate name
         }
@@ -133,6 +143,7 @@ open class MockNexoraRepository : NexoraRepository(null) {
     }
 
     override suspend fun updateAutomationRule(rule: com.example.nexora.ai.AiAutomationRule): Boolean {
+        if (failUpdateAutomation) return false
         val index = automationRules.indexOfFirst { it.id == rule.id }
         if (index >= 0) {
             automationRules[index] = rule
@@ -142,6 +153,7 @@ open class MockNexoraRepository : NexoraRepository(null) {
     }
 
     override suspend fun deleteAutomationRule(idOrName: String): Boolean {
+        if (failDeleteAutomation) return false
         val clean = idOrName.trim().removeSuffix(".")
         return automationRules.removeAll { 
             it.id.equals(clean, ignoreCase = true) || 
@@ -154,6 +166,7 @@ open class MockNexoraRepository : NexoraRepository(null) {
     }
 
     override suspend fun insertAutomationExecution(record: com.example.nexora.ai.AutomationExecutionRecord) {
+        if (failInsertExecution) throw java.io.IOException("Automation execution insert failure")
         automationExecutions.add(record)
     }
 

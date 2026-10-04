@@ -82,11 +82,37 @@ class AdvancedLocalLanguagePipeline {
         var targetTaskTitle: String? = null
         var targetGoalTitle: String? = null
 
+        val originalIntent = structuralResult.intent
+        val originalRequestedAction = when (originalIntent) {
+            AiDecisionType.CREATE_TASK -> AiActionType.CREATE_TASK
+            AiDecisionType.COMPLETE_TASK -> AiActionType.COMPLETE_TASK
+            AiDecisionType.DELETE_TASK -> AiActionType.DELETE_TASK
+            AiDecisionType.UPDATE_TASK -> AiActionType.UPDATE_TASK
+            AiDecisionType.CREATE_GOAL -> AiActionType.CREATE_GOAL
+            AiDecisionType.DELETE_GOAL -> AiActionType.DELETE_GOAL
+            AiDecisionType.UPDATE_GOAL -> AiActionType.UPDATE_GOAL
+            AiDecisionType.DECOMPOSE_GOAL -> AiActionType.DECOMPOSE_GOAL
+            AiDecisionType.DELETE_ALL_TASKS -> AiActionType.DELETE_ALL_TASKS
+            AiDecisionType.COMPLETE_ALL_TASKS -> AiActionType.COMPLETE_ALL_TASKS
+            AiDecisionType.CREATE_AUTOMATION -> AiActionType.CREATE_AUTOMATION
+            AiDecisionType.TOGGLE_AUTOMATION -> AiActionType.TOGGLE_AUTOMATION
+            AiDecisionType.DELETE_AUTOMATION -> AiActionType.DELETE_AUTOMATION
+            AiDecisionType.UPDATE_AUTOMATION -> AiActionType.UPDATE_AUTOMATION
+            else -> null
+        }
+
+        val taskActionVerb = when (originalIntent) {
+            AiDecisionType.COMPLETE_TASK -> "complete"
+            AiDecisionType.DELETE_TASK -> "delete"
+            AiDecisionType.UPDATE_TASK -> "update"
+            else -> "process"
+        }
+
         val queryTitle = resolvedEntities["title"]?.toString() ?: ""
         val ambiguousTitles = listOf("It", "That", "This", "Task", "My task", "The task", "This task", "That task", "Something")
 
         // Task Action Entity Verification
-        if (finalIntent in listOf(AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK)) {
+        if (originalIntent in listOf(AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK)) {
             if (targetTaskId != null) {
                 val found = context.tasks.find { it.id == targetTaskId }
                 targetTaskTitle = found?.title
@@ -103,10 +129,9 @@ class AdvancedLocalLanguagePipeline {
                         finalIntent = AiDecisionType.AMBIGUOUS
                         finalConfidence = AiConfidence.LOW
                         requiresClarification = true
-                        val actionVerb = if (finalIntent == AiDecisionType.COMPLETE_TASK) "complete" else "delete"
                         clarificationNeeded = AiClarification(
-                            question = "I found multiple matching tasks (${match.candidates.joinToString { it.title }}). Which one would you like to $actionVerb?",
-                            intent = structuralResult.intent,
+                            question = "I found multiple matching tasks (${match.candidates.joinToString { it.title }}). Which one would you like to $taskActionVerb?",
+                            intent = originalIntent,
                             missingField = "taskId",
                             candidates = match.candidates.map { it.id },
                             originalQuery = message
@@ -114,6 +139,9 @@ class AdvancedLocalLanguagePipeline {
                     }
                     is ResolutionResult.NotFound -> {
                         // Named task not found in active list
+                        targetTaskId = null
+                        targetTaskTitle = null
+                        resolvedEntities.remove("taskId")
                         finalConfidence = AiConfidence.MEDIUM
                     }
                 }
@@ -127,10 +155,9 @@ class AdvancedLocalLanguagePipeline {
                 finalIntent = AiDecisionType.AMBIGUOUS
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
-                val actionVerb = if (finalIntent == AiDecisionType.COMPLETE_TASK) "complete" else "delete"
                 clarificationNeeded = AiClarification(
-                    question = "I found multiple tasks (${context.tasks.joinToString { it.title }}). Which one would you like to $actionVerb?",
-                    intent = structuralResult.intent,
+                    question = "I found multiple tasks (${context.tasks.joinToString { it.title }}). Which one would you like to $taskActionVerb?",
+                    intent = originalIntent,
                     missingField = "taskId",
                     candidates = context.tasks.map { it.id },
                     originalQuery = message
@@ -140,10 +167,9 @@ class AdvancedLocalLanguagePipeline {
                 finalIntent = AiDecisionType.CLARIFY
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
-                val actionVerb = if (finalIntent == AiDecisionType.COMPLETE_TASK) "complete" else "delete"
                 clarificationNeeded = AiClarification(
-                    question = "Which task would you like to $actionVerb?",
-                    intent = structuralResult.intent,
+                    question = "Which task would you like to $taskActionVerb?",
+                    intent = originalIntent,
                     missingField = "title",
                     originalQuery = message
                 )
@@ -151,12 +177,19 @@ class AdvancedLocalLanguagePipeline {
         }
 
         // Goal Action Entity Verification
-        if (finalIntent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
+        val goalActionVerb = when (originalIntent) {
+            AiDecisionType.DELETE_GOAL -> "delete"
+            AiDecisionType.UPDATE_GOAL -> "update"
+            AiDecisionType.DECOMPOSE_GOAL -> "decompose"
+            else -> "process"
+        }
+
+        if (originalIntent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
             if (targetGoalId != null) {
                 val found = context.goals.find { it.id == targetGoalId }
                 targetGoalTitle = found?.title
-            } else if (queryTitle.isNotBlank() && queryTitle != "It" && queryTitle != "That") {
-                val match = AiEntityResolver.resolveGoal(queryTitle, context.goals, convContext)
+            } else if (queryTitle.isNotBlank() && queryTitle !in listOf("It", "That", "This", "Goal", "My goal", "The goal")) {
+                val match = AiEntityResolver.resolveGoal(queryTitle, context.goals, effectiveConvContext)
                 when (match) {
                     is ResolutionResult.Success -> {
                         targetGoalId = match.entity.id
@@ -169,42 +202,61 @@ class AdvancedLocalLanguagePipeline {
                         finalConfidence = AiConfidence.LOW
                         requiresClarification = true
                         clarificationNeeded = AiClarification(
-                            question = "I found multiple matching goals (${match.candidates.joinToString { it.title }}). Which one did you mean?",
-                            intent = structuralResult.intent,
+                            question = "I found multiple matching goals (${match.candidates.joinToString { it.title }}). Which one would you like to $goalActionVerb?",
+                            intent = originalIntent,
                             missingField = "goalId",
                             candidates = match.candidates.map { it.id },
                             originalQuery = message
                         )
                     }
                     is ResolutionResult.NotFound -> {
-                        // Check if goal was just passed by title in a single goal context
-                        val singleGoal = context.goals.find { it.title.contains(queryTitle, ignoreCase = true) }
-                        if (singleGoal != null) {
-                            targetGoalId = singleGoal.id
-                            targetGoalTitle = singleGoal.title
-                            resolvedEntities["goalId"] = singleGoal.id
-                            finalConfidence = AiConfidence.HIGH
-                        }
+                        targetGoalId = null
+                        targetGoalTitle = null
+                        resolvedEntities.remove("goalId")
+                        finalConfidence = AiConfidence.MEDIUM
                     }
                 }
+            } else if (context.goals.size > 1 && (queryTitle.isBlank() || queryTitle in listOf("It", "That", "This", "Goal", "My goal", "The goal"))) {
+                finalIntent = AiDecisionType.AMBIGUOUS
+                finalConfidence = AiConfidence.LOW
+                requiresClarification = true
+                clarificationNeeded = AiClarification(
+                    question = "I found multiple goals (${context.goals.joinToString { it.title }}). Which one would you like to $goalActionVerb?",
+                    intent = originalIntent,
+                    missingField = "goalId",
+                    candidates = context.goals.map { it.id },
+                    originalQuery = message
+                )
+            } else if (context.goals.size == 1 && (queryTitle.isBlank() || queryTitle in listOf("It", "That", "This", "Goal", "My goal", "The goal"))) {
+                val single = context.goals.first()
+                targetGoalId = single.id
+                targetGoalTitle = single.title
+                resolvedEntities["goalId"] = single.id
+                finalConfidence = AiConfidence.HIGH
+            } else {
+                finalIntent = AiDecisionType.CLARIFY
+                finalConfidence = AiConfidence.LOW
+                requiresClarification = true
+                clarificationNeeded = AiClarification(
+                    question = "Which goal would you like to $goalActionVerb?",
+                    intent = originalIntent,
+                    missingField = "title",
+                    originalQuery = message
+                )
             }
         }
 
-        val requestedAction = when (finalIntent) {
-            AiDecisionType.CREATE_TASK -> AiActionType.CREATE_TASK
-            AiDecisionType.COMPLETE_TASK -> AiActionType.COMPLETE_TASK
-            AiDecisionType.DELETE_TASK -> AiActionType.DELETE_TASK
-            AiDecisionType.UPDATE_TASK -> AiActionType.UPDATE_TASK
-            AiDecisionType.CREATE_GOAL -> AiActionType.CREATE_GOAL
-            AiDecisionType.DELETE_GOAL -> AiActionType.DELETE_GOAL
-            AiDecisionType.DECOMPOSE_GOAL -> AiActionType.DECOMPOSE_GOAL
-            AiDecisionType.DELETE_ALL_TASKS -> AiActionType.DELETE_ALL_TASKS
-            AiDecisionType.COMPLETE_ALL_TASKS -> AiActionType.COMPLETE_ALL_TASKS
-            AiDecisionType.CREATE_AUTOMATION -> AiActionType.CREATE_AUTOMATION
-            AiDecisionType.TOGGLE_AUTOMATION -> AiActionType.TOGGLE_AUTOMATION
-            AiDecisionType.DELETE_AUTOMATION -> AiActionType.DELETE_AUTOMATION
-            else -> null
+        val hasValidTarget = when (originalIntent) {
+            AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK -> targetTaskId != null
+            AiDecisionType.DELETE_GOAL, AiDecisionType.UPDATE_GOAL, AiDecisionType.DECOMPOSE_GOAL -> targetGoalId != null
+            else -> true
         }
+
+        val effectiveRequiresMutation = structuralResult.requiresMutation &&
+                !requiresClarification &&
+                hasValidTarget &&
+                finalIntent != AiDecisionType.AMBIGUOUS &&
+                finalIntent != AiDecisionType.CLARIFY
 
         return AiLanguageResult(
             intent = finalIntent,
@@ -214,13 +266,13 @@ class AdvancedLocalLanguagePipeline {
             clarificationNeeded = clarificationNeeded,
             temporalRange = temporalRange,
             requiresMultiStepReasoning = structuralResult.requiresMultiStepReasoning,
-            requiresMutation = structuralResult.requiresMutation && !requiresClarification,
+            requiresMutation = effectiveRequiresMutation,
             requiresClarification = requiresClarification,
             targetTaskId = targetTaskId,
             targetGoalId = targetGoalId,
             targetTaskTitle = targetTaskTitle,
             targetGoalTitle = targetGoalTitle,
-            requestedAction = requestedAction
+            requestedAction = originalRequestedAction
         )
     }
 

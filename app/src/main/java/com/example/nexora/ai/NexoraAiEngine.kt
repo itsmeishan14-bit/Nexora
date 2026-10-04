@@ -65,8 +65,8 @@ class NexoraAiEngine(
         return brain.getAutomationRules()
     }
 
-    suspend fun updateAutomationRule(rule: AiAutomationRule) {
-        brain.updateAutomationRule(rule)
+    suspend fun updateAutomationRule(rule: AiAutomationRule): Boolean {
+        return brain.updateAutomationRule(rule)
     }
 
     suspend fun addAutomationRule(rule: AiAutomationRule): Boolean {

@@ -3,6 +3,7 @@ package com.example.nexora.ai
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,5 +65,126 @@ class AdvancedLocalLanguageIntelligenceTest {
         
         assertEquals(AiDecisionType.CREATE_TASK, result.intent)
         assertEquals("buy milk", result.entities["title"])
+    }
+
+    @Test
+    fun `test Complete the Java task with multiple matching tasks preserves requested action and asks to complete`() {
+        val task1 = PremiumTask(id = 101L, title = "Java Basics", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 102L, title = "Java Advanced", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Complete the Java task", testContext)
+
+        assertEquals("Intent should be AMBIGUOUS when multiple entities match", AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals("Requested action must be preserved as COMPLETE_TASK", AiActionType.COMPLETE_TASK, result.requestedAction)
+        assertEquals(AiDecisionType.COMPLETE_TASK, result.clarificationNeeded?.intent)
+        org.junit.Assert.assertFalse("Mutation must be prohibited while entity is ambiguous", result.requiresMutation)
+        assertTrue("Clarification must be required", result.requiresClarification)
+        assertNotNull("Clarification object must be provided", result.clarificationNeeded)
+        assertTrue(
+            "Clarification must ask to 'complete' and mention matching candidates. Got: ${result.clarificationNeeded?.question}",
+            result.clarificationNeeded?.question?.contains("Which one would you like to complete?") == true
+        )
+    }
+
+    @Test
+    fun `test Delete the Java task with multiple matching tasks preserves requested action and asks to delete`() {
+        val task1 = PremiumTask(id = 101L, title = "Java Basics", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 102L, title = "Java Advanced", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Delete the Java task", testContext)
+
+        assertEquals("Intent should be AMBIGUOUS when multiple entities match", AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals("Requested action must be preserved as DELETE_TASK", AiActionType.DELETE_TASK, result.requestedAction)
+        assertEquals(AiDecisionType.DELETE_TASK, result.clarificationNeeded?.intent)
+        org.junit.Assert.assertFalse("Mutation must be prohibited while entity is ambiguous", result.requiresMutation)
+        assertTrue("Clarification must be required", result.requiresClarification)
+        assertNotNull("Clarification object must be provided", result.clarificationNeeded)
+        assertTrue(
+            "Clarification must ask to 'delete' and mention matching candidates. Got: ${result.clarificationNeeded?.question}",
+            result.clarificationNeeded?.question?.contains("Which one would you like to delete?") == true
+        )
+    }
+
+    @Test
+    fun `test Update the Java task with multiple matching tasks preserves requested action and asks to update`() {
+        val task1 = PremiumTask(id = 101L, title = "Java Basics", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 102L, title = "Java Advanced", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Update the Java task", testContext)
+
+        assertEquals("Intent should be AMBIGUOUS when multiple entities match", AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals("Requested action must be preserved as UPDATE_TASK", AiActionType.UPDATE_TASK, result.requestedAction)
+        assertEquals(AiDecisionType.UPDATE_TASK, result.clarificationNeeded?.intent)
+        org.junit.Assert.assertFalse("Mutation must be prohibited while entity is ambiguous", result.requiresMutation)
+        assertTrue("Clarification must be required", result.requiresClarification)
+        assertNotNull("Clarification object must be provided", result.clarificationNeeded)
+        assertTrue(
+            "Clarification must ask to 'update' and mention matching candidates. Got: ${result.clarificationNeeded?.question}",
+            result.clarificationNeeded?.question?.contains("Which one would you like to update?") == true
+        )
+    }
+
+    @Test
+    fun `test unnamed destructive action with multiple possible targets triggers clarification and prevents mutation`() {
+        val task1 = PremiumTask(id = 101L, title = "Work on Report", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 102L, title = "Fix Production Bug", priority = TaskPriority.URGENT, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Delete task", testContext)
+
+        assertEquals("Intent should be AMBIGUOUS for unnamed destructive action with multiple targets",
+            AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals("Requested action must be preserved as DELETE_TASK", AiActionType.DELETE_TASK, result.requestedAction)
+        assertEquals(AiDecisionType.DELETE_TASK, result.clarificationNeeded?.intent)
+        org.junit.Assert.assertFalse("Mutation must not occur without identified target", result.requiresMutation)
+        assertTrue("Clarification must be required", result.requiresClarification)
+        assertTrue(
+            "Clarification must ask which task to delete. Got: ${result.clarificationNeeded?.question}",
+            result.clarificationNeeded?.question?.contains("Which one would you like to delete?") == true
+        )
+    }
+
+    @Test
+    fun `test unique matching task resolves directly with mutation allowed`() {
+        val task1 = PremiumTask(id = 42L, title = "Java Basics", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 43L, title = "Prepare Presentation", priority = TaskPriority.LOW, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Complete the Java task", testContext)
+
+        assertEquals("Intent should be COMPLETE_TASK for unique match", AiDecisionType.COMPLETE_TASK, result.intent)
+        assertEquals(42L, result.targetTaskId)
+        assertTrue("Mutation must be required for unique match", result.requiresMutation)
+        org.junit.Assert.assertFalse("No clarification needed when entity is unique", result.requiresClarification)
+    }
+
+    @Test
+    fun `test nonexistent task produces no target and forbids mutation without guessing`() {
+        val task1 = PremiumTask(id = 42L, title = "Java Basics", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1))
+
+        val result = pipeline.process("Complete the Rust task", testContext)
+
+        org.junit.Assert.assertNull("targetTaskId must be null for nonexistent task", result.targetTaskId)
+        org.junit.Assert.assertNull("resolvedEntities should not have taskId for nonexistent task", result.entities["taskId"])
+        org.junit.Assert.assertFalse("Mutation must be forbidden when target task does not exist", result.requiresMutation)
+    }
+
+    @Test
+    fun `test goal ambiguity preserves requested action and asks to delete`() {
+        val goal1 = com.example.nexora.uii.NexoraGoal(id = 1L, title = "Fitness Running", category = "Health", targetDate = "2026-12-31", progress = 0f)
+        val goal2 = com.example.nexora.uii.NexoraGoal(id = 2L, title = "Fitness Swimming", category = "Health", targetDate = "2026-12-31", progress = 0f)
+        val testContext = AiContext(goals = listOf(goal1, goal2))
+
+        val result = pipeline.process("Delete the Fitness goal", testContext)
+
+        assertEquals(AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals(AiActionType.DELETE_GOAL, result.requestedAction)
+        assertEquals(AiDecisionType.DELETE_GOAL, result.clarificationNeeded?.intent)
+        org.junit.Assert.assertFalse("Mutation must be false for ambiguous goal", result.requiresMutation)
+        assertTrue(result.clarificationNeeded?.question?.contains("Which one would you like to delete?") == true)
     }
 }

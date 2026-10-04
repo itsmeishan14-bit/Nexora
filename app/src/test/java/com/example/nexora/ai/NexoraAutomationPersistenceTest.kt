@@ -2,6 +2,9 @@ package com.example.nexora.ai
 
 import com.example.nexora.ai.evaluation.MockNexoraRepository
 import com.example.nexora.data.NexoraRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -488,4 +491,133 @@ class NexoraAutomationPersistenceTest {
         val lastRecord3 = history3.first { it.ruleName == "Workload Manager" }
         assertEquals(AutomationExecutionStage.BLOCKED_BY_DISABLED_RULE, lastRecord3.stage)
     }
+
+    @Test
+    fun `TEST 14 - updateRule does not update runtime state or rulesFlow when persistence fails`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val originalRule = system.getRules().first { it.name == "Morning Plan Assistant" }
+        val originalDesc = originalRule.description
+
+        repository.failUpdateAutomation = true
+        val updated = system.updateRule(originalRule.copy(description = "Should never persist or appear in memory"))
+        assertFalse("updateRule must return false on persistence failure", updated)
+
+        val currentRule = system.getRules().first { it.name == "Morning Plan Assistant" }
+        assertEquals("Runtime state must retain original description", originalDesc, currentRule.description)
+        assertEquals("rulesFlow must retain original description", originalDesc,
+            system.rulesFlow.value.first { it.name == "Morning Plan Assistant" }.description)
+    }
+
+    @Test
+    fun `TEST 15 - toggleRule does not update runtime state when persistence fails`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val originalRule = system.getRules().first { it.name == "Morning Plan Assistant" }
+        assertTrue(originalRule.enabled)
+
+        repository.failUpdateAutomation = true
+        val result = system.toggleRule("Morning Plan Assistant", enabled = false)
+        assertNull("toggleRule must return null when persistence fails", result)
+
+        val currentRule = system.getRules().first { it.name == "Morning Plan Assistant" }
+        assertTrue("Runtime state must remain enabled when persistence fails", currentRule.enabled)
+        assertTrue("rulesFlow must remain enabled when persistence fails",
+            system.rulesFlow.value.first { it.name == "Morning Plan Assistant" }.enabled)
+    }
+
+    @Test
+    fun `TEST 16 - deleteRule does not remove rule from runtime state when persistence fails`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        assertTrue(system.getRules().any { it.name == "Morning Plan Assistant" })
+
+        repository.failDeleteAutomation = true
+        val deleted = system.deleteRule("Morning Plan Assistant")
+        assertFalse("deleteRule must return false when persistence fails", deleted)
+
+        assertTrue("Runtime state must still contain rule after failed delete",
+            system.getRules().any { it.name == "Morning Plan Assistant" })
+        assertTrue("rulesFlow must still contain rule after failed delete",
+            system.rulesFlow.value.any { it.name == "Morning Plan Assistant" })
+    }
+
+    @Test
+    fun `TEST 17 - addRule does not add rule to runtime state when persistence fails`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val initialCount = system.getRules().size
+
+        repository.failInsertAutomation = true
+        val custom = AiAutomationRule(name = "Unsaved Rule", description = "Will fail", triggerType = AutomationTriggerType.DAY_STARTED)
+        val added = system.addRule(custom)
+        assertFalse("addRule must return false when persistence fails", added)
+
+        assertEquals("Runtime rule count must not change", initialCount, system.getRules().size)
+        assertFalse("Unsaved rule must not exist in runtime state",
+            system.getRules().any { it.name == "Unsaved Rule" })
+    }
+
+    @Test
+    fun `TEST 18 - Failed initial load sets Failed state and does not create duplicate defaults`() = runBlocking {
+        val failingRepo = MockNexoraRepository()
+        failingRepo.failGetAutomationRules = true
+
+        val system = NexoraAutomationSystem(failingRepo)
+        system.awaitInitialization()
+
+        val state = system.initializationState
+        assertTrue("Initialization state must be Failed", state is AutomationInitState.Failed)
+        assertEquals("Rules must remain empty on failed initialization", 0, system.getRules().size)
+    }
+
+    @Test
+    fun `TEST 19 - Execution history logging failure does not add unpersisted record to memory`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val rule = system.getRules().first { it.name == "Morning Plan Assistant" }
+
+        repository.failInsertExecution = true
+        val record = AutomationExecutionRecord(
+            ruleId = rule.id,
+            ruleName = rule.name,
+            timestamp = System.currentTimeMillis(),
+            triggerType = rule.triggerType,
+            conditionMatched = "test",
+            evidence = "test",
+            actionTaken = "test detail",
+            success = true,
+            stage = AutomationExecutionStage.ACTION_EXECUTED
+        )
+        system.recordExecution(record)
+
+        val recentInMemory = system.getRecentExecutions(10)
+        assertFalse("Unpersisted execution should not be retained in runtime logs",
+            recentInMemory.any { it.actionTaken == "test detail" })
+    }
+
+    @Test
+    fun `TEST 20 - Concurrent addRule requests reject duplicate rule creation`() = runBlocking {
+        val system = NexoraAutomationSystem(repository)
+        system.awaitInitialization()
+        val initialCount = system.getRules().size
+
+        // Launch concurrent attempts with same name
+        val jobs = (1..5).map { index ->
+            async(Dispatchers.Default) {
+                system.addRule(AiAutomationRule(
+                    name = "Concurrent Unique Rule",
+                    description = "Attempt $index",
+                    triggerType = AutomationTriggerType.DAY_STARTED
+                ))
+            }
+        }
+
+        val results = jobs.awaitAll()
+        val successCount = results.count { it }
+        assertEquals("Exactly one concurrent creation must succeed", 1, successCount)
+        assertEquals("Only one rule should be added", initialCount + 1, system.getRules().size)
+        assertEquals(1, system.getRules().count { it.name == "Concurrent Unique Rule" })
+    }
 }
+

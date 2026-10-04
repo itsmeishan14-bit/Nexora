@@ -5,11 +5,14 @@ import com.example.nexora.uii.TaskPriority
 import com.example.nexora.util.NexoraLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -26,6 +29,10 @@ class NexoraAutomationSystem(
 
     private val _rulesFlow = MutableStateFlow<List<AiAutomationRule>>(emptyList())
     val rulesFlow: StateFlow<List<AiAutomationRule>> = _rulesFlow.asStateFlow()
+
+    private val mutationMutex = Mutex()
+    var initializationState: AutomationInitState = AutomationInitState.Uninitialized
+        private set
 
     companion object {
         val DEFAULT_RULES = listOf(
@@ -72,12 +79,14 @@ class NexoraAutomationSystem(
     private var initJob: Job? = null
 
     init {
-        synchronized(rulesLock) {
-            rules.clear()
-            rules.addAll(DEFAULT_RULES)
-            _rulesFlow.value = rules.toList()
-        }
-        if (repository != null) {
+        if (repository == null) {
+            synchronized(rulesLock) {
+                rules.clear()
+                rules.addAll(DEFAULT_RULES)
+                _rulesFlow.value = rules.toList()
+            }
+            initializationState = AutomationInitState.Ready
+        } else {
             initJob = persistenceScope.launch {
                 loadInitialState()
             }
@@ -92,42 +101,67 @@ class NexoraAutomationSystem(
     }
 
     /**
+     * Cancels background persistence jobs.
+     */
+    fun cleanup() {
+        persistenceScope.coroutineContext[Job]?.cancel()
+    }
+
+    /**
      * Asynchronously loads persistent state from the repository into memory.
      */
-    suspend fun loadInitialState() = withContext(Dispatchers.IO) {
-        val repo = repository ?: return@withContext
-        try {
-            val existing = repo.getAutomationRules()
-            if (existing.isEmpty()) {
-                for (defaultRule in DEFAULT_RULES) {
-                    repo.insertAutomationRule(defaultRule)
-                }
-                val loaded = repo.getAutomationRules()
-                synchronized(rulesLock) {
-                    rules.clear()
-                    rules.addAll(loaded)
-                    _rulesFlow.value = rules.toList()
-                }
-            } else {
-                synchronized(rulesLock) {
-                    rules.clear()
-                    rules.addAll(existing)
-                    _rulesFlow.value = rules.toList()
-                }
-            }
-            val recentLogs = repo.getRecentAutomationExecutions(50)
-            synchronized(rulesLock) {
-                executionLogs.clear()
-                executionLogs.addAll(recentLogs.reversed())
-            }
-        } catch (e: Exception) {
-            NexoraLogger.e("AUTOMATION", "Failed to load rules from persistent repository, falling back to defaults", e)
+    suspend fun loadInitialState(): Boolean = withContext(Dispatchers.IO) {
+        val repo = repository ?: run {
             synchronized(rulesLock) {
                 if (rules.isEmpty()) {
-                    rules.clear()
                     rules.addAll(DEFAULT_RULES)
                     _rulesFlow.value = rules.toList()
                 }
+            }
+            initializationState = AutomationInitState.Ready
+            return@withContext true
+        }
+
+        mutationMutex.withLock {
+            try {
+                initializationState = AutomationInitState.Initializing
+                val existing = repo.getAutomationRules()
+                if (existing.isEmpty()) {
+                    val recentLogs = repo.getRecentAutomationExecutions(1)
+                    if (recentLogs.isEmpty()) {
+                        for (defaultRule in DEFAULT_RULES) {
+                            repo.insertAutomationRule(defaultRule)
+                        }
+                        val loaded = repo.getAutomationRules()
+                        synchronized(rulesLock) {
+                            rules.clear()
+                            rules.addAll(if (loaded.isNotEmpty()) loaded else DEFAULT_RULES)
+                            _rulesFlow.value = rules.toList()
+                        }
+                    } else {
+                        synchronized(rulesLock) {
+                            rules.clear()
+                            _rulesFlow.value = emptyList()
+                        }
+                    }
+                } else {
+                    synchronized(rulesLock) {
+                        rules.clear()
+                        rules.addAll(existing)
+                        _rulesFlow.value = rules.toList()
+                    }
+                }
+                val recentLogs = repo.getRecentAutomationExecutions(50)
+                synchronized(rulesLock) {
+                    executionLogs.clear()
+                    executionLogs.addAll(recentLogs.reversed())
+                }
+                initializationState = AutomationInitState.Ready
+                true
+            } catch (e: Exception) {
+                NexoraLogger.e("AUTOMATION", "Failed to load rules from persistent repository", e)
+                initializationState = AutomationInitState.Failed(e)
+                false
             }
         }
     }
@@ -146,6 +180,7 @@ class NexoraAutomationSystem(
      * Truthfully distinguishes proposed actions, executed actions, cooldown blocks, and disabled blocks.
      */
     suspend fun evaluateTriggers(trigger: AutomationTriggerType, context: AiContext): List<AiProactiveSignal> = withContext(Dispatchers.IO) {
+        awaitInitialization()
         val signals = proactiveEngine.detectSignals(context)
         val allRulesForTrigger = synchronized(rulesLock) {
             rules.filter { it.triggerType == trigger }
@@ -282,22 +317,29 @@ class NexoraAutomationSystem(
         triggeredSignals
     }
 
-    private suspend fun recordExecution(record: AutomationExecutionRecord) {
+    internal suspend fun recordExecution(record: AutomationExecutionRecord) {
+        var persisted = true
         if (repository != null) {
             try {
                 repository.insertAutomationExecution(record)
                 repository.trimAutomationExecutions(50)
             } catch (e: Exception) {
                 NexoraLogger.e("AUTOMATION", "Failed to persist execution record: ${record.ruleName}", e)
+                persisted = false
             }
         }
-        synchronized(rulesLock) {
-            executionLogs.add(record)
-            if (executionLogs.size > 50) {
-                executionLogs.removeAt(0)
+        if (persisted) {
+            synchronized(rulesLock) {
+                executionLogs.add(record)
+                if (executionLogs.size > 50) {
+                    executionLogs.removeAt(0)
+                }
             }
         }
     }
+
+    fun getRecentExecutions(limit: Int = 50): List<AutomationExecutionRecord> =
+        synchronized(rulesLock) { executionLogs.takeLast(limit).reversed() }
 
     private fun evaluateRuleCondition(
         rule: AiAutomationRule,
@@ -452,108 +494,130 @@ class NexoraAutomationSystem(
     }
 
     suspend fun addRule(rule: AiAutomationRule): Boolean = withContext(Dispatchers.IO) {
-        synchronized(rulesLock) {
-            if (rules.any { it.name.equals(rule.name, ignoreCase = true) }) {
+        awaitInitialization()
+        mutationMutex.withLock {
+            val exists = synchronized(rulesLock) {
+                rules.any { it.name.equals(rule.name, ignoreCase = true) || it.id.equals(rule.id, ignoreCase = true) }
+            }
+            if (exists) {
                 return@withContext false
             }
-        }
-        if (repository != null) {
-            val inserted = try {
-                repository.insertAutomationRule(rule)
-            } catch (e: Exception) {
-                NexoraLogger.e("AUTOMATION", "Failed to persist new rule: ${rule.name}", e)
-                false
+            if (repository != null) {
+                val inserted = try {
+                    repository.insertAutomationRule(rule)
+                } catch (e: Exception) {
+                    NexoraLogger.e("AUTOMATION", "Failed to persist new rule: ${rule.name}", e)
+                    false
+                }
+                if (!inserted) return@withContext false
             }
-            if (!inserted) return@withContext false
-        }
-        synchronized(rulesLock) {
-            if (rules.none { it.name.equals(rule.name, ignoreCase = true) }) {
-                rules.add(rule)
-                _rulesFlow.value = rules.toList()
+            synchronized(rulesLock) {
+                if (rules.none { it.name.equals(rule.name, ignoreCase = true) || it.id.equals(rule.id, ignoreCase = true) }) {
+                    rules.add(rule)
+                    _rulesFlow.value = rules.toList()
+                }
             }
+            NexoraLogger.d("AUTOMATION", "Added new rule: ${rule.name}")
+            true
         }
-        NexoraLogger.d("AUTOMATION", "Added new rule: ${rule.name}")
-        true
     }
 
     suspend fun deleteRule(idOrName: String): Boolean = withContext(Dispatchers.IO) {
-        val clean = idOrName.trim().removeSuffix(".")
-        val target = synchronized(rulesLock) {
-            rules.find { 
-                it.id.equals(clean, ignoreCase = true) || 
-                it.name.equals(clean, ignoreCase = true) ||
-                (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
-            }
-        } ?: return@withContext false
+        awaitInitialization()
+        mutationMutex.withLock {
+            val clean = idOrName.trim().removeSuffix(".")
+            val target = synchronized(rulesLock) {
+                rules.find { 
+                    it.id.equals(clean, ignoreCase = true) || 
+                    it.name.equals(clean, ignoreCase = true) ||
+                    (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
+                }
+            } ?: return@withContext false
 
-        if (repository != null) {
-            val deleted = try {
-                repository.deleteAutomationRule(target.id)
-            } catch (e: Exception) {
-                NexoraLogger.e("AUTOMATION", "Failed to delete persistent rule: $idOrName", e)
-                false
+            if (repository != null) {
+                val deleted = try {
+                    repository.deleteAutomationRule(target.id)
+                } catch (e: Exception) {
+                    NexoraLogger.e("AUTOMATION", "Failed to delete persistent rule: $idOrName", e)
+                    false
+                }
+                if (!deleted) return@withContext false
             }
-            if (!deleted) return@withContext false
-        }
 
-        val removed = synchronized(rulesLock) {
-            val wasRemoved = rules.removeAll { it.id == target.id }
-            if (wasRemoved) {
-                _rulesFlow.value = rules.toList()
-                NexoraLogger.d("AUTOMATION", "Deleted rule: ${target.name}")
+            val removed = synchronized(rulesLock) {
+                val wasRemoved = rules.removeAll { it.id == target.id }
+                if (wasRemoved) {
+                    _rulesFlow.value = rules.toList()
+                    NexoraLogger.d("AUTOMATION", "Deleted rule: ${target.name}")
+                }
+                wasRemoved
             }
-            wasRemoved
+            removed
         }
-        removed
     }
 
     suspend fun toggleRule(idOrName: String, enabled: Boolean? = null): AiAutomationRule? = withContext(Dispatchers.IO) {
-        val clean = idOrName.trim().removeSuffix(".")
-        val target = synchronized(rulesLock) {
-            rules.find { 
-                it.id.equals(clean, ignoreCase = true) || 
-                it.name.equals(clean, ignoreCase = true) ||
-                (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
-            }
-        } ?: return@withContext null
+        awaitInitialization()
+        mutationMutex.withLock {
+            val clean = idOrName.trim().removeSuffix(".")
+            val target = synchronized(rulesLock) {
+                rules.find { 
+                    it.id.equals(clean, ignoreCase = true) || 
+                    it.name.equals(clean, ignoreCase = true) ||
+                    (clean.length >= 3 && it.name.contains(clean, ignoreCase = true))
+                }
+            } ?: return@withContext null
 
-        val newEnabled = enabled ?: !target.enabled
-        val updated = target.copy(enabled = newEnabled)
+            val newEnabled = enabled ?: !target.enabled
+            val updated = target.copy(enabled = newEnabled)
 
-        if (repository != null) {
-            val persisted = try {
-                repository.updateAutomationRule(updated)
-            } catch (e: Exception) {
-                NexoraLogger.e("AUTOMATION", "Failed to persist toggle for rule: ${target.name}", e)
-                false
+            if (repository != null) {
+                val persisted = try {
+                    repository.updateAutomationRule(updated)
+                } catch (e: Exception) {
+                    NexoraLogger.e("AUTOMATION", "Failed to persist toggle for rule: ${target.name}", e)
+                    false
+                }
+                if (!persisted) return@withContext null
             }
-            if (!persisted) return@withContext null
+
+            synchronized(rulesLock) {
+                val index = rules.indexOfFirst { it.id == target.id }
+                if (index != -1) {
+                    rules[index] = updated
+                    _rulesFlow.value = rules.toList()
+                }
+            }
+            updated
         }
-
-        synchronized(rulesLock) {
-            val index = rules.indexOfFirst { it.id == target.id }
-            if (index != -1) {
-                rules[index] = updated
-                _rulesFlow.value = rules.toList()
-            }
-        }
-        updated
     }
 
-    suspend fun updateRule(updatedRule: AiAutomationRule) = withContext(Dispatchers.IO) {
-        if (repository != null) {
-            try {
-                repository.updateAutomationRule(updatedRule)
-            } catch (e: Exception) {
-                NexoraLogger.e("AUTOMATION", "Failed to persist updated rule: ${updatedRule.name}", e)
+    suspend fun updateRule(updatedRule: AiAutomationRule): Boolean = withContext(Dispatchers.IO) {
+        awaitInitialization()
+        mutationMutex.withLock {
+            val exists = synchronized(rulesLock) {
+                rules.any { it.id == updatedRule.id }
             }
-        }
-        synchronized(rulesLock) {
-            val index = rules.indexOfFirst { it.id == updatedRule.id }
-            if (index != -1) {
-                rules[index] = updatedRule
-                _rulesFlow.value = rules.toList()
+            if (!exists) return@withContext false
+
+            if (repository != null) {
+                val persisted = try {
+                    repository.updateAutomationRule(updatedRule)
+                } catch (e: Exception) {
+                    NexoraLogger.e("AUTOMATION", "Failed to persist updated rule: ${updatedRule.name}", e)
+                    false
+                }
+                if (!persisted) return@withContext false
             }
+
+            synchronized(rulesLock) {
+                val index = rules.indexOfFirst { it.id == updatedRule.id }
+                if (index != -1) {
+                    rules[index] = updatedRule
+                    _rulesFlow.value = rules.toList()
+                }
+            }
+            true
         }
     }
 
@@ -625,4 +689,11 @@ class NexoraAutomationSystem(
     }
 
     private fun nowSec(): Long = System.currentTimeMillis() / 1000
+}
+
+sealed class AutomationInitState {
+    object Uninitialized : AutomationInitState()
+    object Initializing : AutomationInitState()
+    object Ready : AutomationInitState()
+    data class Failed(val cause: Throwable) : AutomationInitState()
 }

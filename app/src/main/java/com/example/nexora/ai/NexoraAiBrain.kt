@@ -138,9 +138,7 @@ class NexoraAiBrain(
 
     fun getAutomationRules(): List<AiAutomationRule> = automationSystem.getRules()
 
-    suspend fun updateAutomationRule(rule: AiAutomationRule) {
-        automationSystem.updateRule(rule)
-    }
+    suspend fun updateAutomationRule(rule: AiAutomationRule): Boolean = automationSystem.updateRule(rule)
 
     suspend fun addAutomationRule(rule: AiAutomationRule): Boolean = automationSystem.addRule(rule)
 
@@ -321,11 +319,11 @@ class NexoraAiBrain(
                 AiDecisionType.PREDICT_GOAL -> {
                     val queryTitle = langResult.entities["title"]?.toString() ?: ""
                     val goal = langResult.targetGoalId?.let { id -> context.goals.find { it.id == id } }
-                        ?: context.goals.find { it.title.contains(queryTitle, ignoreCase = true) }
-                        ?: context.activeGoals.firstOrNull()
+                        ?: if (queryTitle.isNotBlank()) context.goals.find { it.title.contains(queryTitle, ignoreCase = true) }
+                           else context.activeGoals.firstOrNull()
 
                     if (goal == null) {
-                        AiResponse(AiResponseType.INFORMATION, "Goal Prediction", "No active goals found to predict.")
+                        AiResponse(AiResponseType.INFORMATION, "Goal Prediction", if (queryTitle.isNotBlank()) "Goal not found matching \"$queryTitle\"." else "No active goals found to predict.")
                     } else {
                         val predictions = predictiveEngine.predictGoalRisksAndTimings(context)
                         val goalPred = predictions.find { it.targetId == goal.id }
@@ -479,21 +477,9 @@ class NexoraAiBrain(
                 }
                 AiDecisionType.COMPLETE_TASK -> {
                     val taskId = langResult.targetTaskId
-                    val taskTitle = langResult.targetTaskTitle ?: queryTitle
                     val task = taskId?.let { id -> context.tasks.find { it.id == id } }
-                        ?: if (taskTitle.isNotBlank()) context.tasks.find { it.title.contains(taskTitle, ignoreCase = true) } else null
 
-                    if (task != null && task.completed) {
-                        return AiResponse(
-                            responseType = AiResponseType.NO_ACTION,
-                            title = "Task Already Completed",
-                            message = "\"${task.title}\" is already completed.",
-                            confidence = AiConfidence.HIGH,
-                            decision = AiDecision(type = AiDecisionType.COMPLETE_TASK, title = "Task Already Completed", reason = "Task already completed", taskId = task.id)
-                        )
-                    }
-
-                    if (task == null && taskId == null) {
+                    if (task == null) {
                         return AiResponse(
                             responseType = AiResponseType.NO_ACTION,
                             title = "Task Not Found",
@@ -503,33 +489,39 @@ class NexoraAiBrain(
                         )
                     }
 
-                    val finalTaskId = task?.id ?: taskId
-                    val finalTaskTitle = task?.title ?: taskTitle
+                    if (task.completed) {
+                        return AiResponse(
+                            responseType = AiResponseType.NO_ACTION,
+                            title = "Task Already Completed",
+                            message = "\"${task.title}\" is already completed.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.COMPLETE_TASK, title = "Task Already Completed", reason = "Task already completed", taskId = task.id)
+                        )
+                    }
+
                     val action = AiAction(
                         type = AiActionType.COMPLETE_TASK,
-                        title = "Complete Task: $finalTaskTitle",
-                        description = "Mark \"$finalTaskTitle\" as completed",
-                        taskId = finalTaskId,
+                        title = "Complete Task: ${task.title}",
+                        description = "Mark \"${task.title}\" as completed",
+                        taskId = task.id,
                         requiresConfirmation = true
                     )
                     return AiResponse(
                         responseType = AiResponseType.ACTION_PROPOSAL,
                         title = "Complete Task",
-                        message = "Mark \"$finalTaskTitle\" as completed?",
+                        message = "Mark \"${task.title}\" as completed?",
                         confidence = AiConfidence.HIGH,
                         proposedActions = listOf(action),
-                        relatedTaskId = finalTaskId,
-                        decision = AiDecision(type = AiDecisionType.COMPLETE_TASK, title = "Complete Task", reason = "Mark $finalTaskTitle completed", taskId = finalTaskId),
-                        conversationContext = convContext.copy(lastIntent = AiDecisionType.COMPLETE_TASK, lastTaskId = finalTaskId, pendingAction = action)
+                        relatedTaskId = task.id,
+                        decision = AiDecision(type = AiDecisionType.COMPLETE_TASK, title = "Complete Task", reason = "Mark ${task.title} completed", taskId = task.id),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.COMPLETE_TASK, lastTaskId = task.id, pendingAction = action)
                     )
                 }
                 AiDecisionType.DELETE_TASK -> {
                     val taskId = langResult.targetTaskId
-                    val taskTitle = langResult.targetTaskTitle ?: queryTitle
                     val task = taskId?.let { id -> context.tasks.find { it.id == id } }
-                        ?: if (taskTitle.isNotBlank()) context.tasks.find { it.title.contains(taskTitle, ignoreCase = true) } else null
 
-                    if (task == null && taskId == null) {
+                    if (task == null) {
                         return AiResponse(
                             responseType = AiResponseType.NO_ACTION,
                             title = "Task Not Found",
@@ -539,24 +531,65 @@ class NexoraAiBrain(
                         )
                     }
 
-                    val finalTaskId = task?.id ?: taskId
-                    val finalTaskTitle = task?.title ?: taskTitle
                     val action = AiAction(
                         type = AiActionType.DELETE_TASK,
-                        title = "Delete Task: $finalTaskTitle",
-                        description = "Delete task \"$finalTaskTitle\"",
-                        taskId = finalTaskId,
+                        title = "Delete Task: ${task.title}",
+                        description = "Delete task \"${task.title}\"",
+                        taskId = task.id,
                         requiresConfirmation = true
                     )
                     return AiResponse(
                         responseType = AiResponseType.ACTION_PROPOSAL,
                         title = "Delete Task",
-                        message = "Are you sure you want to delete \"$finalTaskTitle\"?",
+                        message = "Are you sure you want to delete \"${task.title}\"?",
                         confidence = AiConfidence.HIGH,
                         proposedActions = listOf(action),
-                        relatedTaskId = finalTaskId,
-                        decision = AiDecision(type = AiDecisionType.DELETE_TASK, title = "Delete Task", reason = "Delete $finalTaskTitle", taskId = finalTaskId),
-                        conversationContext = convContext.copy(lastIntent = AiDecisionType.DELETE_TASK, lastTaskId = finalTaskId, pendingAction = action)
+                        relatedTaskId = task.id,
+                        decision = AiDecision(type = AiDecisionType.DELETE_TASK, title = "Delete Task", reason = "Delete ${task.title}", taskId = task.id),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.DELETE_TASK, lastTaskId = task.id, pendingAction = action)
+                    )
+                }
+                AiDecisionType.UPDATE_TASK -> {
+                    val taskId = langResult.targetTaskId
+                    val task = taskId?.let { id -> context.tasks.find { it.id == id } }
+
+                    if (task == null) {
+                        return AiResponse(
+                            responseType = AiResponseType.NO_ACTION,
+                            title = "Task Not Found",
+                            message = "I couldn't find that task in your list.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.UPDATE_TASK, title = "Task Not Found", reason = "Task not found")
+                        )
+                    }
+
+                    val newTitle = langResult.entities["newTitle"]?.toString() ?: task.title
+                    val newPriority = langResult.entities["priority"]?.toString()
+                    val newDuration = langResult.entities["duration"]?.toString()
+
+                    val params = mutableMapOf<String, Any>(
+                        "title" to newTitle
+                    )
+                    if (newPriority != null) params["priority"] = newPriority
+                    if (newDuration != null) params["duration"] = newDuration
+
+                    val action = AiAction(
+                        type = AiActionType.UPDATE_TASK,
+                        title = "Update Task: ${task.title}",
+                        description = "Update task \"${task.title}\"",
+                        taskId = task.id,
+                        parameters = params,
+                        requiresConfirmation = true
+                    )
+                    return AiResponse(
+                        responseType = AiResponseType.ACTION_PROPOSAL,
+                        title = "Update Task",
+                        message = "Update task \"${task.title}\"?",
+                        confidence = AiConfidence.HIGH,
+                        proposedActions = listOf(action),
+                        relatedTaskId = task.id,
+                        decision = AiDecision(type = AiDecisionType.UPDATE_TASK, title = "Update Task", reason = "Update ${task.title}", taskId = task.id),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.UPDATE_TASK, lastTaskId = task.id, pendingAction = action)
                     )
                 }
                 AiDecisionType.DELETE_ALL_TASKS -> {
@@ -611,32 +644,115 @@ class NexoraAiBrain(
                         conversationContext = convContext.copy(lastIntent = AiDecisionType.COMPLETE_ALL_TASKS, pendingAction = action)
                     )
                 }
+                AiDecisionType.CREATE_GOAL -> {
+                    val title = langResult.entities["title"]?.toString()?.ifBlank { "New Goal" } ?: "New Goal"
+                    val category = langResult.entities["category"]?.toString() ?: "Personal"
+                    val targetDate = langResult.entities["targetDate"]?.toString() ?: ""
+
+                    val duplicate = context.goals.find { it.title.equals(title, ignoreCase = true) }
+                    if (duplicate != null) {
+                        val msg = "A similar active goal already exists: \"${duplicate.title}\""
+                        return AiResponse(
+                            responseType = AiResponseType.NO_ACTION,
+                            title = "Duplicate Goal Detected",
+                            message = msg,
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.CREATE_GOAL, title = "Duplicate Goal Detected", reason = msg)
+                        )
+                    }
+
+                    val params = mapOf("title" to title, "category" to category, "targetDate" to targetDate)
+                    val action = AiAction(
+                        type = AiActionType.CREATE_GOAL,
+                        title = "Create Goal: $title",
+                        description = "Create goal \"$title\" ($category)",
+                        parameters = params,
+                        requiresConfirmation = true
+                    )
+                    return AiResponse(
+                        responseType = AiResponseType.ACTION_PROPOSAL,
+                        title = "Goal Proposal",
+                        message = "I can create the goal \"$title\" for you. Should I proceed?",
+                        confidence = AiConfidence.HIGH,
+                        proposedActions = listOf(action),
+                        decision = AiDecision(type = AiDecisionType.CREATE_GOAL, title = "Create Goal", reason = "Create goal $title"),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.CREATE_GOAL, lastEntityTitle = title, pendingAction = action)
+                    )
+                }
+                AiDecisionType.UPDATE_GOAL -> {
+                    val goalId = langResult.targetGoalId
+                    val goal = goalId?.let { id -> context.goals.find { it.id == id } }
+
+                    if (goal == null) {
+                        return AiResponse(
+                            responseType = AiResponseType.NO_ACTION,
+                            title = "Goal Not Found",
+                            message = "I couldn't find that goal in your list.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.UPDATE_GOAL, title = "Goal Not Found", reason = "Goal not found")
+                        )
+                    }
+
+                    val newTitle = langResult.entities["newTitle"]?.toString() ?: goal.title
+                    val newCategory = langResult.entities["category"]?.toString()
+
+                    val params = mutableMapOf<String, Any>(
+                        "title" to newTitle
+                    )
+                    if (newCategory != null) params["category"] = newCategory
+
+                    val action = AiAction(
+                        type = AiActionType.UPDATE_GOAL,
+                        title = "Update Goal: ${goal.title}",
+                        description = "Update goal \"${goal.title}\"",
+                        goalId = goal.id,
+                        parameters = params,
+                        requiresConfirmation = true
+                    )
+                    return AiResponse(
+                        responseType = AiResponseType.ACTION_PROPOSAL,
+                        title = "Update Goal",
+                        message = "Update goal \"${goal.title}\"?",
+                        confidence = AiConfidence.HIGH,
+                        proposedActions = listOf(action),
+                        relatedGoalId = goal.id,
+                        decision = AiDecision(type = AiDecisionType.UPDATE_GOAL, title = "Update Goal", reason = "Update ${goal.title}", goalId = goal.id),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.UPDATE_GOAL, lastGoalId = goal.id, pendingAction = action)
+                    )
+                }
                 AiDecisionType.DELETE_GOAL -> {
                     val goalId = langResult.targetGoalId
-                    val goalTitle = langResult.targetGoalTitle ?: queryTitle
+                    val goal = goalId?.let { id -> context.goals.find { it.id == id } }
+                    if (goal == null) {
+                        return AiResponse(
+                            responseType = AiResponseType.NO_ACTION,
+                            title = "Goal Not Found",
+                            message = "I couldn't find that goal in your list.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.DELETE_GOAL, title = "Goal Not Found", reason = "Goal not found")
+                        )
+                    }
                     val action = AiAction(
                         type = AiActionType.DELETE_GOAL,
-                        title = "Delete Goal: $goalTitle",
-                        description = "Delete goal \"$goalTitle\"",
-                        goalId = goalId,
+                        title = "Delete Goal: ${goal.title}",
+                        description = "Delete goal \"${goal.title}\"",
+                        goalId = goal.id,
                         requiresConfirmation = true
                     )
                     return AiResponse(
                         responseType = AiResponseType.ACTION_PROPOSAL,
                         title = "Delete Goal",
-                        message = "Are you sure you want to delete \"$goalTitle\"?",
+                        message = "Are you sure you want to delete \"${goal.title}\"?",
                         confidence = AiConfidence.HIGH,
                         proposedActions = listOf(action),
-                        relatedGoalId = goalId,
-                        decision = AiDecision(type = AiDecisionType.DELETE_GOAL, title = "Delete Goal", reason = "Delete $goalTitle", goalId = goalId),
-                        conversationContext = convContext.copy(lastIntent = AiDecisionType.DELETE_GOAL, lastGoalId = goalId, pendingAction = action)
+                        relatedGoalId = goal.id,
+                        decision = AiDecision(type = AiDecisionType.DELETE_GOAL, title = "Delete Goal", reason = "Delete ${goal.title}", goalId = goal.id),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.DELETE_GOAL, lastGoalId = goal.id, pendingAction = action)
                     )
                 }
                 AiDecisionType.DECOMPOSE_GOAL -> {
                     val goalId = langResult.targetGoalId
-                    val goalTitle = langResult.targetGoalTitle ?: queryTitle
                     val goal = goalId?.let { id -> context.goals.find { it.id == id } }
-                        ?: context.goals.find { it.title.contains(goalTitle, ignoreCase = true) }
                     
                     if (goal != null) {
                         return handleGoalDecomposition(AiRequest(AiRequestType.GOAL_DECOMPOSITION, goalId = goal.id, parameters = mapOf("title" to goal.title)), context)
@@ -714,6 +830,33 @@ class NexoraAiBrain(
                         proposedActions = listOf(action),
                         decision = AiDecision(type = AiDecisionType.DELETE_AUTOMATION, title = "Delete Automation", reason = "Delete rule"),
                         conversationContext = convContext.copy(lastIntent = AiDecisionType.DELETE_AUTOMATION, pendingAction = action)
+                    )
+                }
+                AiDecisionType.UPDATE_AUTOMATION -> {
+                    val rule = automationSystem.findRule(rawMessage)
+                    val ruleName = rule?.name ?: (langResult.entities["title"]?.toString() ?: "rule")
+                    val newTitle = langResult.entities["newTitle"]?.toString()
+                    val newDesc = langResult.entities["description"]?.toString()
+                    val action = AiAction(
+                        type = AiActionType.UPDATE_AUTOMATION,
+                        title = "Update Automation",
+                        description = "Update rule $ruleName",
+                        parameters = buildMap {
+                            put("ruleName", ruleName)
+                            rule?.id?.let { put("ruleId", it) }
+                            if (newTitle != null) put("newTitle", newTitle)
+                            if (newDesc != null) put("newDescription", newDesc)
+                        },
+                        requiresConfirmation = false
+                    )
+                    return AiResponse(
+                        responseType = AiResponseType.ACTION_PROPOSAL,
+                        title = "Update Automation",
+                        message = "Update automation rule \"$ruleName\"?",
+                        confidence = AiConfidence.HIGH,
+                        proposedActions = listOf(action),
+                        decision = AiDecision(type = AiDecisionType.UPDATE_AUTOMATION, title = "Update Automation", reason = "Update rule $ruleName"),
+                        conversationContext = convContext.copy(lastIntent = AiDecisionType.UPDATE_AUTOMATION, pendingAction = action)
                     )
                 }
                 else -> { /* proceed to insights / general chat */ }

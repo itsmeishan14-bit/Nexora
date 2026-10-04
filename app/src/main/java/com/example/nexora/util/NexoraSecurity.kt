@@ -38,7 +38,8 @@ object NexoraSecurity {
             AiActionType.DECOMPOSE_GOAL,
             AiActionType.COMPLETE_ALL_TASKS,
             AiActionType.CREATE_AUTOMATION,
-            AiActionType.TOGGLE_AUTOMATION -> ToolRiskLevel.LOW_RISK
+            AiActionType.TOGGLE_AUTOMATION,
+            AiActionType.UPDATE_AUTOMATION -> ToolRiskLevel.LOW_RISK
             
             else -> ToolRiskLevel.SAFE
         }
@@ -51,11 +52,17 @@ object NexoraSecurity {
         val risk = getRiskLevel(action.type)
         if (risk == ToolRiskLevel.SAFE) return true
         
+        val userConfirmed = action.parameters["userConfirmed"] == true || 
+            action.parameters["userConfirmed"]?.toString() == "true"
+            
         if (risk == ToolRiskLevel.DESTRUCTIVE) {
-            val userConfirmed = action.parameters["userConfirmed"] as? Boolean ?: false
-            if (!userConfirmed) return false
+            return userConfirmed
         }
 
-        return !action.requiresConfirmation
+        if (action.requiresConfirmation) {
+            return userConfirmed
+        }
+
+        return true
     }
 }

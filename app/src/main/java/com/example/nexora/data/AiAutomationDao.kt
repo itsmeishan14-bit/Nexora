@@ -30,7 +30,7 @@ interface AiAutomationDao {
     suspend fun insertRule(rule: AiAutomationRuleEntity)
 
     @Update
-    suspend fun updateRule(rule: AiAutomationRuleEntity)
+    suspend fun updateRule(rule: AiAutomationRuleEntity): Int
 
     @Query("DELETE FROM ai_automation_rule WHERE id = :id")
     suspend fun deleteRuleById(id: String)

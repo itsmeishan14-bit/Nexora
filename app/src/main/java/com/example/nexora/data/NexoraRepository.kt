@@ -450,6 +450,10 @@ open class NexoraRepository(
 
     open suspend fun insertAutomationRule(rule: AiAutomationRule): Boolean {
         val dao = aiAutomationDao ?: return false
+        val existing = dao.getRuleByName(rule.name) ?: dao.getRuleById(rule.id)
+        if (existing != null) {
+            return false
+        }
         val entity = mapAutomationRuleDomainToEntity(rule)
         dao.insertRule(entity)
         return true
@@ -457,9 +461,9 @@ open class NexoraRepository(
 
     open suspend fun updateAutomationRule(rule: AiAutomationRule): Boolean {
         val dao = aiAutomationDao ?: return false
+        val existing = dao.getRuleById(rule.id) ?: return false
         val entity = mapAutomationRuleDomainToEntity(rule)
-        dao.updateRule(entity)
-        return true
+        return dao.updateRule(entity) > 0
     }
 
     open suspend fun deleteAutomationRule(idOrName: String): Boolean {
