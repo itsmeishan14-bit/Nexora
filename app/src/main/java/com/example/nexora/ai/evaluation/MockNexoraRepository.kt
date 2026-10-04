@@ -91,9 +91,58 @@ open class MockNexoraRepository : NexoraRepository(null) {
         return false
     }
 
+    var failUnlinkTasks: Boolean = false
+    var failDuringUnlinkAtTaskIndex: Int = -1
+    var failDeleteGoalAfterUnlink: Boolean = false
+
+    override suspend fun deleteGoalAtomic(goalId: Long): com.example.nexora.data.GoalDeletionResult {
+        if (failDeleteGoal) {
+            return com.example.nexora.data.GoalDeletionResult.Failure("Simulated database goal delete failure")
+        }
+        val goal = goals.find { it.id == goalId }
+            ?: return com.example.nexora.data.GoalDeletionResult.GoalNotFound
+
+        // Save snapshot for all-or-nothing rollback simulation
+        val previousTasks = tasks.map { it.copy() }
+        val previousGoals = goals.map { it.copy() }
+
+        try {
+            val linked = tasks.filter { it.goalTitle.equals(goal.title, ignoreCase = true) }
+            var unlinkedCount = 0
+
+            for ((index, t) in linked.withIndex()) {
+                if (failUpdateTask || failUnlinkTasks || index == failDuringUnlinkAtTaskIndex || (failUnlinkTasks && index == 0)) {
+                    throw IllegalStateException("Simulated failure while unlinking task ${t.id}")
+                }
+                val idx = tasks.indexOfFirst { it.id == t.id }
+                if (idx != -1) {
+                    tasks[idx] = t.copy(goalTitle = null)
+                    unlinkedCount++
+                }
+                if (failUnlinkTasks) {
+                    throw IllegalStateException("Simulated failure while unlinking task ${t.id}")
+                }
+            }
+
+            if (failDeleteGoal || failDeleteGoalAfterUnlink) {
+                throw IllegalStateException("Simulated goal delete failure after unlinking tasks")
+            }
+
+            goals.removeIf { it.id == goalId }
+
+            return com.example.nexora.data.GoalDeletionResult.Success(goal.title, unlinkedCount)
+        } catch (e: Exception) {
+            // Roll back all modifications to ensure atomic all-or-nothing behavior
+            tasks.clear()
+            tasks.addAll(previousTasks)
+            goals.clear()
+            goals.addAll(previousGoals)
+            return com.example.nexora.data.GoalDeletionResult.Failure(e.message ?: "Transaction failed", e)
+        }
+    }
+
     override suspend fun deleteGoal(goal: NexoraGoal): Boolean {
-        if (failDeleteGoal) return false
-        return goals.removeAll { it.id == goal.id }
+        return deleteGoalAtomic(goal.id) is com.example.nexora.data.GoalDeletionResult.Success
     }
 
     var failSaveOutcome: Boolean = false

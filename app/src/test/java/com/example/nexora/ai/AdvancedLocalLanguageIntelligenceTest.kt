@@ -187,4 +187,151 @@ class AdvancedLocalLanguageIntelligenceTest {
         org.junit.Assert.assertFalse("Mutation must be false for ambiguous goal", result.requiresMutation)
         assertTrue(result.clarificationNeeded?.question?.contains("Which one would you like to delete?") == true)
     }
+
+    @Test
+    fun `test natural language rename task Alpha to Beta`() {
+        val task = PremiumTask(id = 10L, title = "Alpha", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Rename task Alpha to Beta.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(10L, result.targetTaskId)
+        assertEquals("Beta", result.entities["newTitle"])
+        org.junit.Assert.assertNull("Priority must not be modified when renaming", result.entities["priority"])
+        assertTrue("Mutation must be allowed when target and new value are clearly specified", result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language change title of task Alpha to Beta`() {
+        val task = PremiumTask(id = 11L, title = "Alpha", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Change the title of task Alpha to Beta.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(11L, result.targetTaskId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language set task Alpha priority to high`() {
+        val task = PremiumTask(id = 12L, title = "Alpha", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Set task Alpha priority to high.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(12L, result.targetTaskId)
+        assertEquals("HIGH", result.entities["priority"])
+        org.junit.Assert.assertNull("New title must not be extracted for priority updates", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language change goal Alpha to Beta`() {
+        val goal = com.example.nexora.uii.NexoraGoal(id = 20L, title = "Alpha", category = "Personal", targetDate = "", progress = 0f)
+        val testContext = AiContext(goals = listOf(goal))
+
+        val result = pipeline.process("Change goal Alpha to Beta.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_GOAL, result.intent)
+        assertEquals(20L, result.targetGoalId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language rename goal Alpha to Beta`() {
+        val goal = com.example.nexora.uii.NexoraGoal(id = 21L, title = "Alpha", category = "Personal", targetDate = "", progress = 0f)
+        val testContext = AiContext(goals = listOf(goal))
+
+        val result = pipeline.process("Rename goal Alpha to Beta.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_GOAL, result.intent)
+        assertEquals(21L, result.targetGoalId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language update goal Alpha category to Career`() {
+        val goal = com.example.nexora.uii.NexoraGoal(id = 22L, title = "Alpha", category = "Personal", targetDate = "", progress = 0f)
+        val testContext = AiContext(goals = listOf(goal))
+
+        val result = pipeline.process("Update goal Alpha category to Career.", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_GOAL, result.intent)
+        assertEquals(22L, result.targetGoalId)
+        assertEquals("Career", result.entities["category"])
+        org.junit.Assert.assertNull("Title must not be changed when only category is updated", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language rename task with quoted title containing spaces`() {
+        val task = PremiumTask(id = 15L, title = "Work Out", priority = TaskPriority.MEDIUM, category = "Health", duration = "45m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Rename task \"Work Out\" to \"Gym Workout\"", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(15L, result.targetTaskId)
+        assertEquals("Gym Workout", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test natural language change goal with quoted title containing spaces`() {
+        val goal = com.example.nexora.uii.NexoraGoal(id = 25L, title = "Read 50 Books", category = "Personal", targetDate = "", progress = 0f)
+        val testContext = AiContext(goals = listOf(goal))
+
+        val result = pipeline.process("Change goal \"Read 50 Books\" to \"Read 30 Books\"", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_GOAL, result.intent)
+        assertEquals(25L, result.targetGoalId)
+        assertEquals("Read 30 Books", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test similar task names triggers ambiguity clarification when target is not unique`() {
+        val task1 = PremiumTask(id = 31L, title = "Alpha Project", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 32L, title = "Alpha Review", priority = TaskPriority.LOW, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Rename task Alpha to Beta.", testContext)
+
+        assertEquals("Multiple partial matches must produce AMBIGUOUS", AiDecisionType.AMBIGUOUS, result.intent)
+        assertEquals(AiActionType.UPDATE_TASK, result.requestedAction)
+        org.junit.Assert.assertFalse("Mutation must be prohibited when target is ambiguous", result.requiresMutation)
+        assertTrue(result.requiresClarification)
+        assertNotNull(result.clarificationNeeded)
+    }
+
+    @Test
+    fun `test similar task names exact match resolves target deterministically`() {
+        val task1 = PremiumTask(id = 31L, title = "Alpha Project", priority = TaskPriority.HIGH, category = "Work", duration = "30m")
+        val task2 = PremiumTask(id = 32L, title = "Alpha", priority = TaskPriority.LOW, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result = pipeline.process("Rename task \"Alpha\" to \"Beta\"", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(32L, result.targetTaskId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test missing target or incomplete update asks clarification and forbids mutation`() {
+        val task = PremiumTask(id = 40L, title = "Draft Plan", priority = TaskPriority.MEDIUM, category = "Work", duration = "30m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        // Incomplete: missing new title
+        val result = pipeline.process("Rename task Draft Plan", testContext)
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        org.junit.Assert.assertNull("New title must be null when not provided", result.entities["newTitle"])
+    }
 }

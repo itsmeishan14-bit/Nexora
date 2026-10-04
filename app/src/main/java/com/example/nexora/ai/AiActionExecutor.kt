@@ -518,27 +518,22 @@ open class AiActionExecutor(
 
     private suspend fun deleteGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val goalId = action.goalId ?: return AiActionResult(false, "Goal ID missing.")
-        val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Goal not found.")
-
-        // Unlink tasks before deleting goal
-        val linkedTasks = repository.observeTasksOnce().filter { it.goalTitle.equals(goal.title, ignoreCase = true) }
-        for (task in linkedTasks) {
-            val unlinked = repository.updateTask(task.copy(goalTitle = null))
-            if (!unlinked) {
-                return AiActionResult(false, "Failed to unlink task \"${task.title}\" from goal \"${goal.title}\".", error = "Task unlinking failed")
+        
+        return when (val deletion = repository.deleteGoalAtomic(goalId)) {
+            is com.example.nexora.data.GoalDeletionResult.Success -> {
+                AiActionResult(
+                    success = true,
+                    message = "Goal deleted: ${deletion.goalTitle}",
+                    affectedGoalId = goalId
+                )
+            }
+            is com.example.nexora.data.GoalDeletionResult.GoalNotFound -> {
+                AiActionResult(false, "Goal not found.", error = "Goal not found")
+            }
+            is com.example.nexora.data.GoalDeletionResult.Failure -> {
+                AiActionResult(false, "Failed to delete goal: ${deletion.message}", error = deletion.message)
             }
         }
-
-        val deleted = repository.deleteGoal(goal)
-        if (!deleted) {
-            return AiActionResult(false, "Failed to delete goal \"${goal.title}\" from database.", error = "Database delete failed")
-        }
-        
-        return AiActionResult(
-            success = true,
-            message = "Goal deleted: ${goal.title}",
-            affectedGoalId = goalId
-        )
     }
 
     private suspend fun deleteAllTasks(repository: NexoraRepository, action: AiAction): AiActionResult {

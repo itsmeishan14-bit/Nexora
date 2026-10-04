@@ -212,21 +212,30 @@ open class NexoraRepository(
         }
     }
 
-    open suspend fun deleteGoal(goal: NexoraGoal): Boolean {
-        val dao = goalDao ?: return false
-        val entity = GoalEntity(
-            id = goal.id,
-            title = goal.title,
-            category = goal.category,
-            targetDate = goal.targetDate,
-            progress = goal.progress
-        )
+    open suspend fun deleteGoalAtomic(goalId: Long): GoalDeletionResult {
+        val dao = goalDao ?: return GoalDeletionResult.Failure("Database not available")
         return try {
-            dao.delete(entity) > 0
+            val result = dao.deleteGoalAndUnlinkTasks(goalId)
+                ?: return GoalDeletionResult.GoalNotFound
+
+            // Verification check: ensure goal is deleted and no tasks remain linked
+            val verifyGoal = dao.getById(goalId)
+            val verifyTasks = dao.getTasksByGoalTitle(result.first.title)
+            if (verifyGoal != null) {
+                return GoalDeletionResult.Failure("Verification failed: Goal still exists after deletion.")
+            }
+            if (verifyTasks.isNotEmpty()) {
+                return GoalDeletionResult.Failure("Verification failed: Tasks remain linked to deleted goal.")
+            }
+            GoalDeletionResult.Success(result.first.title, result.second)
         } catch (e: Exception) {
-            NexoraLogger.e("REPO", "Failed to delete goal ${goal.id}", e)
-            false
+            NexoraLogger.e("REPO", "Atomic goal deletion failed for goal $goalId", e)
+            GoalDeletionResult.Failure(e.message ?: "Database transaction failed", e)
         }
+    }
+
+    open suspend fun deleteGoal(goal: NexoraGoal): Boolean {
+        return deleteGoalAtomic(goal.id) is GoalDeletionResult.Success
     }
 
     // ─────────────────────────────────────
@@ -594,4 +603,10 @@ open class NexoraRepository(
             success = record.success
         )
     }
+}
+
+sealed class GoalDeletionResult {
+    data class Success(val goalTitle: String, val unlinkedTaskCount: Int) : GoalDeletionResult()
+    object GoalNotFound : GoalDeletionResult()
+    data class Failure(val message: String, val cause: Throwable? = null) : GoalDeletionResult()
 }

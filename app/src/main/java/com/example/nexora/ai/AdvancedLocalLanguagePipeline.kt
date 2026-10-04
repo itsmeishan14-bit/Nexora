@@ -62,7 +62,7 @@ class AdvancedLocalLanguagePipeline {
         val structuralResult = classifyIntent(normalized, message, context, effectiveConvContext, temporalRange)
 
         // 5. Entity & Parameter Extraction
-        val entities = extractEntities(normalized, structuralResult.intent).toMutableMap()
+        val entities = extractEntities(normalized, structuralResult.intent, message).toMutableMap()
         temporalRange?.let {
             entities["temporalScope"] = it.scope.name
             entities["startDate"] = it.startDate.toString()
@@ -627,7 +627,27 @@ class AdvancedLocalLanguagePipeline {
         }
     }
 
-    private fun extractEntities(text: String, intent: AiDecisionType): Map<String, Any> {
+    private fun parseRenameDirective(text: String, entityKeyword: String): Pair<String, String>? {
+        val pattern = Regex(
+            "(?i)^\\s*(?:rename|change(?:\\s+the)?\\s+(?:title|name)\\s+of|change)\\s+" +
+            "(?:$entityKeyword\\s+)?" +
+            "(?:[\"']([^\"']+)[\"']|(.+?))\\s+to\\s+" +
+            "(?:[\"']([^\"']+)[\"']|(.+?))\\s*[.!?]?\\s*$"
+        )
+        val match = pattern.find(text.trim()) ?: return null
+        val rawTarget = match.groups[1]?.value ?: match.groups[2]?.value ?: ""
+        val rawNewTitle = match.groups[3]?.value ?: match.groups[4]?.value ?: ""
+        
+        val target = rawTarget.trim().trim('"', '\'')
+        val newTitle = rawNewTitle.trim().trimEnd('.', '!', '?', ';', ',').trim('"', '\'')
+        
+        if (target.isNotBlank() && newTitle.isNotBlank()) {
+            return Pair(target, newTitle)
+        }
+        return null
+    }
+
+    private fun extractEntities(text: String, intent: AiDecisionType, rawText: String = text): Map<String, Any> {
         val entities = mutableMapOf<String, Any>()
 
         // Extract Duration
@@ -640,10 +660,10 @@ class AdvancedLocalLanguagePipeline {
 
         // Extract Priority
         when {
-            text.contains(Regex("urgent|critical|immediately")) -> entities["priority"] = "URGENT"
-            text.contains(Regex("high priority|important")) -> entities["priority"] = "HIGH"
-            text.contains(Regex("low priority|not important")) -> entities["priority"] = "LOW"
-            text.contains("medium priority") -> entities["priority"] = "MEDIUM"
+            text.contains(Regex("(?i)\\b(urgent|critical|immediately)\\b|\\bpriority\\s*(?:to|is|=)?\\s*urgent\\b")) -> entities["priority"] = "URGENT"
+            text.contains(Regex("(?i)\\b(high\\s+priority|important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*high\\b")) -> entities["priority"] = "HIGH"
+            text.contains(Regex("(?i)\\b(low\\s+priority|not\\s+important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*low\\b")) -> entities["priority"] = "LOW"
+            text.contains(Regex("(?i)\\bmedium\\s+priority\\b|\\bpriority\\s*(?:to|is|=)?\\s*medium\\b")) -> entities["priority"] = "MEDIUM"
         }
 
         // Extract Target Entity Title
@@ -675,43 +695,50 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.UPDATE_GOAL -> {
-                val renameMatch = Regex("(?i)\\b(?:rename|change title of)\\s+(?:goal\\s+)?[\"']?([^\"']+?)[\"']?\\s+to\\s+[\"']?([^\"']+)[\"']?").find(text)
-                if (renameMatch != null) {
-                    val target = renameMatch.groupValues[1].trim()
-                    val newTitle = renameMatch.groupValues[2].trim()
-                    entities["newTitle"] = newTitle
-                    target
+                val rename = parseRenameDirective(rawText, "goal") ?: parseRenameDirective(text, "goal")
+                if (rename != null) {
+                    entities["newTitle"] = rename.second
+                    rename.first
                 } else {
-                    var t = text.replace(Regex("(?i)\\b(goal|objective)\\b"), " ")
-                    val catMatch = Regex("(?i)\\bcategory\\s+(?:to\\s+)?([a-zA-Z0-9_-]+)").find(t)
+                    var t = text
+                    val catMatch = Regex("(?i)\\bcategory\\s+(?:to\\s+|is\\s+)?(?:[\"']([^\"']+)[\"']|([a-zA-Z0-9_-]+))").find(t)
                     if (catMatch != null) {
-                        entities["category"] = catMatch.groupValues[1].trim().replaceFirstChar { it.uppercase() }
-                        t = t.replace(catMatch.value, " ")
+                        val cat = (catMatch.groups[1]?.value ?: catMatch.groups[2]?.value)?.trim()?.trimEnd('.', '!', '?', ';', ',') ?: ""
+                        if (cat.isNotBlank()) {
+                            entities["category"] = cat.replaceFirstChar { it.uppercase() }
+                            t = t.removeRange(catMatch.range)
+                        }
                     }
-                    t.replace(Regex("(?i)\\b(change|update|edit|rename|modify|set|the|my|a|an|to)\\b"), " ")
+                    t = t.replace(Regex("(?i)^\\s*(?:update|change|edit|rename|modify|set)\\s+(?:the\\s+)?(?:goal|objective)\\s*"), " ")
+                        .replace(Regex("(?i)\\b(goal|objective|the|my|a|an|category)\\b"), " ")
+                        .trimEnd('.', '!', '?', ';', ',')
                         .replace(Regex("\\s+"), " ")
                         .trim()
+                        .trim('"', '\'')
+                    t
                 }
             }
             AiDecisionType.UPDATE_TASK -> {
-                val renameMatch = Regex("(?i)\\b(?:rename|change title of)\\s+(?:task\\s+)?[\"']?([^\"']+?)[\"']?\\s+to\\s+[\"']?([^\"']+)[\"']?").find(text)
-                if (renameMatch != null) {
-                    val target = renameMatch.groupValues[1].trim()
-                    val newTitle = renameMatch.groupValues[2].trim()
-                    entities["newTitle"] = newTitle
-                    target
+                val rename = parseRenameDirective(rawText, "task") ?: parseRenameDirective(text, "task")
+                if (rename != null) {
+                    entities["newTitle"] = rename.second
+                    rename.first
                 } else {
-                    var t = text.replace(Regex("(?i)\\b(task|todo)\\b"), " ")
+                    var t = text
                     if (entities.containsKey("priority")) {
-                        t = t.replace(Regex("(?i)\\s*(?:priority\\s*(?:to|is)?|to\\s*(?:priority)?)\\s*(?:urgent|critical|immediately|high|important|medium|low|not important)\\b"), " ")
+                        t = t.replace(Regex("(?i)\\s*(?:priority\\s*(?:to|is|=)?|to\\s*(?:priority)?)\\s*(?:urgent|critical|immediately|high|important|medium|low|not important)\\b|\\b(urgent|critical|immediately|high|important|medium|low)\\s+priority\\b"), " ")
                             .replace(Regex("(?i)\\b(urgent|critical|immediately|high|important|medium|low)\\b"), " ")
                     }
                     if (entities.containsKey("duration")) {
                         t = t.replace(Regex("(?i)\\s*(?:duration\\s*(?:to|of)?|for|to)?\\s*\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
                     }
-                    t.replace(Regex("(?i)\\b(change|update|edit|rename|modify|set|priority|duration|the|my|a|an|to)\\b"), " ")
+                    t = t.replace(Regex("(?i)^\\s*(?:set|change|update|edit|rename|modify)\\s+(?:the\\s+)?(?:task|todo)\\s*"), " ")
+                        .replace(Regex("(?i)\\b(task|todo|the|my|a|an|priority|duration|to|is|set|change|update|edit|rename|modify)\\b"), " ")
+                        .trimEnd('.', '!', '?', ';', ',')
                         .replace(Regex("\\s+"), " ")
                         .trim()
+                        .trim('"', '\'')
+                    t
                 }
             }
             AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK -> {
@@ -739,7 +766,10 @@ class AdvancedLocalLanguagePipeline {
             }
         }
 
-        val cleanTitle = if (rawTitle.isNotBlank()) rawTitle.replaceFirstChar { it.uppercase() }.trim() else ""
+        val cleanTitle = if (rawTitle.isNotBlank()) {
+            if (rawTitle.firstOrNull()?.isLowerCase() == true) rawTitle.replaceFirstChar { it.uppercase() }.trim()
+            else rawTitle.trim()
+        } else ""
 
         if (cleanTitle.isNotBlank()) {
             entities["title"] = cleanTitle

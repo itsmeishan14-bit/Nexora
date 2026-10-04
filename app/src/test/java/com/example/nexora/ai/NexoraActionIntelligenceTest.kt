@@ -1,6 +1,7 @@
 package com.example.nexora.ai
 
 import com.example.nexora.ai.evaluation.MockNexoraRepository
+import com.example.nexora.data.GoalDeletionResult
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
@@ -805,6 +806,356 @@ class NexoraActionIntelligenceTest {
         assertTrue("No actions should be proposed on cancellation", respCancel.proposedActions.isEmpty())
         assertNull("Pending action should be cleared", respCancel.conversationContext?.pendingAction)
         assertNotNull("Task2 must remain intact in DB", repository.getTaskById(task2.id))
+    }
+
+    // -------------------------------------------------------------
+    // ATOMIC GOAL DELETION TESTS
+    // -------------------------------------------------------------
+
+    @Test
+    fun `test goal deletion with zero linked tasks succeeds atomically`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 801L, title = "Zero Tasks Goal", category = "Learning", targetDate = "", progress = 0f)
+        )
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue("Deletion must succeed", result is GoalDeletionResult.Success)
+        val success = result as GoalDeletionResult.Success
+        assertEquals(0, success.unlinkedTaskCount)
+        assertNull("Goal must be deleted", repository.getGoalById(goal.id))
+    }
+
+    @Test
+    fun `test goal deletion with one linked task unlinks task and deletes goal atomically`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 802L, title = "Single Task Goal", category = "Work", targetDate = "", progress = 0f)
+        )
+        val task = repository.addTask(
+            PremiumTask(id = 811L, title = "Task One", category = "Work", duration = "15m", goalTitle = "Single Task Goal")
+        )
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue(result is GoalDeletionResult.Success)
+        assertEquals(1, (result as GoalDeletionResult.Success).unlinkedTaskCount)
+        assertNull("Goal must be deleted", repository.getGoalById(goal.id))
+        val updatedTask = repository.getTaskById(task.id)
+        assertNotNull(updatedTask)
+        assertNull("Task goalTitle must be unlinked", updatedTask?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion with several linked tasks unlinks all tasks and deletes goal atomically`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 803L, title = "Multi Task Goal", category = "Health", targetDate = "", progress = 0f)
+        )
+        val task1 = repository.addTask(
+            PremiumTask(id = 812L, title = "Task A", category = "Health", duration = "20m", goalTitle = "Multi Task Goal")
+        )
+        val task2 = repository.addTask(
+            PremiumTask(id = 813L, title = "Task B", category = "Health", duration = "30m", goalTitle = "Multi Task Goal")
+        )
+        val task3 = repository.addTask(
+            PremiumTask(id = 814L, title = "Task C", category = "Health", duration = "40m", goalTitle = "Multi Task Goal")
+        )
+
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue(result is GoalDeletionResult.Success)
+        assertEquals(3, (result as GoalDeletionResult.Success).unlinkedTaskCount)
+        assertNull("Goal must be deleted", repository.getGoalById(goal.id))
+        assertNull("Task 1 unlinked", repository.getTaskById(task1.id)?.goalTitle)
+        assertNull("Task 2 unlinked", repository.getTaskById(task2.id)?.goalTitle)
+        assertNull("Task 3 unlinked", repository.getTaskById(task3.id)?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion failure while unlinking first task rolls back all changes leaving goal and all tasks intact`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 804L, title = "Fail Unlink First", category = "Career", targetDate = "", progress = 0f)
+        )
+        val task1 = repository.addTask(
+            PremiumTask(id = 815L, title = "Task 1", category = "Career", duration = "30m", goalTitle = "Fail Unlink First")
+        )
+        val task2 = repository.addTask(
+            PremiumTask(id = 816L, title = "Task 2", category = "Career", duration = "30m", goalTitle = "Fail Unlink First")
+        )
+
+        repository.failUnlinkTasks = true
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue("Result must be Failure", result is GoalDeletionResult.Failure)
+
+        // Complete final state assertion: Goal and tasks MUST remain completely intact
+        assertNotNull("Goal must remain intact in DB", repository.getGoalById(goal.id))
+        assertEquals("Fail Unlink First", repository.getTaskById(task1.id)?.goalTitle)
+        assertEquals("Fail Unlink First", repository.getTaskById(task2.id)?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion failure after unlinking first task rolls back in-progress task unlinking leaving goal and all tasks intact`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 805L, title = "Fail Halfway", category = "Career", targetDate = "", progress = 0f)
+        )
+        val task1 = repository.addTask(
+            PremiumTask(id = 817L, title = "Task 1", category = "Career", duration = "30m", goalTitle = "Fail Halfway")
+        )
+        val task2 = repository.addTask(
+            PremiumTask(id = 818L, title = "Task 2", category = "Career", duration = "30m", goalTitle = "Fail Halfway")
+        )
+
+        repository.failDuringUnlinkAtTaskIndex = 1
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue("Result must be Failure", result is GoalDeletionResult.Failure)
+
+        // Rollback assertion: Task 1 was unlinked during the loop, but rollback restored it!
+        assertNotNull("Goal must remain intact in DB", repository.getGoalById(goal.id))
+        assertEquals("Fail Halfway", repository.getTaskById(task1.id)?.goalTitle)
+        assertEquals("Fail Halfway", repository.getTaskById(task2.id)?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion failure when deleting goal rolls back task unlinking leaving goal and all tasks intact`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 806L, title = "Fail At Delete", category = "Finance", targetDate = "", progress = 0f)
+        )
+        val task1 = repository.addTask(
+            PremiumTask(id = 819L, title = "Task 1", category = "Finance", duration = "30m", goalTitle = "Fail At Delete")
+        )
+        val task2 = repository.addTask(
+            PremiumTask(id = 820L, title = "Task 2", category = "Finance", duration = "30m", goalTitle = "Fail At Delete")
+        )
+
+        repository.failDeleteGoalAfterUnlink = true
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue("Result must be Failure", result is GoalDeletionResult.Failure)
+
+        // Complete final state assertion: Goal and all tasks must be intact
+        assertNotNull("Goal must remain intact in DB", repository.getGoalById(goal.id))
+        assertEquals("Fail At Delete", repository.getTaskById(task1.id)?.goalTitle)
+        assertEquals("Fail At Delete", repository.getTaskById(task2.id)?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion with missing goal ID returns GoalNotFound and modifies nothing`() = runBlocking {
+        val task = repository.addTask(
+            PremiumTask(id = 821L, title = "Safe Task", category = "Personal", duration = "15m", goalTitle = "Existing Goal")
+        )
+        val result = repository.deleteGoalAtomic(999999L)
+        assertTrue(result is GoalDeletionResult.GoalNotFound)
+        assertEquals("Existing Goal", repository.getTaskById(task.id)?.goalTitle)
+    }
+
+    @Test
+    fun `test goal deletion with case-insensitive goal title unlinks tasks correctly`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 807L, title = "Case Sensitive Goal", category = "Health", targetDate = "", progress = 0f)
+        )
+        val task1 = repository.addTask(
+            PremiumTask(id = 822L, title = "Task Lowercase", category = "Health", duration = "30m", goalTitle = "case sensitive goal")
+        )
+        val task2 = repository.addTask(
+            PremiumTask(id = 823L, title = "Task Uppercase", category = "Health", duration = "30m", goalTitle = "CASE SENSITIVE GOAL")
+        )
+
+        val result = repository.deleteGoalAtomic(goal.id)
+        assertTrue(result is GoalDeletionResult.Success)
+        assertEquals(2, (result as GoalDeletionResult.Success).unlinkedTaskCount)
+        assertNull("Goal must be deleted", repository.getGoalById(goal.id))
+        assertNull("Task 1 goalTitle must be unlinked", repository.getTaskById(task1.id)?.goalTitle)
+        assertNull("Task 2 goalTitle must be unlinked", repository.getTaskById(task2.id)?.goalTitle)
+    }
+
+    // -------------------------------------------------------------
+    // FULL ACTION LIFECYCLE TESTS (TASK & GOAL UPDATES)
+    // -------------------------------------------------------------
+
+    @Test
+    fun `test full lifecycle rename task Alpha to Beta`() = runBlocking {
+        val task = repository.addTask(
+            PremiumTask(id = 901L, title = "Alpha", category = "Work", duration = "45m", priority = TaskPriority.HIGH)
+        )
+
+        // Turn 1: User request -> parsed intent -> target resolution -> proposed action
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename task Alpha to Beta.")
+        val resp1 = engine.processRequest(req1)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+        val proposed = resp1.proposedActions.firstOrNull()
+        assertNotNull(proposed)
+        assertEquals(AiActionType.UPDATE_TASK, proposed?.type)
+        assertEquals(task.id, proposed?.taskId)
+        assertEquals("Beta", proposed?.parameters?.get("title"))
+        assertNull("Priority must not be in parameters", proposed?.parameters?.get("priority"))
+
+        // Turn 2: User confirmation -> execution -> DB verification -> accurate response
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "yes", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+        val confirmed = resp2.proposedActions.first()
+        val execResult = engine.executeAction(confirmed)
+
+        assertTrue(execResult.success)
+        val updated = repository.getTaskById(task.id)
+        assertEquals("Beta", updated?.title)
+        assertEquals(TaskPriority.HIGH, updated?.priority) // Preserved
+        assertEquals("45m", updated?.duration) // Preserved
+        assertEquals("Work", updated?.category) // Preserved
+    }
+
+    @Test
+    fun `test full lifecycle set task priority`() = runBlocking {
+        val task = repository.addTask(
+            PremiumTask(id = 902L, title = "Alpha", category = "Work", duration = "30m", priority = TaskPriority.LOW)
+        )
+
+        // Turn 1: User request "Set task Alpha priority to high."
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Set task Alpha priority to high.")
+        val resp1 = engine.processRequest(req1)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+        val proposed = resp1.proposedActions.first()
+        assertEquals(AiActionType.UPDATE_TASK, proposed.type)
+        assertEquals(task.id, proposed.taskId)
+        assertEquals("HIGH", proposed.parameters["priority"])
+        assertNull("Title must not be in parameters", proposed.parameters["title"])
+
+        // Turn 2: Confirmation & execution
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "confirm", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+        val execResult = engine.executeAction(resp2.proposedActions.first())
+
+        assertTrue(execResult.success)
+        val updated = repository.getTaskById(task.id)
+        assertEquals(TaskPriority.HIGH, updated?.priority)
+        assertEquals("Alpha", updated?.title) // Preserved!
+    }
+
+    @Test
+    fun `test full lifecycle rename goal Alpha to Beta`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 903L, title = "Alpha", category = "Personal", targetDate = "2026-12-31", progress = 0.25f)
+        )
+
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename goal Alpha to Beta.")
+        val resp1 = engine.processRequest(req1)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+        val proposed = resp1.proposedActions.first()
+        assertEquals(AiActionType.UPDATE_GOAL, proposed.type)
+        assertEquals(goal.id, proposed.goalId)
+        assertEquals("Beta", proposed.parameters["title"])
+        assertNull("Category must not be in parameters", proposed.parameters["category"])
+
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "yes", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+        val execResult = engine.executeAction(resp2.proposedActions.first())
+
+        assertTrue(execResult.success)
+        val updated = repository.getGoalById(goal.id)
+        assertEquals("Beta", updated?.title)
+        assertEquals("Personal", updated?.category) // Preserved!
+        assertEquals("2026-12-31", updated?.targetDate) // Preserved!
+    }
+
+    @Test
+    fun `test full lifecycle update goal category`() = runBlocking {
+        val goal = repository.addGoal(
+            NexoraGoal(id = 904L, title = "Alpha", category = "Personal", targetDate = "2026-12-31", progress = 0.1f)
+        )
+
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Update goal Alpha category to Career.")
+        val resp1 = engine.processRequest(req1)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+        val proposed = resp1.proposedActions.first()
+        assertEquals(AiActionType.UPDATE_GOAL, proposed.type)
+        assertEquals(goal.id, proposed.goalId)
+        assertEquals("Career", proposed.parameters["category"])
+        assertNull("Title must not be in parameters", proposed.parameters["title"])
+
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "yes", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+        val execResult = engine.executeAction(resp2.proposedActions.first())
+
+        assertTrue(execResult.success)
+        val updated = repository.getGoalById(goal.id)
+        assertEquals("Career", updated?.category)
+        assertEquals("Alpha", updated?.title) // Preserved!
+    }
+
+    @Test
+    fun `test update task with ambiguous target requests clarification and performs no mutation`() = runBlocking {
+        val t1 = repository.addTask(PremiumTask(id = 905L, title = "Alpha One", category = "Work", duration = "30m"))
+        val t2 = repository.addTask(PremiumTask(id = 906L, title = "Alpha Two", category = "Work", duration = "30m"))
+
+        val req = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename task Alpha to Beta.")
+        val resp = engine.processRequest(req)
+
+        assertEquals(AiResponseType.CLARIFICATION_NEEDED, resp.responseType)
+        assertTrue("No action should be proposed for ambiguous target", resp.proposedActions.isEmpty())
+        assertEquals("Alpha One", repository.getTaskById(t1.id)?.title)
+        assertEquals("Alpha Two", repository.getTaskById(t2.id)?.title)
+    }
+
+    @Test
+    fun `test update task with missing new value requests clarification and performs no mutation`() = runBlocking {
+        val t = repository.addTask(PremiumTask(id = 907L, title = "Alpha", category = "Work", duration = "30m"))
+
+        val req = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename task Alpha")
+        val resp = engine.processRequest(req)
+
+        assertEquals(AiResponseType.CLARIFICATION_NEEDED, resp.responseType)
+        assertTrue(resp.proposedActions.isEmpty())
+        assertEquals("Alpha", repository.getTaskById(t.id)?.title)
+    }
+
+    @Test
+    fun `test update task cancellation clears pending action and leaves DB unmodified`() = runBlocking {
+        val t = repository.addTask(PremiumTask(id = 908L, title = "Draft Document", category = "Work", duration = "30m"))
+
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename task \"Draft Document\" to \"Finalize Document\"")
+        val resp1 = engine.processRequest(req1)
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "cancel", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+
+        assertEquals(AiResponseType.NO_ACTION, resp2.responseType)
+        assertNull(resp2.conversationContext?.pendingAction)
+        assertEquals("Draft Document", repository.getTaskById(t.id)?.title)
+    }
+
+    @Test
+    fun `test update task failure in repository reports error truthfully and leaves DB unmodified`() = runBlocking {
+        val t = repository.addTask(PremiumTask(id = 909L, title = "Initial Title", category = "Work", duration = "30m"))
+
+        repository.failUpdateTask = true
+        val action = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Update Task: Initial Title",
+            description = "Update task",
+            taskId = t.id,
+            parameters = mapOf("title" to "Updated Title", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertFalse("Execution must report failure truthfully", result.success)
+        assertEquals("Initial Title", repository.getTaskById(t.id)?.title)
+    }
+
+    @Test
+    fun `test update goal failure in repository reports error truthfully and leaves DB unmodified`() = runBlocking {
+        val g = repository.addGoal(
+            NexoraGoal(id = 910L, title = "Initial Goal", category = "Personal", targetDate = "", progress = 0f)
+        )
+
+        repository.failUpdateGoal = true
+        val action = AiAction(
+            type = AiActionType.UPDATE_GOAL,
+            title = "Update Goal: Initial Goal",
+            description = "Update goal",
+            goalId = g.id,
+            parameters = mapOf("title" to "Updated Goal", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertFalse("Execution must report failure truthfully", result.success)
+        assertEquals("Initial Goal", repository.getGoalById(g.id)?.title)
     }
 }
 
