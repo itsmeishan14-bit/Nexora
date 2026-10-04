@@ -145,7 +145,7 @@ class AdvancedLocalLanguagePipeline {
                         finalConfidence = AiConfidence.MEDIUM
                     }
                 }
-            } else if (context.tasks.size == 1 && (queryTitle.isBlank() || queryTitle in ambiguousTitles)) {
+            } else if (context.tasks.size == 1 && (queryTitle.isNotBlank() && queryTitle in ambiguousTitles)) {
                 val single = context.tasks.first()
                 targetTaskId = single.id
                 targetTaskTitle = single.title
@@ -163,7 +163,7 @@ class AdvancedLocalLanguagePipeline {
                     originalQuery = message
                 )
             } else {
-                // Ambiguous pronoun or missing target
+                // Missing target or unknown entity
                 finalIntent = AiDecisionType.CLARIFY
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
@@ -185,10 +185,11 @@ class AdvancedLocalLanguagePipeline {
         }
 
         if (originalIntent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
+            val ambiguousGoalTitles = listOf("It", "That", "This", "Goal", "My goal", "The goal", "This goal", "That goal")
             if (targetGoalId != null) {
                 val found = context.goals.find { it.id == targetGoalId }
                 targetGoalTitle = found?.title
-            } else if (queryTitle.isNotBlank() && queryTitle !in listOf("It", "That", "This", "Goal", "My goal", "The goal")) {
+            } else if (queryTitle.isNotBlank() && queryTitle !in ambiguousGoalTitles) {
                 val match = AiEntityResolver.resolveGoal(queryTitle, context.goals, effectiveConvContext)
                 when (match) {
                     is ResolutionResult.Success -> {
@@ -216,7 +217,7 @@ class AdvancedLocalLanguagePipeline {
                         finalConfidence = AiConfidence.MEDIUM
                     }
                 }
-            } else if (context.goals.size > 1 && (queryTitle.isBlank() || queryTitle in listOf("It", "That", "This", "Goal", "My goal", "The goal"))) {
+            } else if (context.goals.size > 1 && (queryTitle.isBlank() || queryTitle in ambiguousGoalTitles)) {
                 finalIntent = AiDecisionType.AMBIGUOUS
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
@@ -227,7 +228,7 @@ class AdvancedLocalLanguagePipeline {
                     candidates = context.goals.map { it.id },
                     originalQuery = message
                 )
-            } else if (context.goals.size == 1 && (queryTitle.isBlank() || queryTitle in listOf("It", "That", "This", "Goal", "My goal", "The goal"))) {
+            } else if (context.goals.size == 1 && (queryTitle.isNotBlank() && queryTitle in ambiguousGoalTitles)) {
                 val single = context.goals.first()
                 targetGoalId = single.id
                 targetGoalTitle = single.title
@@ -252,9 +253,50 @@ class AdvancedLocalLanguagePipeline {
             else -> true
         }
 
+        val isTargetMissing = queryTitle.isBlank() || queryTitle in ambiguousTitles
+        if ((originalIntent in listOf(AiDecisionType.UPDATE_TASK, AiDecisionType.UPDATE_GOAL, AiDecisionType.DELETE_TASK, AiDecisionType.DELETE_GOAL, AiDecisionType.COMPLETE_TASK)) &&
+            isTargetMissing && !hasValidTarget && finalIntent != AiDecisionType.AMBIGUOUS && !requiresClarification) {
+            finalIntent = AiDecisionType.CLARIFY
+            requiresClarification = true
+            clarificationNeeded = AiClarification(
+                question = if (originalIntent in listOf(AiDecisionType.UPDATE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.COMPLETE_TASK)) {
+                    "Which task would you like to $taskActionVerb?"
+                } else {
+                    "Which goal would you like to $goalActionVerb?"
+                },
+                intent = originalIntent,
+                missingField = "title",
+                originalQuery = message
+            )
+        }
+
+        val hasUpdateFields = when (originalIntent) {
+            AiDecisionType.UPDATE_TASK -> resolvedEntities.containsKey("newTitle") || resolvedEntities.containsKey("priority") || resolvedEntities.containsKey("duration") || resolvedEntities.containsKey("category")
+            AiDecisionType.UPDATE_GOAL -> resolvedEntities.containsKey("newTitle") || resolvedEntities.containsKey("category") || resolvedEntities.containsKey("targetDate")
+            else -> true
+        }
+
+        if ((originalIntent == AiDecisionType.UPDATE_TASK || originalIntent == AiDecisionType.UPDATE_GOAL) && !hasUpdateFields && !requiresClarification) {
+            requiresClarification = true
+            finalIntent = AiDecisionType.CLARIFY
+            clarificationNeeded = AiClarification(
+                question = if (originalIntent == AiDecisionType.UPDATE_TASK) {
+                    val targetName = targetTaskTitle ?: queryTitle.takeIf { it.isNotBlank() } ?: "the task"
+                    "What would you like to update about \"$targetName\"? You can specify a new title, priority, duration, or category."
+                } else {
+                    val targetName = targetGoalTitle ?: queryTitle.takeIf { it.isNotBlank() } ?: "the goal"
+                    "What would you like to update about \"$targetName\"? You can specify a new title or category."
+                },
+                intent = originalIntent,
+                missingField = "update_fields",
+                originalQuery = message
+            )
+        }
+
         val effectiveRequiresMutation = structuralResult.requiresMutation &&
                 !requiresClarification &&
                 hasValidTarget &&
+                hasUpdateFields &&
                 finalIntent != AiDecisionType.AMBIGUOUS &&
                 finalIntent != AiDecisionType.CLARIFY
 
@@ -627,24 +669,70 @@ class AdvancedLocalLanguagePipeline {
         }
     }
 
-    private fun parseRenameDirective(text: String, entityKeyword: String): Pair<String, String>? {
-        val pattern = Regex(
+    data class RenameExtraction(
+        val target: String?,
+        val newTitle: String?
+    )
+
+    private fun extractRename(text: String, entityKeyword: String): RenameExtraction? {
+        val trimmed = text.trim()
+        val isRenameIntent = trimmed.contains(Regex("(?i)\\b(rename|title|name)\\b")) ||
+            (trimmed.contains(Regex("(?i)\\bchange\\b")) && (trimmed.contains(Regex("(?i)\\bto\\b")) || trimmed.contains(Regex("(?i)\\b$entityKeyword\\b"))))
+        if (!isRenameIntent) return null
+
+        // 1. Complete rename: rename [entityKeyword] <target> to <newTitle>
+        val completePattern = Regex(
             "(?i)^\\s*(?:rename|change(?:\\s+the)?\\s+(?:title|name)\\s+of|change)\\s+" +
             "(?:$entityKeyword\\s+)?" +
-            "(?:[\"']([^\"']+)[\"']|(.+?))\\s+to\\s+" +
-            "(?:[\"']([^\"']+)[\"']|(.+?))\\s*[.!?]?\\s*$"
+            "(?:\"([^\"]+)\"|'([^']+)'|(.+?))\\s+to\\s+" +
+            "(?:\"([^\"]+)\"|'([^']+)'|(.+?))\\s*[.!?]?\\s*$"
         )
-        val match = pattern.find(text.trim()) ?: return null
-        val rawTarget = match.groups[1]?.value ?: match.groups[2]?.value ?: ""
-        val rawNewTitle = match.groups[3]?.value ?: match.groups[4]?.value ?: ""
-        
-        val target = rawTarget.trim().trim('"', '\'')
-        val newTitle = rawNewTitle.trim().trimEnd('.', '!', '?', ';', ',').trim('"', '\'')
-        
-        if (target.isNotBlank() && newTitle.isNotBlank()) {
-            return Pair(target, newTitle)
+        val completeMatch = completePattern.find(trimmed)
+        if (completeMatch != null) {
+            val rawTarget = completeMatch.groups[1]?.value ?: completeMatch.groups[2]?.value ?: completeMatch.groups[3]?.value ?: ""
+            val rawNewTitle = completeMatch.groups[4]?.value ?: completeMatch.groups[5]?.value ?: completeMatch.groups[6]?.value ?: ""
+            val target = rawTarget.trim().trim('"', '\'')
+            val newTitle = rawNewTitle.trim().trimEnd('.', '!', '?', ';', ',').trim('"', '\'')
+            if (target.equals(entityKeyword, ignoreCase = true) || target.equals("the $entityKeyword", ignoreCase = true)) {
+                return RenameExtraction(target = null, newTitle = newTitle)
+            }
+            if (target.isNotBlank() && newTitle.isNotBlank()) {
+                return RenameExtraction(target, newTitle)
+            }
         }
-        return null
+
+        // 2. Missing target: rename [entityKeyword] to <newTitle>
+        val missingTargetPattern = Regex(
+            "(?i)^\\s*(?:rename|change(?:\\s+the)?\\s+(?:title|name)\\s+of|change)\\s+" +
+            "(?:$entityKeyword\\s+)?to\\s+" +
+            "(?:\"([^\"]+)\"|'([^']+)'|(.+?))\\s*[.!?]?\\s*$"
+        )
+        val missingTargetMatch = missingTargetPattern.find(trimmed)
+        if (missingTargetMatch != null) {
+            val rawNewTitle = missingTargetMatch.groups[1]?.value ?: missingTargetMatch.groups[2]?.value ?: missingTargetMatch.groups[3]?.value ?: ""
+            val newTitle = rawNewTitle.trim().trimEnd('.', '!', '?', ';', ',').trim('"', '\'')
+            if (newTitle.isNotBlank()) {
+                return RenameExtraction(target = null, newTitle = newTitle)
+            }
+        }
+
+        // 3. Missing new title: rename [entityKeyword] <target> [to]
+        val missingNewTitlePattern = Regex(
+            "(?i)^\\s*(?:rename|change(?:\\s+the)?\\s+(?:title|name)\\s+of|change)\\s+" +
+            "(?:$entityKeyword\\s+)?" +
+            "(?:\"([^\"]+)\"|'([^']+)'|(.+?))(?:\\s+to)?\\s*[.!?]?\\s*$"
+        )
+        val missingNewTitleMatch = missingNewTitlePattern.find(trimmed)
+        if (missingNewTitleMatch != null) {
+            val rawTarget = missingNewTitleMatch.groups[1]?.value ?: missingNewTitleMatch.groups[2]?.value ?: missingNewTitleMatch.groups[3]?.value ?: ""
+            val target = rawTarget.trim().trim('"', '\'')
+            if (target.isNotBlank() && !target.equals(entityKeyword, ignoreCase = true) && !target.equals("the $entityKeyword", ignoreCase = true)) {
+                return RenameExtraction(target = target, newTitle = null)
+            }
+        }
+
+        // 4. Both missing: e.g. "rename task", "rename goal", "change the title"
+        return RenameExtraction(target = null, newTitle = null)
     }
 
     private fun extractEntities(text: String, intent: AiDecisionType, rawText: String = text): Map<String, Any> {
@@ -695,10 +783,14 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.UPDATE_GOAL -> {
-                val rename = parseRenameDirective(rawText, "goal") ?: parseRenameDirective(text, "goal")
+                val rename = extractRename(rawText, "goal") ?: extractRename(text, "goal")
                 if (rename != null) {
-                    entities["newTitle"] = rename.second
-                    rename.first
+                    if (rename.newTitle != null) {
+                        entities["newTitle"] = rename.newTitle
+                    }
+                    if (rename.target != null) {
+                        rename.target
+                    } else ""
                 } else {
                     var t = text
                     val catMatch = Regex("(?i)\\bcategory\\s+(?:to\\s+|is\\s+)?(?:[\"']([^\"']+)[\"']|([a-zA-Z0-9_-]+))").find(t)
@@ -719,10 +811,14 @@ class AdvancedLocalLanguagePipeline {
                 }
             }
             AiDecisionType.UPDATE_TASK -> {
-                val rename = parseRenameDirective(rawText, "task") ?: parseRenameDirective(text, "task")
+                val rename = extractRename(rawText, "task") ?: extractRename(text, "task")
                 if (rename != null) {
-                    entities["newTitle"] = rename.second
-                    rename.first
+                    if (rename.newTitle != null) {
+                        entities["newTitle"] = rename.newTitle
+                    }
+                    if (rename.target != null) {
+                        rename.target
+                    } else ""
                 } else {
                     var t = text
                     if (entities.containsKey("priority")) {

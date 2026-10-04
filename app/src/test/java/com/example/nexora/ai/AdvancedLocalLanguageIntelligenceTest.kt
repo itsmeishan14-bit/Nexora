@@ -1,5 +1,6 @@
 package com.example.nexora.ai
 
+import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
 import org.junit.Assert.assertEquals
@@ -330,8 +331,108 @@ class AdvancedLocalLanguageIntelligenceTest {
         val testContext = AiContext(tasks = listOf(task))
 
         // Incomplete: missing new title
-        val result = pipeline.process("Rename task Draft Plan", testContext)
+        val resultNoNewTitle = pipeline.process("Rename task Draft Plan", testContext)
+        assertEquals(AiDecisionType.CLARIFY, resultNoNewTitle.intent)
+        org.junit.Assert.assertFalse("Mutation must be prohibited when new title is missing", resultNoNewTitle.requiresMutation)
+        assertTrue(resultNoNewTitle.requiresClarification)
+        org.junit.Assert.assertNull(resultNoNewTitle.entities["newTitle"])
+
+        // Incomplete: missing target
+        val resultNoTarget = pipeline.process("Rename task to Final Plan", testContext)
+        assertEquals(AiDecisionType.CLARIFY, resultNoTarget.intent)
+        org.junit.Assert.assertFalse("Mutation must be prohibited when target is missing", resultNoTarget.requiresMutation)
+        assertTrue(resultNoTarget.requiresClarification)
+
+        // Incomplete goal: missing new title
+        val goal = NexoraGoal(id = 50L, title = "Master Rust", category = "Dev", targetDate = "2026-12-31", progress = 0.2f)
+        val goalContext = AiContext(goals = listOf(goal))
+        val resultGoalNoNewTitle = pipeline.process("Change goal Master Rust", goalContext)
+        assertEquals(AiDecisionType.CLARIFY, resultGoalNoNewTitle.intent)
+        org.junit.Assert.assertFalse(resultGoalNoNewTitle.requiresMutation)
+        assertTrue(resultGoalNoNewTitle.requiresClarification)
+
+        // Incomplete goal: missing target
+        val resultGoalNoTarget = pipeline.process("Change goal to Master Go", goalContext)
+        assertEquals(AiDecisionType.CLARIFY, resultGoalNoTarget.intent)
+        org.junit.Assert.assertFalse(resultGoalNoTarget.requiresMutation)
+        assertTrue(resultGoalNoTarget.requiresClarification)
+    }
+
+    @Test
+    fun `test rename task Alpha to Beta`() {
+        val task = PremiumTask(id = 60L, title = "Alpha", priority = TaskPriority.HIGH, category = "Work", duration = "45m", completed = false)
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Rename task Alpha to Beta", testContext)
+
         assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
-        org.junit.Assert.assertNull("New title must be null when not provided", result.entities["newTitle"])
+        assertEquals(60L, result.targetTaskId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test change the title of task Alpha to Beta`() {
+        val task = PremiumTask(id = 61L, title = "Alpha", priority = TaskPriority.LOW, category = "Personal", duration = "15m")
+        val testContext = AiContext(tasks = listOf(task))
+
+        val result = pipeline.process("Change the title of task Alpha to Beta", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_TASK, result.intent)
+        assertEquals(61L, result.targetTaskId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test change goal Alpha to Beta`() {
+        val goal = NexoraGoal(id = 70L, title = "Alpha", category = "Work", targetDate = "2026-12-31", progress = 0.4f)
+        val testContext = AiContext(goals = listOf(goal))
+
+        val result = pipeline.process("Change goal Alpha to Beta", testContext)
+
+        assertEquals(AiDecisionType.UPDATE_GOAL, result.intent)
+        assertEquals(70L, result.targetGoalId)
+        assertEquals("Beta", result.entities["newTitle"])
+        assertTrue(result.requiresMutation)
+    }
+
+    @Test
+    fun `test quoted task and goal titles containing spaces`() {
+        val task = PremiumTask(id = 80L, title = "Work Out Hard", priority = TaskPriority.MEDIUM, category = "Health", duration = "60m")
+        val goal = NexoraGoal(id = 81L, title = "Read 50 Books", category = "Personal", targetDate = "2026-12-31", progress = 0.1f)
+        val testContext = AiContext(tasks = listOf(task), goals = listOf(goal))
+
+        val taskResult = pipeline.process("Rename task \"Work Out Hard\" to \"Gym Session Tomorrow\"", testContext)
+        assertEquals(AiDecisionType.UPDATE_TASK, taskResult.intent)
+        assertEquals(80L, taskResult.targetTaskId)
+        assertEquals("Gym Session Tomorrow", taskResult.entities["newTitle"])
+        assertTrue(taskResult.requiresMutation)
+
+        val goalResult = pipeline.process("Change goal \"Read 50 Books\" to \"Read 30 Books\"", testContext)
+        assertEquals(AiDecisionType.UPDATE_GOAL, goalResult.intent)
+        assertEquals(81L, goalResult.targetGoalId)
+        assertEquals("Read 30 Books", goalResult.entities["newTitle"])
+        assertTrue(goalResult.requiresMutation)
+    }
+
+    @Test
+    fun `test task title containing punctuation or apostrophe`() {
+        val task1 = PremiumTask(id = 91L, title = "Doctor's Appointment", priority = TaskPriority.HIGH, category = "Health", duration = "30m")
+        val task2 = PremiumTask(id = 92L, title = "Client's Presentation (Final)", priority = TaskPriority.URGENT, category = "Work", duration = "90m")
+        val testContext = AiContext(tasks = listOf(task1, task2))
+
+        val result1 = pipeline.process("Rename task \"Doctor's Appointment\" to \"Dentist's Visit\"", testContext)
+        assertEquals(AiDecisionType.UPDATE_TASK, result1.intent)
+        assertEquals(91L, result1.targetTaskId)
+        assertEquals("Dentist's Visit", result1.entities["newTitle"])
+        assertTrue(result1.requiresMutation)
+
+        val result2 = pipeline.process("Change the title of task \"Client's Presentation (Final)\" to \"Client's Presentation (V2)\"", testContext)
+        assertEquals(AiDecisionType.UPDATE_TASK, result2.intent)
+        assertEquals(92L, result2.targetTaskId)
+        assertEquals("Client's Presentation (V2)", result2.entities["newTitle"])
+        assertTrue(result2.requiresMutation)
     }
 }
+

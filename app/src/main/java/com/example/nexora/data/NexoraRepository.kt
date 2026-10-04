@@ -212,21 +212,16 @@ open class NexoraRepository(
         }
     }
 
-    open suspend fun deleteGoalAtomic(goalId: Long): GoalDeletionResult {
+    open suspend fun deleteGoalAtomic(
+        goalId: Long,
+        onAfterUnlink: (() -> Unit)? = null,
+        onAfterDelete: (() -> Unit)? = null
+    ): GoalDeletionResult {
         val dao = goalDao ?: return GoalDeletionResult.Failure("Database not available")
         return try {
-            val result = dao.deleteGoalAndUnlinkTasks(goalId)
+            val result = dao.deleteGoalAndUnlinkTasks(goalId, onAfterUnlink, onAfterDelete)
                 ?: return GoalDeletionResult.GoalNotFound
 
-            // Verification check: ensure goal is deleted and no tasks remain linked
-            val verifyGoal = dao.getById(goalId)
-            val verifyTasks = dao.getTasksByGoalTitle(result.first.title)
-            if (verifyGoal != null) {
-                return GoalDeletionResult.Failure("Verification failed: Goal still exists after deletion.")
-            }
-            if (verifyTasks.isNotEmpty()) {
-                return GoalDeletionResult.Failure("Verification failed: Tasks remain linked to deleted goal.")
-            }
             GoalDeletionResult.Success(result.first.title, result.second)
         } catch (e: Exception) {
             NexoraLogger.e("REPO", "Atomic goal deletion failed for goal $goalId", e)

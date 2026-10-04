@@ -95,7 +95,11 @@ open class MockNexoraRepository : NexoraRepository(null) {
     var failDuringUnlinkAtTaskIndex: Int = -1
     var failDeleteGoalAfterUnlink: Boolean = false
 
-    override suspend fun deleteGoalAtomic(goalId: Long): com.example.nexora.data.GoalDeletionResult {
+    override suspend fun deleteGoalAtomic(
+        goalId: Long,
+        onAfterUnlink: (() -> Unit)?,
+        onAfterDelete: (() -> Unit)?
+    ): com.example.nexora.data.GoalDeletionResult {
         if (failDeleteGoal) {
             return com.example.nexora.data.GoalDeletionResult.Failure("Simulated database goal delete failure")
         }
@@ -124,11 +128,25 @@ open class MockNexoraRepository : NexoraRepository(null) {
                 }
             }
 
+            onAfterUnlink?.invoke()
+
             if (failDeleteGoal || failDeleteGoalAfterUnlink) {
                 throw IllegalStateException("Simulated goal delete failure after unlinking tasks")
             }
 
             goals.removeIf { it.id == goalId }
+
+            onAfterDelete?.invoke()
+
+            // Transaction-level postcondition verification
+            val verifyGoal = goals.find { it.id == goalId }
+            if (verifyGoal != null) {
+                throw IllegalStateException("Verification failed: Goal still exists after deletion inside transaction.")
+            }
+            val verifyTasks = tasks.filter { it.goalTitle.equals(goal.title, ignoreCase = true) }
+            if (verifyTasks.isNotEmpty()) {
+                throw IllegalStateException("Verification failed: Tasks remain linked to deleted goal inside transaction.")
+            }
 
             return com.example.nexora.data.GoalDeletionResult.Success(goal.title, unlinkedCount)
         } catch (e: Exception) {

@@ -1157,5 +1157,233 @@ class NexoraActionIntelligenceTest {
         assertFalse("Execution must report failure truthfully", result.success)
         assertEquals("Initial Goal", repository.getGoalById(g.id)?.title)
     }
+
+    @Test
+    fun `test priority-only update preserves existing title, duration, category, and completion state`() = runBlocking {
+        val t = repository.addTask(
+            PremiumTask(
+                id = 911L,
+                title = "Critical Project Alpha",
+                category = "Engineering",
+                duration = "45m",
+                priority = TaskPriority.LOW,
+                completed = false
+            )
+        )
+
+        val action = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Update Priority",
+            description = "Update task priority",
+            taskId = t.id,
+            parameters = mapOf("priority" to "HIGH", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertTrue(result.success)
+
+        val updated = repository.getTaskById(t.id)
+        assertNotNull(updated)
+        assertEquals("Critical Project Alpha", updated?.title) // Title preserved
+        assertEquals(TaskPriority.HIGH, updated?.priority)       // Priority updated
+        assertEquals("45m", updated?.duration)                   // Duration preserved
+        assertEquals("Engineering", updated?.category)           // Category preserved
+        assertEquals(false, updated?.completed)                  // Completion preserved
+    }
+
+    @Test
+    fun `test task rename preserves priority, duration, category, and completion state`() = runBlocking {
+        val t = repository.addTask(
+            PremiumTask(
+                id = 912L,
+                title = "Alpha",
+                category = "Research",
+                duration = "1h",
+                priority = TaskPriority.URGENT,
+                completed = false
+            )
+        )
+
+        val action = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Rename Task",
+            description = "Rename task to Beta",
+            taskId = t.id,
+            parameters = mapOf("title" to "Beta", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertTrue(result.success)
+
+        val updated = repository.getTaskById(t.id)
+        assertNotNull(updated)
+        assertEquals("Beta", updated?.title)                     // Renamed
+        assertEquals(TaskPriority.URGENT, updated?.priority)     // Priority preserved
+        assertEquals("1h", updated?.duration)                    // Duration preserved
+        assertEquals("Research", updated?.category)              // Category preserved
+        assertEquals(false, updated?.completed)                  // Completion preserved
+    }
+
+    @Test
+    fun `test goal rename preserves category, target date, and progress`() = runBlocking {
+        val g = repository.addGoal(
+            NexoraGoal(
+                id = 913L,
+                title = "Alpha",
+                category = "Fitness",
+                targetDate = "2026-11-30",
+                progress = 0.65f
+            )
+        )
+
+        val action = AiAction(
+            type = AiActionType.UPDATE_GOAL,
+            title = "Rename Goal",
+            description = "Rename goal to Beta",
+            goalId = g.id,
+            parameters = mapOf("title" to "Beta", "userConfirmed" to true)
+        )
+
+        val result = actionExecutor.execute(action)
+        assertTrue(result.success)
+
+        val updated = repository.getGoalById(g.id)
+        assertNotNull(updated)
+        assertEquals("Beta", updated?.title)                     // Renamed
+        assertEquals("Fitness", updated?.category)               // Category preserved
+        assertEquals("2026-11-30", updated?.targetDate)          // Target date preserved
+        assertEquals(0.65f, updated?.progress ?: 0f, 0.001f)     // Progress preserved
+    }
+
+    @Test
+    fun `test complete action lifecycle from user message through proposal confirmation to DB verification`() = runBlocking {
+        val t = repository.addTask(
+            PremiumTask(
+                id = 914L,
+                title = "Initial Lifecycle Task",
+                category = "Work",
+                duration = "30m",
+                priority = TaskPriority.MEDIUM
+            )
+        )
+
+        // 1. User message -> intent classification & target resolution -> proposed action
+        val req1 = AiRequest(
+            type = AiRequestType.CHAT,
+            userMessage = "Rename task \"Initial Lifecycle Task\" to \"Renamed Lifecycle Task\""
+        )
+        val resp1 = engine.processRequest(req1)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp1.responseType)
+        assertEquals(1, resp1.proposedActions.size)
+        val proposed = resp1.proposedActions.first()
+        assertEquals(AiActionType.UPDATE_TASK, proposed.type)
+        assertEquals(t.id, proposed.taskId)
+        assertEquals("Renamed Lifecycle Task", proposed.parameters["title"])
+        assertTrue(proposed.requiresConfirmation)
+
+        // Database remains UNMODIFIED before confirmation
+        assertEquals("Initial Lifecycle Task", repository.getTaskById(t.id)?.title)
+
+        // 2. User confirms action
+        val req2 = AiRequest(
+            type = AiRequestType.CHAT,
+            userMessage = "yes",
+            conversationContext = resp1.conversationContext
+        )
+        val resp2 = engine.processRequest(req2)
+
+        assertEquals(AiResponseType.ACTION_PROPOSAL, resp2.responseType)
+        val authorizedAction = resp2.proposedActions.first()
+        assertEquals(true, authorizedAction.parameters["userConfirmed"])
+        assertFalse(authorizedAction.requiresConfirmation)
+
+        // 3. Execution & persisted-state verification
+        val execResult = actionExecutor.execute(authorizedAction)
+        assertTrue(execResult.success)
+
+        // Confirm database was truthfully updated
+        val persisted = repository.getTaskById(t.id)
+        assertEquals("Renamed Lifecycle Task", persisted?.title)
+    }
+
+    @Test
+    fun `test confirmation executes only the pending proposed action and does not repeat`() = runBlocking {
+        val t = repository.addTask(
+            PremiumTask(id = 915L, title = "Task One", category = "Work", duration = "30m")
+        )
+
+        val req1 = AiRequest(type = AiRequestType.CHAT, userMessage = "Rename task \"Task One\" to \"Task Two\"")
+        val resp1 = engine.processRequest(req1)
+        assertNotNull(resp1.conversationContext?.pendingAction)
+
+        // First confirmation
+        val req2 = AiRequest(type = AiRequestType.CHAT, userMessage = "confirm", conversationContext = resp1.conversationContext)
+        val resp2 = engine.processRequest(req2)
+        val actionToExecute = resp2.proposedActions.first()
+        val result = actionExecutor.execute(actionToExecute)
+        assertTrue(result.success)
+
+        // Subsequent confirmation must have no pending action
+        assertNull(resp2.conversationContext?.pendingAction)
+        val req3 = AiRequest(type = AiRequestType.CHAT, userMessage = "yes", conversationContext = resp2.conversationContext)
+        val resp3 = engine.processRequest(req3)
+        assertTrue("Subsequent confirmation must not propose any actions", resp3.proposedActions.isEmpty())
+    }
+
+    @Test
+    fun `test invalid or missing parameters cannot overwrite existing values with defaults`() = runBlocking {
+        val t = repository.addTask(
+            PremiumTask(
+                id = 916L,
+                title = "Original Safe Title",
+                category = "Safe Category",
+                duration = "45m",
+                priority = TaskPriority.HIGH
+            )
+        )
+
+        // Invalid priority
+        val badPriorityAction = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Bad Priority",
+            description = "Bad Priority Description",
+            taskId = t.id,
+            parameters = mapOf("priority" to "SUPER_HIGH", "userConfirmed" to true)
+        )
+        val badPriorityResult = actionExecutor.execute(badPriorityAction)
+        assertFalse("Invalid priority must fail", badPriorityResult.success)
+
+        // Invalid duration
+        val badDurationAction = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Bad Duration",
+            description = "Bad Duration Description",
+            taskId = t.id,
+            parameters = mapOf("duration" to "invalid_time", "userConfirmed" to true)
+        )
+        val badDurationResult = actionExecutor.execute(badDurationAction)
+        assertFalse("Invalid duration must fail", badDurationResult.success)
+
+        // Empty parameters
+        val emptyParamsAction = AiAction(
+            type = AiActionType.UPDATE_TASK,
+            title = "Empty Params",
+            description = "Empty Params Description",
+            taskId = t.id,
+            parameters = mapOf("userConfirmed" to true)
+        )
+        val emptyParamsResult = actionExecutor.execute(emptyParamsAction)
+        assertFalse("Empty update parameters must fail", emptyParamsResult.success)
+
+        // Verify task is completely unchanged
+        val safeTask = repository.getTaskById(t.id)
+        assertNotNull(safeTask)
+        assertEquals("Original Safe Title", safeTask?.title)
+        assertEquals("Safe Category", safeTask?.category)
+        assertEquals("45m", safeTask?.duration)
+        assertEquals(TaskPriority.HIGH, safeTask?.priority)
+    }
 }
+
 
