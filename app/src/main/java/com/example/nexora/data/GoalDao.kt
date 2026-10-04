@@ -20,10 +20,10 @@ interface GoalDao {
     suspend fun insert(goal: GoalEntity): Long
 
     @Update
-    suspend fun update(goal: GoalEntity)
+    suspend fun update(goal: GoalEntity): Int
 
     @Delete
-    suspend fun delete(goal: GoalEntity)
+    suspend fun delete(goal: GoalEntity): Int
 
     @Query("SELECT * FROM goals WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): GoalEntity?

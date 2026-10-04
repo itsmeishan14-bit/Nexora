@@ -534,6 +534,15 @@ class AdvancedLocalLanguagePipeline {
             )
         }
 
+        // Update Goal Directive
+        if (lower.contains(Regex("(?i)\\b(change|update|edit|rename|modify|set)\\b")) && lower.contains("goal")) {
+            return StructuralClassification(
+                intent = AiDecisionType.UPDATE_GOAL,
+                confidence = AiConfidence.MEDIUM,
+                requiresMutation = true
+            )
+        }
+
         // Update Task Directive
         if (lower.contains(Regex("(?i)\\b(change|update|edit|priority|rename|modify|set)\\b")) && (lower.contains("task") || lower.contains("it"))) {
             return StructuralClassification(
@@ -665,8 +674,48 @@ class AdvancedLocalLanguagePipeline {
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
-            AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK -> {
-                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|as|delete|remove|destroy|change|update|edit|priority|rename|the|my|a|an|task)\\b"), " ")
+            AiDecisionType.UPDATE_GOAL -> {
+                val renameMatch = Regex("(?i)\\b(?:rename|change title of)\\s+(?:goal\\s+)?[\"']?([^\"']+?)[\"']?\\s+to\\s+[\"']?([^\"']+)[\"']?").find(text)
+                if (renameMatch != null) {
+                    val target = renameMatch.groupValues[1].trim()
+                    val newTitle = renameMatch.groupValues[2].trim()
+                    entities["newTitle"] = newTitle
+                    target
+                } else {
+                    var t = text.replace(Regex("(?i)\\b(goal|objective)\\b"), " ")
+                    val catMatch = Regex("(?i)\\bcategory\\s+(?:to\\s+)?([a-zA-Z0-9_-]+)").find(t)
+                    if (catMatch != null) {
+                        entities["category"] = catMatch.groupValues[1].trim().replaceFirstChar { it.uppercase() }
+                        t = t.replace(catMatch.value, " ")
+                    }
+                    t.replace(Regex("(?i)\\b(change|update|edit|rename|modify|set|the|my|a|an|to)\\b"), " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                }
+            }
+            AiDecisionType.UPDATE_TASK -> {
+                val renameMatch = Regex("(?i)\\b(?:rename|change title of)\\s+(?:task\\s+)?[\"']?([^\"']+?)[\"']?\\s+to\\s+[\"']?([^\"']+)[\"']?").find(text)
+                if (renameMatch != null) {
+                    val target = renameMatch.groupValues[1].trim()
+                    val newTitle = renameMatch.groupValues[2].trim()
+                    entities["newTitle"] = newTitle
+                    target
+                } else {
+                    var t = text.replace(Regex("(?i)\\b(task|todo)\\b"), " ")
+                    if (entities.containsKey("priority")) {
+                        t = t.replace(Regex("(?i)\\s*(?:priority\\s*(?:to|is)?|to\\s*(?:priority)?)\\s*(?:urgent|critical|immediately|high|important|medium|low|not important)\\b"), " ")
+                            .replace(Regex("(?i)\\b(urgent|critical|immediately|high|important|medium|low)\\b"), " ")
+                    }
+                    if (entities.containsKey("duration")) {
+                        t = t.replace(Regex("(?i)\\s*(?:duration\\s*(?:to|of)?|for|to)?\\s*\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
+                    }
+                    t.replace(Regex("(?i)\\b(change|update|edit|rename|modify|set|priority|duration|the|my|a|an|to)\\b"), " ")
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                }
+            }
+            AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK -> {
+                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|as|delete|remove|destroy|the|my|a|an|task)\\b"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }

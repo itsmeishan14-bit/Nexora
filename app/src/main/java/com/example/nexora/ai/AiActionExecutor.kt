@@ -90,6 +90,26 @@ open class AiActionExecutor(
         return result
     }
 
+    companion object {
+        fun parsePriority(priorityStr: String?): TaskPriority? {
+            if (priorityStr.isNullOrBlank()) return null
+            return when (priorityStr.trim().uppercase()) {
+                "LOW" -> TaskPriority.LOW
+                "MEDIUM" -> TaskPriority.MEDIUM
+                "HIGH" -> TaskPriority.HIGH
+                "URGENT" -> TaskPriority.URGENT
+                else -> null
+            }
+        }
+
+        fun isValidDuration(duration: String?): Boolean {
+            if (duration.isNullOrBlank()) return false
+            val trimmed = duration.trim().lowercase()
+            val pattern = Regex("^(\\d+)\\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)$")
+            return pattern.matches(trimmed)
+        }
+    }
+
     private suspend fun verifyAction(
         repository: NexoraRepository,
         action: AiAction,
@@ -122,6 +142,10 @@ open class AiActionExecutor(
                 if (expectedDuration != null && task.duration != expectedDuration) {
                     return AiActionResult(false, "Verification failed: Duration mismatch. Expected \"$expectedDuration\" but found \"${task.duration}\"", error = "Verification failed")
                 }
+                val expectedCategory = action.parameters["category"] as? String
+                if (expectedCategory != null && task.category != expectedCategory) {
+                    return AiActionResult(false, "Verification failed: Category mismatch. Expected \"$expectedCategory\" but found \"${task.category}\"", error = "Verification failed")
+                }
                 executionResult
             }
             AiActionType.DELETE_TASK -> {
@@ -135,6 +159,10 @@ open class AiActionExecutor(
                 val expectedPriority = action.parameters["priority"] as? String
                 if (expectedPriority != null && task.priority.name != expectedPriority) {
                     return AiActionResult(false, "Verification failed: Rescheduled priority mismatch. Expected $expectedPriority but found ${task.priority.name}", error = "Verification failed")
+                }
+                val expectedDuration = action.parameters["duration"] as? String
+                if (expectedDuration != null && task.duration != expectedDuration) {
+                    return AiActionResult(false, "Verification failed: Rescheduled duration mismatch. Expected \"$expectedDuration\" but found \"${task.duration}\"", error = "Verification failed")
                 }
                 executionResult
             }
@@ -150,12 +178,28 @@ open class AiActionExecutor(
                 if (expectedTitle != null && goal.title != expectedTitle) {
                     return AiActionResult(false, "Verification failed: Goal title mismatch. Expected \"$expectedTitle\" but found \"${goal.title}\"", error = "Verification failed")
                 }
+                val expectedCategory = action.parameters["category"] as? String
+                if (expectedCategory != null && goal.category != expectedCategory) {
+                    return AiActionResult(false, "Verification failed: Goal category mismatch. Expected \"$expectedCategory\" but found \"${goal.category}\"", error = "Verification failed")
+                }
+                val expectedTargetDate = action.parameters["targetDate"] as? String
+                if (expectedTargetDate != null && goal.targetDate != expectedTargetDate) {
+                    return AiActionResult(false, "Verification failed: Goal target date mismatch. Expected \"$expectedTargetDate\" but found \"${goal.targetDate}\"", error = "Verification failed")
+                }
                 executionResult
             }
             AiActionType.DELETE_GOAL -> {
                 val goalId = action.goalId ?: return executionResult
                 val goal = repository.getGoalById(goalId)
-                if (goal == null) executionResult else AiActionResult(false, "Verification failed: Goal still exists after deletion.", error = "Verification failed")
+                if (goal != null) {
+                    return AiActionResult(false, "Verification failed: Goal still exists after deletion.", error = "Verification failed")
+                }
+                val expectedDeletedTitle = action.parameters["title"] as? String ?: action.title.removePrefix("Delete Goal: ").trim()
+                val remainingLinked = repository.observeTasksOnce().filter { it.goalTitle.equals(expectedDeletedTitle, ignoreCase = true) }
+                if (remainingLinked.isNotEmpty()) {
+                    return AiActionResult(false, "Verification failed: Tasks remain linked to deleted goal.", error = "Verification failed")
+                }
+                executionResult
             }
             AiActionType.DELETE_ALL_TASKS -> {
                 val remaining = repository.observeTasksOnce().size
@@ -233,6 +277,9 @@ open class AiActionExecutor(
 
     private suspend fun createTask(repository: NexoraRepository, action: AiAction): AiActionResult {
         val title = action.parameters["title"] as? String ?: action.title
+        if (title.isBlank()) {
+            return AiActionResult(false, "Task title cannot be empty.", error = "Empty title")
+        }
         
         // 1. Sanity check for duplicates
         val tasks = repository.observeTasksOnce()
@@ -245,10 +292,11 @@ open class AiActionExecutor(
         val priorityStr = action.parameters["priority"] as? String ?: "MEDIUM"
         val goalTitle = action.parameters["goalTitle"] as? String
 
-        val priority = try {
-            TaskPriority.valueOf(priorityStr)
-        } catch (e: Exception) {
-            TaskPriority.MEDIUM
+        val priority = parsePriority(priorityStr)
+            ?: return AiActionResult(false, "Invalid priority \"$priorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.", error = "Invalid priority")
+
+        if (!isValidDuration(duration)) {
+            return AiActionResult(false, "Invalid duration \"$duration\". Specify duration in minutes or hours (e.g. '30 minutes', '1 hour').", error = "Invalid duration")
         }
 
         val task = PremiumTask(
@@ -261,6 +309,9 @@ open class AiActionExecutor(
         )
 
         val created = repository.addTask(task)
+        if (created.id == 0L) {
+            return AiActionResult(false, "Failed to persist task \"$title\" in database.", error = "Database insert failed")
+        }
         return AiActionResult(
             success = true,
             message = "Task created: ${created.title}",
@@ -281,7 +332,10 @@ open class AiActionExecutor(
         }
 
         val updated = task.copy(completed = true)
-        repository.updateTask(updated)
+        val success = repository.updateTask(updated)
+        if (!success) {
+            return AiActionResult(false, "Failed to mark task \"${task.title}\" as completed in database.", error = "Database update failed")
+        }
         
         return AiActionResult(
             success = true,
@@ -297,20 +351,41 @@ open class AiActionExecutor(
         val newPriorityStr = action.parameters["priority"] as? String
         val newDuration = action.parameters["duration"] as? String
         val newTitle = action.parameters["title"] as? String
+        val newCategory = action.parameters["category"] as? String
 
+        var hasModifications = false
         var updated = task
-        if (newPriorityStr != null) {
-            val priority = try {
-                TaskPriority.valueOf(newPriorityStr)
-            } catch (e: Exception) {
-                task.priority
-            }
-            updated = updated.copy(priority = priority)
-        }
-        if (newDuration != null) updated = updated.copy(duration = newDuration)
-        if (newTitle != null) updated = updated.copy(title = newTitle)
 
-        repository.updateTask(updated)
+        if (newPriorityStr != null) {
+            val priority = parsePriority(newPriorityStr)
+                ?: return AiActionResult(false, "Invalid priority \"$newPriorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.", error = "Invalid priority")
+            updated = updated.copy(priority = priority)
+            hasModifications = true
+        }
+        if (newDuration != null) {
+            if (!isValidDuration(newDuration)) {
+                return AiActionResult(false, "Invalid duration \"$newDuration\". Specify duration in minutes or hours (e.g. '30 minutes', '1 hour').", error = "Invalid duration")
+            }
+            updated = updated.copy(duration = newDuration)
+            hasModifications = true
+        }
+        if (newTitle != null && newTitle.isNotBlank()) {
+            updated = updated.copy(title = newTitle.trim())
+            hasModifications = true
+        }
+        if (newCategory != null && newCategory.isNotBlank()) {
+            updated = updated.copy(category = newCategory.trim())
+            hasModifications = true
+        }
+
+        if (!hasModifications) {
+            return AiActionResult(false, "No valid update parameters provided for task \"${task.title}\".", error = "No parameters to update")
+        }
+
+        val success = repository.updateTask(updated)
+        if (!success) {
+            return AiActionResult(false, "Failed to update task in database.", error = "Database update failed")
+        }
         
         return AiActionResult(
             success = true,
@@ -323,7 +398,10 @@ open class AiActionExecutor(
         val taskId = action.taskId ?: return AiActionResult(false, "Task ID missing.")
         val task = repository.getTaskById(taskId) ?: return AiActionResult(false, "Task not found.")
 
-        repository.deleteTask(task)
+        val success = repository.deleteTask(task)
+        if (!success) {
+            return AiActionResult(false, "Failed to delete task \"${task.title}\" from database.", error = "Database delete failed")
+        }
         
         return AiActionResult(
             success = true,
@@ -340,15 +418,23 @@ open class AiActionExecutor(
         val newDuration = action.parameters["duration"] as? String
 
         if (newPriorityStr != null || newDuration != null) {
-            val newPriority = newPriorityStr?.let {
-                try { TaskPriority.valueOf(it) } catch (e: Exception) { null }
-            } ?: task.priority
+            val newPriority = if (newPriorityStr != null) {
+                parsePriority(newPriorityStr)
+                    ?: return AiActionResult(false, "Invalid priority \"$newPriorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.", error = "Invalid priority")
+            } else task.priority
             
+            if (newDuration != null && !isValidDuration(newDuration)) {
+                return AiActionResult(false, "Invalid duration \"$newDuration\".", error = "Invalid duration")
+            }
+
             val updated = task.copy(
                 priority = newPriority,
                 duration = newDuration ?: task.duration
             )
-            repository.updateTask(updated)
+            val success = repository.updateTask(updated)
+            if (!success) {
+                return AiActionResult(false, "Failed to reschedule task in database.", error = "Database update failed")
+            }
             return AiActionResult(
                 success = true,
                 message = "Rescheduled \"${task.title}\" by updating priority to $newPriority.",
@@ -367,6 +453,9 @@ open class AiActionExecutor(
 
     private suspend fun createGoal(repository: NexoraRepository, action: AiAction): AiActionResult {
         val title = action.parameters["title"] as? String ?: action.title
+        if (title.isBlank()) {
+            return AiActionResult(false, "Goal title cannot be empty.", error = "Empty title")
+        }
         val category = action.parameters["category"] as? String ?: "Personal"
         val targetDate = action.parameters["targetDate"] as? String ?: ""
 
@@ -378,6 +467,9 @@ open class AiActionExecutor(
         )
 
         val created = repository.addGoal(goal)
+        if (created.id == 0L) {
+            return AiActionResult(false, "Failed to persist goal \"$title\" in database.", error = "Database insert failed")
+        }
         return AiActionResult(
             success = true,
             message = "Goal created: ${created.title}",
@@ -391,16 +483,35 @@ open class AiActionExecutor(
 
         val newTitle = action.parameters["title"] as? String
         val newCategory = action.parameters["category"] as? String
+        val newTargetDate = action.parameters["targetDate"] as? String
 
+        var hasModifications = false
         var updated = goal
-        if (newTitle != null) updated = updated.copy(title = newTitle)
-        if (newCategory != null) updated = updated.copy(category = newCategory)
+        if (newTitle != null && newTitle.isNotBlank()) {
+            updated = updated.copy(title = newTitle.trim())
+            hasModifications = true
+        }
+        if (newCategory != null && newCategory.isNotBlank()) {
+            updated = updated.copy(category = newCategory.trim())
+            hasModifications = true
+        }
+        if (newTargetDate != null) {
+            updated = updated.copy(targetDate = newTargetDate.trim())
+            hasModifications = true
+        }
 
-        repository.updateGoal(updated)
+        if (!hasModifications) {
+            return AiActionResult(false, "No valid update parameters provided for goal \"${goal.title}\".", error = "No parameters to update")
+        }
+
+        val success = repository.updateGoal(updated)
+        if (!success) {
+            return AiActionResult(false, "Failed to update goal in database.", error = "Database update failed")
+        }
         
         return AiActionResult(
             success = true,
-            message = "Goal updated: ${goal.title}",
+            message = "Goal updated: ${updated.title}",
             affectedGoalId = goalId
         )
     }
@@ -410,10 +521,18 @@ open class AiActionExecutor(
         val goal = repository.getGoalById(goalId) ?: return AiActionResult(false, "Goal not found.")
 
         // Unlink tasks before deleting goal
-        val tasks = repository.observeTasksOnce().filter { it.goalTitle == goal.title }
-        tasks.forEach { repository.updateTask(it.copy(goalTitle = null)) }
+        val linkedTasks = repository.observeTasksOnce().filter { it.goalTitle.equals(goal.title, ignoreCase = true) }
+        for (task in linkedTasks) {
+            val unlinked = repository.updateTask(task.copy(goalTitle = null))
+            if (!unlinked) {
+                return AiActionResult(false, "Failed to unlink task \"${task.title}\" from goal \"${goal.title}\".", error = "Task unlinking failed")
+            }
+        }
 
-        repository.deleteGoal(goal)
+        val deleted = repository.deleteGoal(goal)
+        if (!deleted) {
+            return AiActionResult(false, "Failed to delete goal \"${goal.title}\" from database.", error = "Database delete failed")
+        }
         
         return AiActionResult(
             success = true,

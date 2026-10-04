@@ -40,6 +40,16 @@ class NexoraAiValidator(
             return ValidationResult.Invalid("Task \"${task.title}\" is already completed.")
         }
 
+        val priorityStr = action.parameters["priority"] as? String
+        if (priorityStr != null && AiActionExecutor.parsePriority(priorityStr) == null) {
+            return ValidationResult.Invalid("Invalid priority \"$priorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.")
+        }
+
+        val durationStr = action.parameters["duration"] as? String
+        if (durationStr != null && !AiActionExecutor.isValidDuration(durationStr)) {
+            return ValidationResult.Invalid("Invalid duration \"$durationStr\". Specify duration in minutes or hours.")
+        }
+
         return ValidationResult.Valid
     }
 
@@ -48,6 +58,13 @@ class NexoraAiValidator(
         val goals = repository.observeGoalsOnce()
         val goal = goals.find { it.id == goalId } ?: return ValidationResult.Invalid("Goal with ID $goalId not found.")
         
+        if (action.type == AiActionType.UPDATE_GOAL) {
+            val title = action.parameters["title"] as? String
+            if (title != null && title.isBlank()) {
+                return ValidationResult.Invalid("Goal title cannot be empty.")
+            }
+        }
+
         return ValidationResult.Valid
     }
 
@@ -56,6 +73,17 @@ class NexoraAiValidator(
         if (title.isBlank()) {
             return ValidationResult.Invalid("Task title cannot be empty.")
         }
+
+        val priorityStr = action.parameters["priority"] as? String
+        if (priorityStr != null && AiActionExecutor.parsePriority(priorityStr) == null) {
+            return ValidationResult.Invalid("Invalid priority \"$priorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.")
+        }
+
+        val durationStr = action.parameters["duration"] as? String
+        if (durationStr != null && !AiActionExecutor.isValidDuration(durationStr)) {
+            return ValidationResult.Invalid("Invalid duration \"$durationStr\". Specify duration in minutes or hours.")
+        }
+
         return ValidationResult.Valid
     }
 

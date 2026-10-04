@@ -31,19 +31,33 @@ open class MockNexoraRepository : NexoraRepository(null) {
 
     override suspend fun getIncompleteTasksOnce(): List<PremiumTask> = tasks.filter { !it.completed }
 
+    var failAddTask: Boolean = false
+    var failUpdateTask: Boolean = false
+    var failDeleteTask: Boolean = false
+    var failAddGoal: Boolean = false
+    var failUpdateGoal: Boolean = false
+    var failDeleteGoal: Boolean = false
+
     override suspend fun addTask(task: PremiumTask): PremiumTask {
+        if (failAddTask) return task.copy(id = 0L)
         val newTask = task.copy(id = (tasks.size + 1).toLong())
         tasks.add(newTask)
         return newTask
     }
 
-    override suspend fun updateTask(task: PremiumTask) {
+    override suspend fun updateTask(task: PremiumTask): Boolean {
+        if (failUpdateTask) return false
         val index = tasks.indexOfFirst { it.id == task.id }
-        if (index >= 0) tasks[index] = task
+        if (index >= 0) {
+            tasks[index] = task
+            return true
+        }
+        return false
     }
 
-    override suspend fun deleteTask(task: PremiumTask) {
-        tasks.removeAll { it.id == task.id }
+    override suspend fun deleteTask(task: PremiumTask): Boolean {
+        if (failDeleteTask) return false
+        return tasks.removeAll { it.id == task.id }
     }
 
     override suspend fun deleteAllTasks() {
@@ -61,18 +75,25 @@ open class MockNexoraRepository : NexoraRepository(null) {
     override suspend fun getGoalById(id: Long): NexoraGoal? = goals.find { it.id == id }
 
     override suspend fun addGoal(goal: NexoraGoal): NexoraGoal {
+        if (failAddGoal) return goal.copy(id = 0L)
         val newGoal = goal.copy(id = (goals.size + 1).toLong())
         goals.add(newGoal)
         return newGoal
     }
 
-    override suspend fun updateGoal(goal: NexoraGoal) {
+    override suspend fun updateGoal(goal: NexoraGoal): Boolean {
+        if (failUpdateGoal) return false
         val index = goals.indexOfFirst { it.id == goal.id }
-        if (index >= 0) goals[index] = goal
+        if (index >= 0) {
+            goals[index] = goal
+            return true
+        }
+        return false
     }
 
-    override suspend fun deleteGoal(goal: NexoraGoal) {
-        goals.removeAll { it.id == goal.id }
+    override suspend fun deleteGoal(goal: NexoraGoal): Boolean {
+        if (failDeleteGoal) return false
+        return goals.removeAll { it.id == goal.id }
     }
 
     var failSaveOutcome: Boolean = false

@@ -20,10 +20,10 @@ interface TaskDao {
     suspend fun insert(task: TaskEntity): Long
 
     @Update
-    suspend fun update(task: TaskEntity)
+    suspend fun update(task: TaskEntity): Int
 
     @Delete
-    suspend fun delete(task: TaskEntity)
+    suspend fun delete(task: TaskEntity): Int
 
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): TaskEntity?

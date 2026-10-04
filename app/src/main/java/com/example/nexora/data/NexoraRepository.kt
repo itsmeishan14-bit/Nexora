@@ -18,6 +18,7 @@ import com.example.nexora.ai.AutomationExecutionRecord
 import com.example.nexora.ai.AutomationExecutionStage
 import com.example.nexora.ai.AutomationTriggerType
 import com.example.nexora.uii.TaskPriority
+import com.example.nexora.util.NexoraLogger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -99,34 +100,42 @@ open class NexoraRepository(
         return task.copy(id = id)
     }
 
-    open suspend fun updateTask(task: PremiumTask) {
-        val dao = taskDao ?: return
-        dao.update(
-            TaskEntity(
-                id = task.id,
-                title = task.title,
-                category = task.category,
-                duration = task.duration,
-                goalTitle = task.goalTitle,
-                priority = task.priority.name,
-                completed = task.completed
-            )
+    open suspend fun updateTask(task: PremiumTask): Boolean {
+        val dao = taskDao ?: return false
+        val entity = TaskEntity(
+            id = task.id,
+            title = task.title,
+            category = task.category,
+            duration = task.duration,
+            goalTitle = task.goalTitle,
+            priority = task.priority.name,
+            completed = task.completed
         )
+        return try {
+            dao.update(entity) > 0
+        } catch (e: Exception) {
+            NexoraLogger.e("REPO", "Failed to update task ${task.id}", e)
+            false
+        }
     }
 
-    open suspend fun deleteTask(task: PremiumTask) {
-        val dao = taskDao ?: return
-        dao.delete(
-            TaskEntity(
-                id = task.id,
-                title = task.title,
-                category = task.category,
-                duration = task.duration,
-                goalTitle = task.goalTitle,
-                priority = task.priority.name,
-                completed = task.completed
-            )
+    open suspend fun deleteTask(task: PremiumTask): Boolean {
+        val dao = taskDao ?: return false
+        val entity = TaskEntity(
+            id = task.id,
+            title = task.title,
+            category = task.category,
+            duration = task.duration,
+            goalTitle = task.goalTitle,
+            priority = task.priority.name,
+            completed = task.completed
         )
+        return try {
+            dao.delete(entity) > 0
+        } catch (e: Exception) {
+            NexoraLogger.e("REPO", "Failed to delete task ${task.id}", e)
+            false
+        }
     }
 
     open suspend fun deleteAllTasks() {
@@ -186,30 +195,38 @@ open class NexoraRepository(
         return goal.copy(id = id)
     }
 
-    open suspend fun updateGoal(goal: NexoraGoal) {
-        val dao = goalDao ?: return
-        dao.update(
-            GoalEntity(
-                id = goal.id,
-                title = goal.title,
-                category = goal.category,
-                targetDate = goal.targetDate,
-                progress = goal.progress
-            )
+    open suspend fun updateGoal(goal: NexoraGoal): Boolean {
+        val dao = goalDao ?: return false
+        val entity = GoalEntity(
+            id = goal.id,
+            title = goal.title,
+            category = goal.category,
+            targetDate = goal.targetDate,
+            progress = goal.progress
         )
+        return try {
+            dao.update(entity) > 0
+        } catch (e: Exception) {
+            NexoraLogger.e("REPO", "Failed to update goal ${goal.id}", e)
+            false
+        }
     }
 
-    open suspend fun deleteGoal(goal: NexoraGoal) {
-        val dao = goalDao ?: return
-        dao.delete(
-            GoalEntity(
-                id = goal.id,
-                title = goal.title,
-                category = goal.category,
-                targetDate = goal.targetDate,
-                progress = goal.progress
-            )
+    open suspend fun deleteGoal(goal: NexoraGoal): Boolean {
+        val dao = goalDao ?: return false
+        val entity = GoalEntity(
+            id = goal.id,
+            title = goal.title,
+            category = goal.category,
+            targetDate = goal.targetDate,
+            progress = goal.progress
         )
+        return try {
+            dao.delete(entity) > 0
+        } catch (e: Exception) {
+            NexoraLogger.e("REPO", "Failed to delete goal ${goal.id}", e)
+            false
+        }
     }
 
     // ─────────────────────────────────────

@@ -204,6 +204,8 @@ class NexoraAiBrain(
             
             invalidateContext()
 
+            val confirmedDecisionType = mapActionTypeToDecision(action.type)
+
             return AiResponse(
                 responseType = AiResponseType.ACTION_PROPOSAL,
                 title = "Executing Confirmed Action",
@@ -213,13 +215,18 @@ class NexoraAiBrain(
                 relatedTaskId = action.taskId,
                 relatedGoalId = action.goalId,
                 decision = AiDecision(
-                    type = langResult.intent,
+                    type = confirmedDecisionType,
                     title = "Executing Confirmed Action",
                     reason = "User explicitly confirmed pending action.",
                     taskId = action.taskId,
                     goalId = action.goalId
                 ),
-                conversationContext = convContext.copy(pendingAction = null)
+                conversationContext = convContext.copy(
+                    lastIntent = confirmedDecisionType,
+                    lastTaskId = action.taskId ?: convContext.lastTaskId,
+                    lastGoalId = action.goalId ?: convContext.lastGoalId,
+                    pendingAction = null
+                )
             )
         }
 
@@ -563,15 +570,33 @@ class NexoraAiBrain(
                         )
                     }
 
-                    val newTitle = langResult.entities["newTitle"]?.toString() ?: task.title
+                    val newTitle = langResult.entities["newTitle"]?.toString()
                     val newPriority = langResult.entities["priority"]?.toString()
                     val newDuration = langResult.entities["duration"]?.toString()
+                    val newCategory = langResult.entities["category"]?.toString()
 
-                    val params = mutableMapOf<String, Any>(
-                        "title" to newTitle
-                    )
+                    val params = mutableMapOf<String, Any>()
+                    if (newTitle != null && newTitle.isNotBlank()) params["title"] = newTitle
                     if (newPriority != null) params["priority"] = newPriority
                     if (newDuration != null) params["duration"] = newDuration
+                    if (newCategory != null && newCategory.isNotBlank()) params["category"] = newCategory
+
+                    if (params.isEmpty()) {
+                        val clar = AiClarification(
+                            question = "What would you like to update about \"${task.title}\"?",
+                            intent = AiDecisionType.UPDATE_TASK,
+                            missingField = "update_fields",
+                            originalQuery = rawMessage
+                        )
+                        return AiResponse(
+                            responseType = AiResponseType.CLARIFICATION_NEEDED,
+                            title = "Clarification Needed",
+                            message = "What would you like to update about \"${task.title}\"? You can specify a new title, priority, duration, or category.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.CLARIFY, title = "Clarification Needed", reason = "No update parameters specified", taskId = task.id),
+                            conversationContext = convContext.copy(lastIntent = AiDecisionType.UPDATE_TASK, lastTaskId = task.id, activeClarification = clar)
+                        )
+                    }
 
                     val action = AiAction(
                         type = AiActionType.UPDATE_TASK,
@@ -693,13 +718,31 @@ class NexoraAiBrain(
                         )
                     }
 
-                    val newTitle = langResult.entities["newTitle"]?.toString() ?: goal.title
+                    val newTitle = langResult.entities["newTitle"]?.toString()
                     val newCategory = langResult.entities["category"]?.toString()
+                    val newTargetDate = langResult.entities["targetDate"]?.toString()
 
-                    val params = mutableMapOf<String, Any>(
-                        "title" to newTitle
-                    )
-                    if (newCategory != null) params["category"] = newCategory
+                    val params = mutableMapOf<String, Any>()
+                    if (newTitle != null && newTitle.isNotBlank()) params["title"] = newTitle
+                    if (newCategory != null && newCategory.isNotBlank()) params["category"] = newCategory
+                    if (newTargetDate != null && newTargetDate.isNotBlank()) params["targetDate"] = newTargetDate
+
+                    if (params.isEmpty()) {
+                        val clar = AiClarification(
+                            question = "What would you like to update about \"${goal.title}\"?",
+                            intent = AiDecisionType.UPDATE_GOAL,
+                            missingField = "update_fields",
+                            originalQuery = rawMessage
+                        )
+                        return AiResponse(
+                            responseType = AiResponseType.CLARIFICATION_NEEDED,
+                            title = "Clarification Needed",
+                            message = "What would you like to update about \"${goal.title}\"? You can specify a new title or category.",
+                            confidence = AiConfidence.HIGH,
+                            decision = AiDecision(type = AiDecisionType.CLARIFY, title = "Clarification Needed", reason = "No update parameters specified", goalId = goal.id),
+                            conversationContext = convContext.copy(lastIntent = AiDecisionType.UPDATE_GOAL, lastGoalId = goal.id, activeClarification = clar)
+                        )
+                    }
 
                     val action = AiAction(
                         type = AiActionType.UPDATE_GOAL,
@@ -1494,6 +1537,29 @@ class NexoraAiBrain(
             message = "I can perform this action for you. Should I proceed?",
             proposedActions = listOf(action)
         )
+    }
+
+    private fun mapActionTypeToDecision(actionType: AiActionType): AiDecisionType {
+        return when (actionType) {
+            AiActionType.CREATE_TASK -> AiDecisionType.CREATE_TASK
+            AiActionType.COMPLETE_TASK -> AiDecisionType.COMPLETE_TASK
+            AiActionType.DELETE_TASK -> AiDecisionType.DELETE_TASK
+            AiActionType.UPDATE_TASK -> AiDecisionType.UPDATE_TASK
+            AiActionType.RESCHEDULE_TASK -> AiDecisionType.RESCHEDULE_TASK
+            AiActionType.CREATE_GOAL -> AiDecisionType.CREATE_GOAL
+            AiActionType.DELETE_GOAL -> AiDecisionType.DELETE_GOAL
+            AiActionType.UPDATE_GOAL -> AiDecisionType.UPDATE_GOAL
+            AiActionType.DECOMPOSE_GOAL -> AiDecisionType.DECOMPOSE_GOAL
+            AiActionType.DELETE_ALL_TASKS -> AiDecisionType.DELETE_ALL_TASKS
+            AiActionType.COMPLETE_ALL_TASKS -> AiDecisionType.COMPLETE_ALL_TASKS
+            AiActionType.CREATE_AUTOMATION -> AiDecisionType.CREATE_AUTOMATION
+            AiActionType.UPDATE_AUTOMATION -> AiDecisionType.UPDATE_AUTOMATION
+            AiActionType.TOGGLE_AUTOMATION -> AiDecisionType.TOGGLE_AUTOMATION
+            AiActionType.DELETE_AUTOMATION -> AiDecisionType.DELETE_AUTOMATION
+            AiActionType.OPEN_TASK -> AiDecisionType.SHOW_INSIGHT
+            AiActionType.OPEN_GOAL -> AiDecisionType.SHOW_INSIGHT
+            AiActionType.SHOW_INSIGHT -> AiDecisionType.SHOW_INSIGHT
+        }
     }
 
     private fun mapDecisionToResponseType(type: AiDecisionType): AiResponseType {
