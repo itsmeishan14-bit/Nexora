@@ -23,12 +23,26 @@ class ActionAuthorizationSafetyRegressionTest {
 
     private lateinit var repository: MockNexoraRepository
     private lateinit var actionExecutor: AiActionExecutor
+    private lateinit var engine: NexoraAiEngine
 
     @Before
     fun setUp() {
         NexoraSecurity.clearAllAuthorizations()
         repository = MockNexoraRepository()
         actionExecutor = AiActionExecutor(repository)
+        val contextBuilder = AiContextBuilder(repository)
+        val localProvider = LocalAiProvider()
+        val providerManager = AiProviderManager(localProvider = localProvider)
+        val aiService = LocalNexoraAiService(providerManager = providerManager)
+        val toolRegistry = AiToolRegistry(repository, actionExecutor)
+        engine = NexoraAiEngine(
+            contextBuilder = contextBuilder,
+            aiService = aiService,
+            providerManager = providerManager,
+            actionExecutor = actionExecutor,
+            toolRegistry = toolRegistry,
+            repository = repository
+        )
     }
 
     @Test
@@ -355,5 +369,225 @@ class ActionAuthorizationSafetyRegressionTest {
 
         assertFalse("Action targeting nonexistent goal MUST fail", result.success)
         assertTrue("Message must indicate target not found", result.message.contains("not found", ignoreCase = true))
+    }
+
+    @Test
+    fun `test calling executeAction alone cannot grant authorization on destructive action and does not mutate data`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 701L, title = "Sensitive Task", category = "Work", duration = "30m"))
+
+        val unconfirmedDelete = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Sensitive Task",
+            description = "Attempting deletion directly",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        // Calling engine.executeAction alone must NOT grant authorization
+        val result = engine.executeAction(unconfirmedDelete)
+
+        assertFalse("Calling executeAction alone MUST be rejected for destructive actions", result.success)
+        assertEquals("Authorization error", result.error)
+        assertNotNull("Task MUST remain intact in repository", repository.getTaskById(task.id))
+    }
+
+    @Test
+    fun `test calling executeAction alone cannot grant authorization for delete all tasks`() = runBlocking {
+        repository.addTask(PremiumTask(id = 702L, title = "Task 1", category = "Work", duration = "15m"))
+        repository.addTask(PremiumTask(id = 703L, title = "Task 2", category = "Work", duration = "15m"))
+
+        val deleteAllAction = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_ALL_TASKS,
+            title = "Delete All Tasks",
+            description = "Unconfirmed wipe",
+            requiresConfirmation = true
+        )
+
+        val result = engine.executeAction(deleteAllAction)
+
+        assertFalse("Calling executeAction alone cannot wipe all tasks", result.success)
+        assertEquals("Authorization error", result.error)
+        assertEquals("Tasks must not be deleted", 2, repository.observeTasksOnce().size)
+    }
+
+    @Test
+    fun `test genuine confirmation via confirmPendingAction authorizes only exact action and mutates data`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 704L, title = "Task to Confirm Delete", category = "Work", duration = "20m"))
+
+        val pendingDelete = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task",
+            description = "Legitimate delete proposal",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        val result = engine.confirmPendingAction(pendingDelete)
+
+        assertTrue("Genuine confirmation MUST succeed", result.success)
+        assertNull("Task must be deleted after genuine confirmation", repository.getTaskById(task.id))
+    }
+
+    @Test
+    fun `test replaying completed action with altered parameters is rejected after executor recreation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 801L, title = "Original Name", category = "Work", duration = "10m"))
+
+        val actionId = UUID.randomUUID().toString()
+        val originalAction = AiAction(
+            id = actionId,
+            type = AiActionType.UPDATE_TASK,
+            title = "Update Task",
+            description = "Update task",
+            taskId = task.id,
+            parameters = mapOf("title" to "Approved Update"),
+            requiresConfirmation = false
+        )
+
+        val result1 = actionExecutor.execute(originalAction)
+        assertTrue("Initial execution succeeds", result1.success)
+        assertEquals("Approved Update", repository.getTaskById(task.id)?.title)
+
+        // Verify outcome was saved with original fingerprint in evidence
+        val savedOutcomes = repository.getRecentOutcomes(10)
+        val outcome = savedOutcomes.find { it.actionId == actionId && it.type == AiOutcomeType.SUCCESS }
+        assertNotNull("Successful outcome must be persisted", outcome)
+        assertTrue("Evidence must contain original fingerprint", outcome?.evidence?.startsWith("fp:") == true)
+
+        // Simulate app restart / new executor instance
+        val freshExecutor = AiActionExecutor(repository)
+
+        // Attempt to replay the completed action with tampered/altered parameters
+        val tamperedReplayAction = originalAction.copy(
+            parameters = mapOf("title" to "Tampered Across Restart")
+        )
+
+        val replayResult = freshExecutor.execute(tamperedReplayAction)
+        assertFalse("Replaying completed action with altered parameters after recreation MUST be rejected", replayResult.success)
+        assertEquals("Replay with modified parameters rejected", replayResult.error)
+        assertEquals("Approved Update", repository.getTaskById(task.id)?.title)
+    }
+
+    @Test
+    fun `test replaying completed action with identical parameters is rejected as duplicate after executor recreation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 802L, title = "Task Once", category = "Work", duration = "10m"))
+
+        val actionId = UUID.randomUUID().toString()
+        val action = AiAction(
+            id = actionId,
+            type = AiActionType.COMPLETE_TASK,
+            title = "Complete Task Once",
+            description = "Complete task",
+            taskId = task.id,
+            requiresConfirmation = false
+        )
+
+        val result1 = actionExecutor.execute(action)
+        assertTrue("Initial execution succeeds", result1.success)
+
+        // Simulate app restart / new executor instance
+        val freshExecutor = AiActionExecutor(repository)
+
+        val duplicateResult = freshExecutor.execute(action)
+        assertFalse("Replaying completed action after recreation MUST be rejected as duplicate", duplicateResult.success)
+        assertEquals("Duplicate execution rejected", duplicateResult.error)
+    }
+
+    @Test
+    fun `test historical outcome lacking fingerprint fails closed upon replay after executor recreation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 803L, title = "Legacy Task", category = "Work", duration = "10m"))
+
+        val actionId = UUID.randomUUID().toString()
+        val action = AiAction(
+            id = actionId,
+            type = AiActionType.UPDATE_TASK,
+            title = "Update Legacy Task",
+            description = "Legacy outcome replay attempt",
+            taskId = task.id,
+            parameters = mapOf("title" to "New Name"),
+            requiresConfirmation = false
+        )
+
+        // Manually simulate a legacy outcome saved without fingerprint in evidence
+        repository.saveOutcome(
+            AiOutcome(
+                id = UUID.randomUUID().toString(),
+                recommendationId = null,
+                actionId = actionId,
+                type = AiOutcomeType.SUCCESS,
+                timestamp = System.currentTimeMillis(),
+                relatedTaskId = task.id,
+                expectedResult = action.title,
+                actualResult = "Action completed successfully.",
+                evidence = "Legacy outcome evidence without fingerprint"
+            )
+        )
+
+        // Simulate new executor instance
+        val freshExecutor = AiActionExecutor(repository)
+
+        val replayResult = freshExecutor.execute(action)
+        assertFalse("Historical outcome lacking fingerprint MUST fail closed", replayResult.success)
+        assertEquals("Replay verification failed: missing original fingerprint", replayResult.error)
+    }
+
+    @Test
+    fun `test legitimate failed action can be retried across executor instances`() = runBlocking {
+        val actionId = UUID.randomUUID().toString()
+        val action = AiAction(
+            id = actionId,
+            type = AiActionType.CREATE_TASK,
+            title = "Retryable Task Across Restarts",
+            description = "Create task with retry across restart",
+            parameters = mapOf("title" to "Retryable Task Across Restarts", "category" to "Work", "duration" to "30m"),
+            requiresConfirmation = false
+        )
+
+        // Simulate failed attempt in executor 1
+        repository.failAddTask = true
+        val failResult = actionExecutor.execute(action)
+        assertFalse(failResult.success)
+
+        val savedFailOutcome = repository.getRecentOutcomes(5).find { it.actionId == actionId }
+        assertNotNull("Failed outcome should be recorded", savedFailOutcome)
+        assertEquals(AiOutcomeType.FAILED, savedFailOutcome?.type)
+
+        // Resolve transient failure
+        repository.failAddTask = false
+
+        // Simulate app restart / new executor instance
+        val freshExecutor = AiActionExecutor(repository)
+
+        val retryResult = freshExecutor.execute(action)
+        assertTrue("Legitimate failed action MUST be allowed to retry across executor instances", retryResult.success)
+        assertNotNull("Task must exist in repository after retry", repository.observeTasksOnce().find { it.title == "Retryable Task Across Restarts" })
+    }
+
+    @Test
+    fun `test read-only and safe actions execute without confirmation dialog`() = runBlocking {
+        val insightAction = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.SHOW_INSIGHT,
+            title = "Show Insight",
+            description = "Display productivity insight",
+            requiresConfirmation = false
+        )
+
+        val result = engine.executeAction(insightAction)
+        assertTrue("Read-only insight action must execute without requiring confirmation", result.success)
+
+        val task = repository.addTask(PremiumTask(id = 850L, title = "Task to Open", category = "Work", duration = "10m"))
+        val openTaskAction = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.OPEN_TASK,
+            title = "Open Task",
+            description = "Navigate to task",
+            taskId = task.id,
+            requiresConfirmation = false
+        )
+        val openResult = engine.executeAction(openTaskAction)
+        assertTrue("Open task action must execute without requiring confirmation: ${openResult.error}", openResult.success)
     }
 }

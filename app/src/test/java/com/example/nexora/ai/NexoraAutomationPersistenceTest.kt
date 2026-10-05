@@ -256,7 +256,7 @@ class NexoraAutomationPersistenceTest {
             description = "Focus rule",
             parameters = mapOf("name" to "Focus Sentinel", "triggerType" to "DAY_STARTED", "userConfirmed" to true)
         )
-        val createResult = engine.executeAction(createAction)
+        val createResult = engine.confirmPendingAction(createAction)
         assertTrue(createResult.success)
         val outcomeCreate = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.SUCCESS, outcomeCreate.type)
@@ -266,7 +266,7 @@ class NexoraAutomationPersistenceTest {
         assertNotNull(ruleInRepo)
 
         // 2. Duplicate CREATE_AUTOMATION fails and records FAILED outcome
-        val duplicateResult = engine.executeAction(createAction)
+        val duplicateResult = engine.confirmPendingAction(createAction)
         assertFalse(duplicateResult.success)
         val outcomeDuplicate = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.FAILED, outcomeDuplicate.type)
@@ -278,7 +278,7 @@ class NexoraAutomationPersistenceTest {
             description = "Disable focus rule",
             parameters = mapOf("ruleName" to "Focus Sentinel", "enabled" to false, "userConfirmed" to true)
         )
-        val toggleResult = engine.executeAction(toggleAction)
+        val toggleResult = engine.confirmPendingAction(toggleAction)
         assertTrue(toggleResult.success)
         val outcomeToggle = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.SUCCESS, outcomeToggle.type)
@@ -296,7 +296,7 @@ class NexoraAutomationPersistenceTest {
             parameters = mapOf("ruleName" to "Focus Sentinel", "userConfirmed" to true),
             requiresConfirmation = true
         )
-        val deleteResult = engine.executeAction(deleteAction)
+        val deleteResult = engine.confirmPendingAction(deleteAction)
         assertTrue(deleteResult.success)
         val outcomeDelete = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.SUCCESS, outcomeDelete.type)
@@ -306,7 +306,7 @@ class NexoraAutomationPersistenceTest {
         assertNull(deletedInRepo)
 
         // 5. Stale delete action fails and records FAILED outcome
-        val staleDeleteResult = engine.executeAction(deleteAction)
+        val staleDeleteResult = engine.confirmPendingAction(deleteAction)
         assertFalse(staleDeleteResult.success)
         val outcomeStale = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.FAILED, outcomeStale.type)

@@ -44,23 +44,11 @@ open class AiActionExecutor(
         val lock = actionLocks.computeIfAbsent(action.id) { Mutex() }
         return lock.withLock {
             val currentFingerprint = NexoraSecurity.computeFingerprint(action)
-            val previousRecord = completedExecutions[action.id]
-                ?: repo.getRecentOutcomes(50).find { it.actionId == action.id && it.type == AiOutcomeType.SUCCESS }?.let { outcome ->
-                    ExecutionRecord(
-                        actionId = action.id,
-                        fingerprint = currentFingerprint,
-                        result = AiActionResult(
-                            success = true,
-                            message = outcome.actualResult ?: "Action completed successfully.",
-                            affectedTaskId = outcome.relatedTaskId,
-                            affectedGoalId = outcome.relatedGoalId
-                        )
-                    )
-                }
 
-            if (previousRecord != null) {
+            val inMemoryRecord = completedExecutions[action.id]
+            if (inMemoryRecord != null) {
                 // 1. Replay with modified parameters check
-                if (previousRecord.fingerprint != currentFingerprint) {
+                if (inMemoryRecord.fingerprint != currentFingerprint) {
                     return@withLock AiActionResult(
                         success = false,
                         message = "A completed action cannot be replayed with modified parameters.",
@@ -69,12 +57,12 @@ open class AiActionExecutor(
                 }
 
                 // 2. Duplicate execution check for completed actions
-                if (previousRecord.result.success) {
+                if (inMemoryRecord.result.success) {
                     val duplicateResult = AiActionResult(
                         success = false,
                         message = "Action has already been executed: ${action.title}",
-                        affectedTaskId = previousRecord.result.affectedTaskId,
-                        affectedGoalId = previousRecord.result.affectedGoalId,
+                        affectedTaskId = inMemoryRecord.result.affectedTaskId,
+                        affectedGoalId = inMemoryRecord.result.affectedGoalId,
                         error = when (action.type) {
                             AiActionType.CREATE_AUTOMATION -> "Duplicate rule name"
                             else -> "Duplicate execution rejected"
@@ -84,6 +72,54 @@ open class AiActionExecutor(
                     return@withLock duplicateResult
                 }
                 // If previous execution failed, proceed to retry
+            } else {
+                // Check persisted outcomes across executor instances / app restarts
+                val persistedSuccessfulOutcome = repo.getRecentOutcomes(100).find { 
+                    it.actionId == action.id && it.type == AiOutcomeType.SUCCESS 
+                }
+                if (persistedSuccessfulOutcome != null) {
+                    val originalFingerprint = extractFingerprintFromEvidence(persistedSuccessfulOutcome.evidence)
+                    if (originalFingerprint != null) {
+                        completedExecutions[action.id] = ExecutionRecord(
+                            actionId = action.id,
+                            fingerprint = originalFingerprint,
+                            result = AiActionResult(
+                                success = true,
+                                message = persistedSuccessfulOutcome.actualResult ?: "Action completed successfully.",
+                                affectedTaskId = persistedSuccessfulOutcome.relatedTaskId,
+                                affectedGoalId = persistedSuccessfulOutcome.relatedGoalId
+                            )
+                        )
+
+                        if (originalFingerprint != currentFingerprint) {
+                            return@withLock AiActionResult(
+                                success = false,
+                                message = "A completed action cannot be replayed with modified parameters.",
+                                error = "Replay with modified parameters rejected"
+                            )
+                        } else {
+                            val duplicateResult = AiActionResult(
+                                success = false,
+                                message = "Action has already been executed: ${action.title}",
+                                affectedTaskId = persistedSuccessfulOutcome.relatedTaskId,
+                                affectedGoalId = persistedSuccessfulOutcome.relatedGoalId,
+                                error = when (action.type) {
+                                    AiActionType.CREATE_AUTOMATION -> "Duplicate rule name"
+                                    else -> "Duplicate execution rejected"
+                                }
+                            )
+                            return@withLock duplicateResult
+                        }
+                    } else {
+                        // Historical outcome lacks sufficient data to verify original fingerprint safely.
+                        // Fail closed: do NOT reconstruct fingerprint from incoming action, and do NOT re-execute.
+                        return@withLock AiActionResult(
+                            success = false,
+                            message = "Action has already been executed and cannot be replayed.",
+                            error = "Replay verification failed: missing original fingerprint"
+                        )
+                    }
+                }
             }
 
             // 1. Authorization & Validation Layer
@@ -162,6 +198,24 @@ open class AiActionExecutor(
     }
 
     companion object {
+        const val FINGERPRINT_PREFIX = "fp:"
+        const val EVIDENCE_SEPARATOR = " | "
+
+        fun formatOutcomeEvidence(fingerprint: String, detail: String): String {
+            return "$FINGERPRINT_PREFIX$fingerprint$EVIDENCE_SEPARATOR$detail"
+        }
+
+        fun extractFingerprintFromEvidence(evidence: String?): String? {
+            if (evidence == null) return null
+            if (!evidence.startsWith(FINGERPRINT_PREFIX)) return null
+            val separatorIndex = evidence.indexOf(EVIDENCE_SEPARATOR)
+            return if (separatorIndex != -1) {
+                evidence.substring(FINGERPRINT_PREFIX.length, separatorIndex)
+            } else {
+                evidence.substring(FINGERPRINT_PREFIX.length).takeIf { it.isNotBlank() }
+            }
+        }
+
         fun parsePriority(priorityStr: String?): TaskPriority? {
             if (priorityStr.isNullOrBlank()) return null
             return when (priorityStr.trim().uppercase()) {
@@ -328,6 +382,8 @@ open class AiActionExecutor(
     private suspend fun recordActionOutcome(action: AiAction, result: AiActionResult) {
         val repo = repository ?: return
         try {
+            val fingerprint = NexoraSecurity.computeFingerprint(action)
+            val detail = if (result.success) "Action execution returned success." else "Error: ${result.error}"
             val outcome = AiOutcome(
                 id = java.util.UUID.randomUUID().toString(),
                 recommendationId = null,
@@ -338,7 +394,7 @@ open class AiActionExecutor(
                 relatedGoalId = result.affectedGoalId ?: action.goalId,
                 expectedResult = action.title,
                 actualResult = result.message,
-                evidence = if (result.success) "Action execution returned success." else "Error: ${result.error}"
+                evidence = formatOutcomeEvidence(fingerprint, detail)
             )
             repo.saveOutcome(outcome)
         } catch (e: Exception) {

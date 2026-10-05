@@ -67,7 +67,7 @@ class NexoraProductionIntegrationTest {
         assertEquals(AiActionType.CREATE_TASK, action?.type)
 
         // Confirm and execute action
-        val result = engine.executeAction(action!!)
+        val result = engine.confirmPendingAction(action!!)
         assertTrue(result.success)
 
         val createdTask = repository.observeTasksOnce().find { it.title.equals("Study Java", ignoreCase = true) }
@@ -83,7 +83,7 @@ class NexoraProductionIntegrationTest {
         val action = response.proposedActions.firstOrNull()
         assertEquals(task.id, action?.taskId)
 
-        val result = engine.executeAction(action!!)
+        val result = engine.confirmPendingAction(action!!)
         assertTrue(result.success)
 
         val updatedTask = repository.getTaskById(task.id)
@@ -194,7 +194,7 @@ class NexoraProductionIntegrationTest {
         val createResponse = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Create a task called Unit Testing"))
         val createAction = createResponse.proposedActions.firstOrNull()
         assertNotNull(createAction)
-        val actionResult = engine.executeAction(createAction!!)
+        val actionResult = engine.confirmPendingAction(createAction!!)
         assertTrue(actionResult.success)
 
         val createdTask = repository.observeTasksOnce().find { it.title.equals("Unit Testing", ignoreCase = true) }

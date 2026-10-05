@@ -104,7 +104,7 @@ class NexoraAiViewModel(
         
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
-            engine.executeAction(action)
+            engine.confirmPendingAction(action)
             _uiState.value = _uiState.value.copy(
                 homeProposedAction = null,
                 isLoading = false
@@ -452,7 +452,7 @@ class NexoraAiViewModel(
                 proposedAction = null
             )
             
-            val result = engine.executeAction(action)
+            val result = engine.confirmPendingAction(action)
             
             _uiState.value = _uiState.value.copy(
                 isLoading = false,

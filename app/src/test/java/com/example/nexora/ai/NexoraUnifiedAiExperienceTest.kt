@@ -77,7 +77,7 @@ class NexoraUnifiedAiExperienceTest {
             parameters = mapOf("userConfirmed" to true)
         )
 
-        val result = engine.executeAction(action)
+        val result = engine.confirmPendingAction(action)
         assertTrue(result.success)
 
         val updatedTask = repository.getTaskById(task.id)

@@ -56,7 +56,7 @@ class AiActionSystemTest {
         assertFalse("Task must NOT be in DB before confirmation", tasksBefore.any { it.title.equals("Study java", ignoreCase = true) })
 
         // 3. User confirms (engine executes authorized action)
-        val result = engine.executeAction(proposed)
+        val result = engine.confirmPendingAction(proposed)
         
         // 4. Verify post-action DB state
         assertTrue("Action execution result should be successful", result.success)
@@ -80,7 +80,7 @@ class AiActionSystemTest {
         assertEquals(task.id, proposed.taskId)
 
         // 2. User confirms
-        val result = engine.executeAction(proposed)
+        val result = engine.confirmPendingAction(proposed)
         assertTrue(result.success)
         
         // 3. Verify in DB
@@ -115,7 +115,7 @@ class AiActionSystemTest {
         assertEquals(task.id, proposed.taskId)
 
         // User confirms
-        val result = engine.executeAction(proposed)
+        val result = engine.confirmPendingAction(proposed)
         assertTrue(result.success)
         
         // Verify task removed from DB
@@ -164,11 +164,11 @@ class AiActionSystemTest {
         val proposed = response.proposedActions.first()
 
         // First execution
-        val result1 = engine.executeAction(proposed)
+        val result1 = engine.confirmPendingAction(proposed)
         assertTrue(result1.success)
 
         // Second rapid execution (duplicate active task)
-        val result2 = engine.executeAction(proposed)
+        val result2 = engine.confirmPendingAction(proposed)
         assertFalse("Second execution should fail due to duplicate active task", result2.success)
 
         val tasks = repository.observeTasksOnce().filter { it.title.equals("Study java", ignoreCase = true) }

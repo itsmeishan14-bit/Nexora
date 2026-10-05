@@ -38,18 +38,29 @@ class NexoraAiEngine(
     }
 
     /**
-     * Executes a user-confirmed AI action.
+     * Executes an AI action.
+     * Does NOT automatically grant authorization to unconfirmed actions.
+     * Only actions that do not require confirmation (e.g. safe/read-only actions)
+     * or actions already authorized by a genuine user confirmation flow will be executed.
      */
     suspend fun executeAction(action: AiAction): AiActionResult {
         brain.invalidateContext()
+        val result = actionExecutor.execute(action)
+        brain.invalidateContext()
+        return result
+    }
+
+    /**
+     * Confirms and executes a pending action proposal that the user has explicitly approved.
+     * Genuine user confirmation grants authorization bound to this exact action ID, type, targets, and parameters.
+     */
+    suspend fun confirmPendingAction(action: AiAction): AiActionResult {
         val authorizedAction = if (com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
             action
         } else {
             com.example.nexora.util.NexoraSecurity.grantAuthorization(action)
         }
-        val result = actionExecutor.execute(authorizedAction)
-        brain.invalidateContext()
-        return result
+        return executeAction(authorizedAction)
     }
 
     fun invalidateContext() {
