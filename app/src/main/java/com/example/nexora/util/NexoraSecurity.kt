@@ -45,24 +45,109 @@ object NexoraSecurity {
         }
     }
 
+    data class AuthorizationGrant(
+        val actionId: String,
+        val actionType: AiActionType,
+        val targetTaskId: Long?,
+        val targetGoalId: Long?,
+        val fingerprint: String,
+        val token: String,
+        val grantedAt: Long = System.currentTimeMillis()
+    )
+
+    private val activeGrants = java.util.concurrent.ConcurrentHashMap<String, AuthorizationGrant>()
+
+    fun computeFingerprint(action: AiAction): String {
+        val cleanParams = action.parameters.filterKeys { 
+            it != "userConfirmed" && it != "authorizationToken" 
+        }.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
+        return "${action.type}:${action.taskId}:${action.goalId}:$cleanParams"
+    }
+
     /**
-     * Validates that an action has the required authorization (e.g. user confirmation).
+     * Authorizes an exact pending action proposal.
+     * Generates a unique authorization token bound to the action's type, target, and parameters.
+     */
+    fun grantAuthorization(action: AiAction): AiAction {
+        val fingerprint = computeFingerprint(action)
+        val token = java.util.UUID.randomUUID().toString()
+        val grant = AuthorizationGrant(
+            actionId = action.id,
+            actionType = action.type,
+            targetTaskId = action.taskId,
+            targetGoalId = action.goalId,
+            fingerprint = fingerprint,
+            token = token
+        )
+        activeGrants[action.id] = grant
+
+        val authorizedParams = action.parameters.toMutableMap()
+        authorizedParams["userConfirmed"] = true
+        authorizedParams["authorizationToken"] = token
+
+        return action.copy(
+            requiresConfirmation = false,
+            parameters = authorizedParams
+        )
+    }
+
+    fun authorize(action: AiAction): AiAction = grantAuthorization(action)
+
+    fun revokeAuthorization(actionId: String) {
+        activeGrants.remove(actionId)
+    }
+
+    fun clearAllAuthorizations() {
+        activeGrants.clear()
+    }
+
+    /**
+     * Validates that an action has authentic authorization.
+     * Confirmation authorizes only the exact pending action (type, target ID, and parameters).
+     * An action cannot bypass authorization merely because an arbitrary caller sets userConfirmed = true.
      */
     fun isAuthorized(action: AiAction): Boolean {
         val risk = getRiskLevel(action.type)
         if (risk == ToolRiskLevel.SAFE) return true
-        
-        val userConfirmed = action.parameters["userConfirmed"] == true || 
-            action.parameters["userConfirmed"]?.toString() == "true"
-            
-        if (risk == ToolRiskLevel.DESTRUCTIVE) {
-            return userConfirmed
+
+        // Check if an explicit authorization grant was registered for this action
+        val grant = activeGrants[action.id]
+        if (grant != null) {
+            // 1. Verify action type matches
+            if (action.type != grant.actionType) {
+                NexoraLogger.w("SECURITY", "Authorization type mismatch for action ${action.id}")
+                return false
+            }
+
+            // 2. Verify target IDs match (confirmation for one target cannot authorize another target)
+            if (action.taskId != grant.targetTaskId || action.goalId != grant.targetGoalId) {
+                NexoraLogger.w("SECURITY", "Authorization target mismatch for action ${action.id}")
+                return false
+            }
+
+            // 3. Verify parameters match (editing an action after confirmation invalidates that confirmation)
+            val currentFingerprint = computeFingerprint(action)
+            if (grant.fingerprint != currentFingerprint) {
+                NexoraLogger.w("SECURITY", "Authorization parameter fingerprint mismatch for action ${action.id}")
+                return false
+            }
+
+            // 4. Verify authentic authorization token
+            val actionToken = action.parameters["authorizationToken"]?.toString()
+            if (actionToken != grant.token) {
+                NexoraLogger.w("SECURITY", "Authorization token mismatch for action ${action.id}")
+                return false
+            }
+
+            return true
         }
 
-        if (action.requiresConfirmation) {
-            return userConfirmed
+        // Low-risk actions that explicitly do not require confirmation (e.g. read-only planner tools)
+        if (!action.requiresConfirmation && !isDestructiveAction(action)) {
+            return true
         }
 
-        return true
+        // Destructive actions or actions requiring confirmation cannot bypass authorization merely by setting userConfirmed = true
+        return false
     }
 }

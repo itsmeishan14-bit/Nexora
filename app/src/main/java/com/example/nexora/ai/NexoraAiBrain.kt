@@ -4,6 +4,7 @@ import com.example.nexora.data.NexoraRepository
 import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.uii.PremiumTask
 import com.example.nexora.uii.TaskPriority
+import com.example.nexora.util.NexoraSecurity
 import java.time.LocalDate
 
 /**
@@ -184,6 +185,7 @@ class NexoraAiBrain(
 
         // 2. Cancellation
         if (langResult.isCancellation || langResult.intent == AiDecisionType.CANCEL) {
+            convContext.pendingAction?.let { NexoraSecurity.revokeAuthorization(it.id) }
             val text = "Okay, I've cancelled that. What else can I help with?"
             return AiResponse(
                 responseType = AiResponseType.NO_ACTION,
@@ -198,9 +200,7 @@ class NexoraAiBrain(
         // 3. Confirmation Flow
         if (langResult.isConfirmation && convContext.pendingAction != null) {
             val action = convContext.pendingAction
-            val authorizedParams = action.parameters.toMutableMap()
-            authorizedParams["userConfirmed"] = true
-            val authorizedAction = action.copy(requiresConfirmation = false, parameters = authorizedParams)
+            val authorizedAction = NexoraSecurity.grantAuthorization(action)
             
             invalidateContext()
 

@@ -42,12 +42,11 @@ class NexoraAiEngine(
      */
     suspend fun executeAction(action: AiAction): AiActionResult {
         brain.invalidateContext()
-        val params = action.parameters.toMutableMap()
-        params["userConfirmed"] = true
-        val authorizedAction = action.copy(
-            requiresConfirmation = false,
-            parameters = params
-        )
+        val authorizedAction = if (com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
+            action
+        } else {
+            com.example.nexora.util.NexoraSecurity.grantAuthorization(action)
+        }
         val result = actionExecutor.execute(authorizedAction)
         brain.invalidateContext()
         return result

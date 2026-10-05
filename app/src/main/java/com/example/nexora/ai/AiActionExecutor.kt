@@ -7,6 +7,10 @@ import com.example.nexora.uii.NexoraGoal
 import com.example.nexora.util.NexoraLogger
 import com.example.nexora.util.NexoraSecurity
 
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 open class AiActionExecutor(
     private val repository: NexoraRepository?,
     private val automationSystem: NexoraAutomationSystem = NexoraAutomationSystem(repository)
@@ -17,77 +21,144 @@ open class AiActionExecutor(
 
     private val validator = repository?.let { NexoraAiValidator(it) }
 
+    data class ExecutionRecord(
+        val actionId: String,
+        val fingerprint: String,
+        val result: AiActionResult,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val completedExecutions = ConcurrentHashMap<String, ExecutionRecord>()
+    private val actionLocks = ConcurrentHashMap<String, Mutex>()
+
+    fun clearExecutionHistory() {
+        completedExecutions.clear()
+        actionLocks.clear()
+    }
+
     open suspend fun execute(action: AiAction): AiActionResult {
         val repo = repository ?: return AiActionResult(false, "Repository not available")
         
         NexoraLogger.d(message = "Executing AI action: ${action.type}")
 
-        // 1. Authorization & Validation Layer
-        // Skip authorization check for pre-confirmed Agent tools (safety handled by Agent reasoning + confirm card)
-        val isAgentConfirmed = action.parameters["userConfirmed"] == true || action.parameters["userConfirmed"]?.toString() == "true"
-        if (!isAgentConfirmed && !NexoraSecurity.isAuthorized(action)) {
-             return AiActionResult(
-                success = false,
-                message = "Action requires explicit user confirmation.",
-                error = "Authorization error"
-            )
-        }
+        val lock = actionLocks.computeIfAbsent(action.id) { Mutex() }
+        return lock.withLock {
+            val currentFingerprint = NexoraSecurity.computeFingerprint(action)
+            val previousRecord = completedExecutions[action.id]
+                ?: repo.getRecentOutcomes(50).find { it.actionId == action.id && it.type == AiOutcomeType.SUCCESS }?.let { outcome ->
+                    ExecutionRecord(
+                        actionId = action.id,
+                        fingerprint = currentFingerprint,
+                        result = AiActionResult(
+                            success = true,
+                            message = outcome.actualResult ?: "Action completed successfully.",
+                            affectedTaskId = outcome.relatedTaskId,
+                            affectedGoalId = outcome.relatedGoalId
+                        )
+                    )
+                }
 
-        val validationResult = validator?.validate(action)
-        if (validationResult is ValidationResult.Invalid) {
-            NexoraLogger.w(message = "Validation failed for ${action.type}: ${validationResult.message}")
-            return AiActionResult(
-                success = false,
-                message = "Validation failed: ${validationResult.message}",
-                error = "Validation error"
-            )
-        }
+            if (previousRecord != null) {
+                // 1. Replay with modified parameters check
+                if (previousRecord.fingerprint != currentFingerprint) {
+                    return@withLock AiActionResult(
+                        success = false,
+                        message = "A completed action cannot be replayed with modified parameters.",
+                        error = "Replay with modified parameters rejected"
+                    )
+                }
 
-        // 2. Execution Layer
-        val result = try {
-            val executionResult = when (action.type) {
-                AiActionType.CREATE_TASK -> createTask(repo, action)
-                AiActionType.COMPLETE_TASK -> completeTask(repo, action)
-                AiActionType.UPDATE_TASK -> updateTask(repo, action)
-                AiActionType.DELETE_TASK -> deleteTask(repo, action)
-                AiActionType.RESCHEDULE_TASK -> rescheduleTask(repo, action)
-                AiActionType.CREATE_GOAL -> createGoal(repo, action)
-                AiActionType.UPDATE_GOAL -> updateGoal(repo, action)
-                AiActionType.DELETE_GOAL -> deleteGoal(repo, action)
-                AiActionType.DECOMPOSE_GOAL -> AiActionResult(false, "Goal decomposition is proposal-only and creates sub-task proposals for review rather than direct database mutations.", error = "Proposal-only action")
-                AiActionType.SHOW_INSIGHT -> AiActionResult(true, "Insight displayed.")
-                AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
-                AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
-                AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
-                AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
-                AiActionType.CREATE_AUTOMATION -> createAutomation(action)
-                AiActionType.UPDATE_AUTOMATION -> updateAutomation(action)
-                AiActionType.TOGGLE_AUTOMATION -> toggleAutomation(action)
-                AiActionType.DELETE_AUTOMATION -> deleteAutomation(action)
+                // 2. Duplicate execution check for completed actions
+                if (previousRecord.result.success) {
+                    val duplicateResult = AiActionResult(
+                        success = false,
+                        message = "Action has already been executed: ${action.title}",
+                        affectedTaskId = previousRecord.result.affectedTaskId,
+                        affectedGoalId = previousRecord.result.affectedGoalId,
+                        error = when (action.type) {
+                            AiActionType.CREATE_AUTOMATION -> "Duplicate rule name"
+                            else -> "Duplicate execution rejected"
+                        }
+                    )
+                    recordActionOutcome(action, duplicateResult)
+                    return@withLock duplicateResult
+                }
+                // If previous execution failed, proceed to retry
             }
 
-            // 3. Verification Layer: Check actual repository/system state
-            if (executionResult.success) {
-                verifyAction(repo, action, executionResult)
-            } else {
-                executionResult
+            // 1. Authorization & Validation Layer
+            // An action cannot bypass authorization merely because an arbitrary caller sets userConfirmed = true
+            if (!NexoraSecurity.isAuthorized(action)) {
+                return@withLock AiActionResult(
+                    success = false,
+                    message = "Action requires explicit user confirmation.",
+                    error = "Authorization error"
+                )
             }
-        } catch (e: Exception) {
-            AiActionResult(
-                success = false,
-                message = "Action failed: ${action.title}",
-                error = e.message
-            )
-        }
-        
-        // 4. Learning Loop: Record action outcome
-        recordActionOutcome(action, result)
 
-        if (result.success) {
-            onActionExecuted?.invoke()
+            val validationResult = validator?.validate(action)
+            if (validationResult is ValidationResult.Invalid) {
+                NexoraLogger.w(message = "Validation failed for ${action.type}: ${validationResult.message}")
+                return@withLock AiActionResult(
+                    success = false,
+                    message = "Validation failed: ${validationResult.message}",
+                    error = "Validation error"
+                )
+            }
+
+            // 2. Execution Layer
+            val result = try {
+                val executionResult = when (action.type) {
+                    AiActionType.CREATE_TASK -> createTask(repo, action)
+                    AiActionType.COMPLETE_TASK -> completeTask(repo, action)
+                    AiActionType.UPDATE_TASK -> updateTask(repo, action)
+                    AiActionType.DELETE_TASK -> deleteTask(repo, action)
+                    AiActionType.RESCHEDULE_TASK -> rescheduleTask(repo, action)
+                    AiActionType.CREATE_GOAL -> createGoal(repo, action)
+                    AiActionType.UPDATE_GOAL -> updateGoal(repo, action)
+                    AiActionType.DELETE_GOAL -> deleteGoal(repo, action)
+                    AiActionType.DECOMPOSE_GOAL -> AiActionResult(false, "Goal decomposition is proposal-only and creates sub-task proposals for review rather than direct database mutations.", error = "Proposal-only action")
+                    AiActionType.SHOW_INSIGHT -> AiActionResult(true, "Insight displayed.")
+                    AiActionType.OPEN_TASK -> AiActionResult(true, "Task opened.")
+                    AiActionType.OPEN_GOAL -> AiActionResult(true, "Goal opened.")
+                    AiActionType.DELETE_ALL_TASKS -> deleteAllTasks(repo, action)
+                    AiActionType.COMPLETE_ALL_TASKS -> completeAllTasks(repo, action)
+                    AiActionType.CREATE_AUTOMATION -> createAutomation(action)
+                    AiActionType.UPDATE_AUTOMATION -> updateAutomation(action)
+                    AiActionType.TOGGLE_AUTOMATION -> toggleAutomation(action)
+                    AiActionType.DELETE_AUTOMATION -> deleteAutomation(action)
+                }
+
+                // 3. Verification Layer: Check actual repository/system state
+                if (executionResult.success) {
+                    verifyAction(repo, action, executionResult)
+                } else {
+                    executionResult
+                }
+            } catch (e: Exception) {
+                AiActionResult(
+                    success = false,
+                    message = "Action failed: ${action.title}",
+                    error = e.message
+                )
+            }
+
+            // 4. Learning Loop: Record action outcome and execution record
+            completedExecutions[action.id] = ExecutionRecord(
+                actionId = action.id,
+                fingerprint = currentFingerprint,
+                result = result
+            )
+
+            recordActionOutcome(action, result)
+
+            if (result.success) {
+                NexoraSecurity.revokeAuthorization(action.id)
+                onActionExecuted?.invoke()
+            }
+
+            result
         }
-        
-        return result
     }
 
     companion object {

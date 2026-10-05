@@ -334,7 +334,7 @@ class NexoraAutomationWorkflowsTest {
             ),
             requiresConfirmation = false
         )
-        val deleteResult = executor.execute(deleteAction)
+        val deleteResult = executor.execute(com.example.nexora.util.NexoraSecurity.grantAuthorization(deleteAction))
         assertTrue("Delete automation action must succeed", deleteResult.success)
 
         // Read through Brain / Engine (BRAIN/UI READ) -> verify rule is gone

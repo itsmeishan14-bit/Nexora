@@ -212,15 +212,31 @@ open class NexoraRepository(
         }
     }
 
-    open suspend fun deleteGoalAtomic(
+    open suspend fun deleteGoalAtomic(goalId: Long): GoalDeletionResult {
+        return deleteGoalAtomicInternal(goalId, null, null)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    open suspend fun deleteGoalAtomicForTesting(
         goalId: Long,
         onAfterUnlink: (() -> Unit)? = null,
         onAfterDelete: (() -> Unit)? = null
     ): GoalDeletionResult {
+        return deleteGoalAtomicInternal(goalId, onAfterUnlink, onAfterDelete)
+    }
+
+    private suspend fun deleteGoalAtomicInternal(
+        goalId: Long,
+        onAfterUnlink: (() -> Unit)?,
+        onAfterDelete: (() -> Unit)?
+    ): GoalDeletionResult {
         val dao = goalDao ?: return GoalDeletionResult.Failure("Database not available")
         return try {
-            val result = dao.deleteGoalAndUnlinkTasks(goalId, onAfterUnlink, onAfterDelete)
-                ?: return GoalDeletionResult.GoalNotFound
+            val result = if (onAfterUnlink != null || onAfterDelete != null) {
+                dao.deleteGoalAndUnlinkTasksForTesting(goalId, onAfterUnlink, onAfterDelete)
+            } else {
+                dao.deleteGoalAndUnlinkTasks(goalId)
+            } ?: return GoalDeletionResult.GoalNotFound
 
             GoalDeletionResult.Success(result.first.title, result.second)
         } catch (e: Exception) {

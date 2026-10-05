@@ -135,8 +135,8 @@ open class AiToolRegistry(
                 title = "Delete Task", 
                 description = "Agent requested deletion of task ID: $taskId",
                 taskId = taskId,
-                parameters = mapOf("userConfirmed" to "true"),
-                requiresConfirmation = false
+                parameters = parameters,
+                requiresConfirmation = true
             )
             val result = executor.execute(action)
             return ToolResult(result.success, taskId, result.message, result.error)
@@ -284,8 +284,8 @@ open class AiToolRegistry(
                 title = "Delete Goal",
                 description = "Agent requested deletion of goal ID: $goalId",
                 goalId = goalId,
-                parameters = mapOf("userConfirmed" to "true"),
-                requiresConfirmation = false
+                parameters = parameters,
+                requiresConfirmation = true
             )
             val result = executor.execute(action)
             return ToolResult(result.success, goalId, result.message, result.error)

@@ -20,7 +20,16 @@ class NexoraActionIntelligenceTest {
     @Before
     fun setup() {
         repository = MockNexoraRepository()
-        actionExecutor = AiActionExecutor(repository)
+        actionExecutor = object : AiActionExecutor(repository) {
+            override suspend fun execute(action: AiAction): AiActionResult {
+                val toExecute = if (action.parameters["userConfirmed"] == true && !com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
+                    com.example.nexora.util.NexoraSecurity.grantAuthorization(action)
+                } else {
+                    action
+                }
+                return super.execute(toExecute)
+            }
+        }
         
         val contextBuilder = AiContextBuilder(repository)
         val localProvider = LocalAiProvider()

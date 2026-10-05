@@ -107,7 +107,7 @@ class GoalTransactionUnitTest {
             PremiumTask(id = 0L, title = "Vital Task", category = "Work", duration = "45m", goalTitle = "Critical Project")
         )
 
-        val result = repository.deleteGoalAtomic(
+        val result = repository.deleteGoalAtomicForTesting(
             goalId = goal.id,
             onAfterUnlink = { throw IllegalStateException("Simulated disk error after unlinking") }
         )
@@ -135,7 +135,7 @@ class GoalTransactionUnitTest {
             PremiumTask(id = 0L, title = "Audit Receipts", category = "Finance", duration = "1h", goalTitle = "Financial Audit")
         )
 
-        val result = repository.deleteGoalAtomic(
+        val result = repository.deleteGoalAtomicForTesting(
             goalId = goal.id,
             onAfterDelete = { throw IllegalStateException("Simulated post-delete verification failure") }
         )

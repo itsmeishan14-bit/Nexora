@@ -39,10 +39,24 @@ interface GoalDao {
     suspend fun unlinkTasksByGoalTitle(goalTitle: String): Int
 
     @Transaction
-    suspend fun deleteGoalAndUnlinkTasks(
+    suspend fun deleteGoalAndUnlinkTasks(goalId: Long): Pair<GoalEntity, Int>? {
+        return deleteGoalAndUnlinkTasksInternal(goalId, null, null)
+    }
+
+    @androidx.annotation.VisibleForTesting
+    @Transaction
+    suspend fun deleteGoalAndUnlinkTasksForTesting(
         goalId: Long,
         onAfterUnlink: (() -> Unit)? = null,
         onAfterDelete: (() -> Unit)? = null
+    ): Pair<GoalEntity, Int>? {
+        return deleteGoalAndUnlinkTasksInternal(goalId, onAfterUnlink, onAfterDelete)
+    }
+
+    private suspend fun deleteGoalAndUnlinkTasksInternal(
+        goalId: Long,
+        onAfterUnlink: (() -> Unit)?,
+        onAfterDelete: (() -> Unit)?
     ): Pair<GoalEntity, Int>? {
         val goal = getById(goalId) ?: return null
         val unlinked = unlinkTasksByGoalTitle(goal.title)

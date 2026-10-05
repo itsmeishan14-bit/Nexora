@@ -116,7 +116,7 @@ class RoomTransactionAndroidTest {
             TaskEntity(title = "Vital Task", category = "Work", duration = "45m", goalTitle = "Critical Project")
         )
 
-        val result = repository.deleteGoalAtomic(
+        val result = repository.deleteGoalAtomicForTesting(
             goalId = goalId,
             onAfterUnlink = { throw IllegalStateException("Simulated disk error after unlinking") }
         )
@@ -144,7 +144,7 @@ class RoomTransactionAndroidTest {
             TaskEntity(title = "Audit Receipts", category = "Finance", duration = "1h", goalTitle = "Financial Audit")
         )
 
-        val result = repository.deleteGoalAtomic(
+        val result = repository.deleteGoalAtomicForTesting(
             goalId = goalId,
             onAfterDelete = { throw IllegalStateException("Simulated post-delete verification failure") }
         )
@@ -177,7 +177,7 @@ class RoomTransactionAndroidTest {
             )
         }
 
-        val result = repository.deleteGoalAtomic(
+        val result = repository.deleteGoalAtomicForTesting(
             goalId = goalId,
             onAfterUnlink = { throw RuntimeException("Network/IO failure between unlink and delete") }
         )

@@ -95,7 +95,11 @@ open class MockNexoraRepository : NexoraRepository(null) {
     var failDuringUnlinkAtTaskIndex: Int = -1
     var failDeleteGoalAfterUnlink: Boolean = false
 
-    override suspend fun deleteGoalAtomic(
+    override suspend fun deleteGoalAtomic(goalId: Long): com.example.nexora.data.GoalDeletionResult {
+        return deleteGoalAtomicForTesting(goalId, null, null)
+    }
+
+    override suspend fun deleteGoalAtomicForTesting(
         goalId: Long,
         onAfterUnlink: (() -> Unit)?,
         onAfterDelete: (() -> Unit)?
