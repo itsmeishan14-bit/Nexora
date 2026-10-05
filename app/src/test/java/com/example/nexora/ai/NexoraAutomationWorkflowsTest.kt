@@ -334,7 +334,9 @@ class NexoraAutomationWorkflowsTest {
             ),
             requiresConfirmation = false
         )
-        val deleteResult = executor.execute(com.example.nexora.util.NexoraSecurity.grantAuthorization(deleteAction))
+        val proposedDelete = com.example.nexora.util.NexoraSecurity.registerProposal(deleteAction)
+        val authResult = com.example.nexora.util.NexoraSecurity.consumeAndAuthorize(proposedDelete) as com.example.nexora.util.NexoraSecurity.ConsumeResult.Success
+        val deleteResult = executor.execute(authResult.authorizedAction)
         assertTrue("Delete automation action must succeed", deleteResult.success)
 
         // Read through Brain / Engine (BRAIN/UI READ) -> verify rule is gone
@@ -382,7 +384,8 @@ class NexoraAutomationWorkflowsTest {
             ),
             requiresConfirmation = true
         )
-        val createResult = testEngine.confirmPendingAction(createAction)
+        val proposedCreate = testEngine.proposeAction(createAction)
+        val createResult = testEngine.confirmPendingAction(proposedCreate)
         assertTrue("Create action through engine must succeed", createResult.success)
 
         // Verify rule is immediately visible in Engine & Brain rules
@@ -503,12 +506,12 @@ class NexoraAutomationWorkflowsTest {
         assertFalse(engine.getAutomationRules().any { it.name == "Morning Plan Assistant" })
 
         // 2. Attempt to delete nonexistent rule directly
-        val nonexistentAction = AiAction(
+        val nonexistentAction = engine.proposeAction(AiAction(
             type = AiActionType.DELETE_AUTOMATION,
             title = "Delete Rule",
             description = "Delete nonexistent rule",
             parameters = mapOf("ruleName" to "Nonexistent Mystery Rule", "userConfirmed" to true)
-        )
+        ))
         val failResult = engine.confirmPendingAction(nonexistentAction)
         assertFalse("Deleting nonexistent rule must fail", failResult.success)
         assertEquals("Rule not found", failResult.error)
@@ -516,7 +519,7 @@ class NexoraAutomationWorkflowsTest {
 
     @Test
     fun `TEST 21 - Duplicate Automation Creation Protection`() = runBlocking {
-        val createAction = AiAction(
+        val createAction = engine.proposeAction(AiAction(
             type = AiActionType.CREATE_AUTOMATION,
             title = "Create Sentinel",
             description = "Sentinel rule",
@@ -526,14 +529,25 @@ class NexoraAutomationWorkflowsTest {
                 "triggerType" to "PRODUCTIVITY_PATTERN_DETECTED",
                 "userConfirmed" to true
             )
-        )
+        ))
 
         // First creation succeeds
         val result1 = engine.confirmPendingAction(createAction)
         assertTrue("First creation should succeed", result1.success)
 
         // Second creation of identical rule fails
-        val result2 = engine.confirmPendingAction(createAction)
+        val duplicateAction = engine.proposeAction(AiAction(
+            type = AiActionType.CREATE_AUTOMATION,
+            title = "Create Sentinel",
+            description = "Sentinel rule",
+            parameters = mapOf(
+                "name" to "Project Sentinel",
+                "description" to "Guards milestone dates",
+                "triggerType" to "PRODUCTIVITY_PATTERN_DETECTED",
+                "userConfirmed" to true
+            )
+        ))
+        val result2 = engine.confirmPendingAction(duplicateAction)
         assertFalse("Second duplicate creation MUST fail", result2.success)
         assertEquals("Duplicate rule name", result2.error)
 
@@ -544,40 +558,46 @@ class NexoraAutomationWorkflowsTest {
     @Test
     fun `TEST 22 - Action Outcomes Truthfully Recorded in Learning System`() = runBlocking {
         // 1. Successful action records SUCCESS
-        val createAction = AiAction(
+        val createAction = engine.proposeAction(AiAction(
             type = AiActionType.CREATE_AUTOMATION,
             title = "Create Learning Test Rule",
             description = "Learning rule",
             parameters = mapOf("name" to "Learning Rule Alpha", "userConfirmed" to true)
-        )
+        ))
         engine.confirmPendingAction(createAction)
         val outcome1 = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.SUCCESS, outcome1.type)
 
         // 2. Duplicate action records FAILED
-        engine.confirmPendingAction(createAction)
+        val duplicateAction = engine.proposeAction(AiAction(
+            type = AiActionType.CREATE_AUTOMATION,
+            title = "Create Learning Test Rule",
+            description = "Learning rule",
+            parameters = mapOf("name" to "Learning Rule Alpha", "userConfirmed" to true)
+        ))
+        engine.confirmPendingAction(duplicateAction)
         val outcome2 = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.FAILED, outcome2.type)
         assertTrue(outcome2.actualResult?.contains("Duplicate") == true || outcome2.evidence?.contains("Duplicate") == true)
 
         // 3. Nonexistent toggle records FAILED
-        val badToggle = AiAction(
+        val badToggle = engine.proposeAction(AiAction(
             type = AiActionType.TOGGLE_AUTOMATION,
             title = "Toggle Invalid",
             description = "Toggle missing",
             parameters = mapOf("ruleName" to "Ghost Rule", "enabled" to false, "userConfirmed" to true)
-        )
+        ))
         engine.confirmPendingAction(badToggle)
         val outcome3 = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.FAILED, outcome3.type)
 
         // 4. Missing parameters records FAILED
-        val invalidAction = AiAction(
+        val invalidAction = engine.proposeAction(AiAction(
             type = AiActionType.CREATE_AUTOMATION,
             title = "Create Invalid",
             description = "No name",
             parameters = mapOf("userConfirmed" to true)
-        )
+        ))
         engine.confirmPendingAction(invalidAction)
         val outcome4 = repository.getRecentOutcomes(1).last()
         assertEquals(AiOutcomeType.FAILED, outcome4.type)
@@ -612,22 +632,22 @@ class NexoraAutomationWorkflowsTest {
     @Test
     fun `TEST 24 - Stale State Execution Does Not Resurrect or Mutate State`() = runBlocking {
         // 1. Create automation
-        val createAction = AiAction(
+        val createAction = engine.proposeAction(AiAction(
             type = AiActionType.CREATE_AUTOMATION,
             title = "Create Temp Rule",
             description = "Temp rule",
             parameters = mapOf("name" to "Temporary State Rule", "userConfirmed" to true)
-        )
+        ))
         engine.confirmPendingAction(createAction)
         assertTrue(engine.getAutomationRules().any { it.name == "Temporary State Rule" })
 
         // 2. Prepare action targeting it
-        val toggleAction = AiAction(
+        val toggleAction = engine.proposeAction(AiAction(
             type = AiActionType.TOGGLE_AUTOMATION,
             title = "Toggle Temp Rule",
             description = "Target temp rule",
             parameters = mapOf("ruleName" to "Temporary State Rule", "enabled" to false, "userConfirmed" to true)
-        )
+        ))
 
         // 3. Delete automation through another path
         engine.deleteAutomationRule("Temporary State Rule")

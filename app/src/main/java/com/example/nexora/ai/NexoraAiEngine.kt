@@ -34,7 +34,57 @@ class NexoraAiEngine(
      * Unified entry point for all AI requests.
      */
     suspend fun processRequest(request: AiRequest): AiResponse {
-        return brain.processRequest(request)
+        val response = brain.processRequest(request)
+        // Automatically register proposed actions requiring confirmation as pending proposals if not already registered or authorized
+        val registeredActions = response.proposedActions.map { action ->
+            if (!com.example.nexora.util.NexoraSecurity.isAuthorized(action) &&
+                !com.example.nexora.util.NexoraSecurity.isProposalPending(action.id) &&
+                (action.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(action))) {
+                com.example.nexora.util.NexoraSecurity.registerProposal(action)
+            } else {
+                action
+            }
+        }
+        val registeredPending = response.conversationContext?.pendingAction?.let { pending ->
+            registeredActions.find { it.id == pending.id }
+                ?: if (!com.example.nexora.util.NexoraSecurity.isAuthorized(pending) &&
+                    !com.example.nexora.util.NexoraSecurity.isProposalPending(pending.id) &&
+                    (pending.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(pending))) {
+                    com.example.nexora.util.NexoraSecurity.registerProposal(pending)
+                } else {
+                    pending
+                }
+        }
+        val updatedContext = if (registeredPending != null) {
+            response.conversationContext?.copy(pendingAction = registeredPending)
+        } else {
+            response.conversationContext
+        }
+        return response.copy(
+            proposedActions = registeredActions,
+            conversationContext = updatedContext
+        )
+    }
+
+    /**
+     * Issues and registers a pending action proposal through the trusted application flow.
+     */
+    fun proposeAction(action: AiAction, ttlMs: Long = com.example.nexora.util.NexoraSecurity.PROPOSAL_TTL_MS): AiAction {
+        return com.example.nexora.util.NexoraSecurity.registerProposal(action, ttlMs)
+    }
+
+    /**
+     * Cancels an existing pending action proposal so it can no longer be confirmed.
+     */
+    fun cancelProposal(actionId: String) {
+        com.example.nexora.util.NexoraSecurity.cancelProposal(actionId)
+    }
+
+    /**
+     * Checks if an action proposal is currently pending and eligible for confirmation.
+     */
+    fun isProposalPending(actionId: String): Boolean {
+        return com.example.nexora.util.NexoraSecurity.isProposalPending(actionId)
     }
 
     /**
@@ -52,13 +102,23 @@ class NexoraAiEngine(
 
     /**
      * Confirms and executes a pending action proposal that the user has explicitly approved.
-     * Genuine user confirmation grants authorization bound to this exact action ID, type, targets, and parameters.
+     * Validates that the proposal is still pending, unchanged, and eligible for execution.
+     * Consumes the pending confirmation exactly once atomically before execution.
      */
     suspend fun confirmPendingAction(action: AiAction): AiActionResult {
         val authorizedAction = if (com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
             action
         } else {
-            com.example.nexora.util.NexoraSecurity.grantAuthorization(action)
+            when (val consumeResult = com.example.nexora.util.NexoraSecurity.consumeAndAuthorize(action)) {
+                is com.example.nexora.util.NexoraSecurity.ConsumeResult.Success -> consumeResult.authorizedAction
+                is com.example.nexora.util.NexoraSecurity.ConsumeResult.Rejected -> {
+                    return AiActionResult(
+                        success = false,
+                        message = consumeResult.reason,
+                        error = consumeResult.error
+                    )
+                }
+            }
         }
         return executeAction(authorizedAction)
     }

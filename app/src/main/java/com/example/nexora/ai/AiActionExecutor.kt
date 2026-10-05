@@ -188,8 +188,10 @@ open class AiActionExecutor(
 
             recordActionOutcome(action, result)
 
+            // Revoke one-time authorization grant after execution attempt (success or failure)
+            NexoraSecurity.revokeAuthorization(action.id)
+
             if (result.success) {
-                NexoraSecurity.revokeAuthorization(action.id)
                 onActionExecuted?.invoke()
             }
 

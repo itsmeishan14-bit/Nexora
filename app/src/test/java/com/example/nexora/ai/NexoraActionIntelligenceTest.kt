@@ -23,7 +23,11 @@ class NexoraActionIntelligenceTest {
         actionExecutor = object : AiActionExecutor(repository) {
             override suspend fun execute(action: AiAction): AiActionResult {
                 val toExecute = if (action.parameters["userConfirmed"] == true && !com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
-                    com.example.nexora.util.NexoraSecurity.grantAuthorization(action)
+                    val proposed = com.example.nexora.util.NexoraSecurity.registerProposal(action)
+                    when (val res = com.example.nexora.util.NexoraSecurity.consumeAndAuthorize(proposed)) {
+                        is com.example.nexora.util.NexoraSecurity.ConsumeResult.Success -> res.authorizedAction
+                        else -> action
+                    }
                 } else {
                     action
                 }

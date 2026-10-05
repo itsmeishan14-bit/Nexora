@@ -84,15 +84,45 @@ class NexoraAiBrain(
             brainResponse
         }
 
+        // Register proposals for actions requiring confirmation that are not yet authorized
+        val registeredActions = response.proposedActions.map { action ->
+            if (!NexoraSecurity.isAuthorized(action) &&
+                !NexoraSecurity.isProposalPending(action.id) &&
+                (action.requiresConfirmation || NexoraSecurity.isDestructiveAction(action))) {
+                NexoraSecurity.registerProposal(action)
+            } else {
+                action
+            }
+        }
+        val registeredPending = response.conversationContext?.pendingAction?.let { pending ->
+            registeredActions.find { it.id == pending.id }
+                ?: if (!NexoraSecurity.isAuthorized(pending) &&
+                    !NexoraSecurity.isProposalPending(pending.id) &&
+                    (pending.requiresConfirmation || NexoraSecurity.isDestructiveAction(pending))) {
+                    NexoraSecurity.registerProposal(pending)
+                } else {
+                    pending
+                }
+        }
+        val updatedContext = if (registeredPending != null) {
+            response.conversationContext?.copy(pendingAction = registeredPending)
+        } else {
+            response.conversationContext
+        }
+        val finalResponse = response.copy(
+            proposedActions = registeredActions,
+            conversationContext = updatedContext
+        )
+
         // Automation Rule Evaluation
         val automatedSignals = evaluateAutomations(request, context)
         
         return if (automatedSignals.isNotEmpty()) {
-            response.copy(
-                proactiveSignals = (response.proactiveSignals + automatedSignals).distinctBy { it.fingerprint }
+            finalResponse.copy(
+                proactiveSignals = (finalResponse.proactiveSignals + automatedSignals).distinctBy { it.fingerprint }
             )
         } else {
-            response
+            finalResponse
         }
     }
 
@@ -185,7 +215,10 @@ class NexoraAiBrain(
 
         // 2. Cancellation
         if (langResult.isCancellation || langResult.intent == AiDecisionType.CANCEL) {
-            convContext.pendingAction?.let { NexoraSecurity.revokeAuthorization(it.id) }
+            convContext.pendingAction?.let {
+                NexoraSecurity.cancelProposal(it.id)
+                NexoraSecurity.revokeAuthorization(it.id)
+            }
             val text = "Okay, I've cancelled that. What else can I help with?"
             return AiResponse(
                 responseType = AiResponseType.NO_ACTION,
@@ -200,7 +233,27 @@ class NexoraAiBrain(
         // 3. Confirmation Flow
         if (langResult.isConfirmation && convContext.pendingAction != null) {
             val action = convContext.pendingAction
-            val authorizedAction = NexoraSecurity.grantAuthorization(action)
+            val authorizedAction = if (action.requiresConfirmation || NexoraSecurity.isDestructiveAction(action)) {
+                val consumeResult = NexoraSecurity.consumeAndAuthorize(action)
+                if (consumeResult !is NexoraSecurity.ConsumeResult.Success) {
+                    val reason = (consumeResult as? NexoraSecurity.ConsumeResult.Rejected)?.reason ?: "Pending action confirmation failed or expired."
+                    return AiResponse(
+                        responseType = AiResponseType.NO_ACTION,
+                        title = "Confirmation Failed",
+                        message = reason,
+                        confidence = AiConfidence.HIGH,
+                        decision = AiDecision(
+                            type = AiDecisionType.CANCEL,
+                            title = "Confirmation Failed",
+                            reason = reason
+                        ),
+                        conversationContext = convContext.copy(pendingAction = null)
+                    )
+                }
+                consumeResult.authorizedAction
+            } else {
+                action
+            }
             
             invalidateContext()
 

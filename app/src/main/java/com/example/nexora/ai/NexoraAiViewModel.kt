@@ -66,13 +66,14 @@ class NexoraAiViewModel(
                 
                 var homeAction: AiAction? = null
                 if (context.incompleteTasks.size >= 8) {
-                    homeAction = AiAction(
+                    val rawHomeAction = AiAction(
                         type = AiActionType.RESCHEDULE_TASK,
                         title = "High Workload Detected",
                         description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
                         reason = "Too many tasks today reduces focus.",
                         requiresConfirmation = true
                     )
+                    homeAction = engine.proposeAction(rawHomeAction)
                 }
 
                 _uiState.value = _uiState.value.copy(
@@ -96,6 +97,7 @@ class NexoraAiViewModel(
     }
 
     fun dismissHomeAction() {
+        _uiState.value.homeProposedAction?.let { engine.cancelProposal(it.id) }
         _uiState.value = _uiState.value.copy(homeProposedAction = null)
     }
 
@@ -356,6 +358,9 @@ class NexoraAiViewModel(
     private fun processBrainResponse(response: AiResponse) {
         // Clear proposed action if the new response is explicitly CANCEL
         val isCancellation = response.decision?.type == AiDecisionType.CANCEL
+        if (isCancellation) {
+            _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
+        }
         
         when (response.responseType) {
             AiResponseType.CLARIFICATION_NEEDED -> {
@@ -438,8 +443,21 @@ class NexoraAiViewModel(
     }
 
     fun proposeAction(action: AiAction) {
+        val current = _uiState.value.proposedAction
+        if (current != null && current.id != action.id) {
+            engine.cancelProposal(current.id)
+        }
+        val registered = if (action.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(action)) {
+            if (engine.isProposalPending(action.id)) {
+                action
+            } else {
+                engine.proposeAction(action)
+            }
+        } else {
+            action
+        }
         _uiState.value = _uiState.value.copy(
-            proposedAction = action
+            proposedAction = registered
         )
     }
 
@@ -469,6 +487,7 @@ class NexoraAiViewModel(
     }
 
     fun dismissAction() {
+        _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
         _uiState.value = _uiState.value.copy(
             proposedAction = null
         )

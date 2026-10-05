@@ -14,10 +14,12 @@ import java.util.UUID
 
 /**
  * Focused regression tests for:
- * 1. Action Authorization & Anti-tampering
- * 2. Duplicate Execution & Concurrency Safety
- * 3. Replay Protection & Retry Policy
- * 4. Distinct Intentional Actions
+ * 1. Action Authorization & Pending-Confirmation Lifecycle
+ * 2. Anti-tampering, Cancellation & Replaced Proposal Safety
+ * 3. Duplicate Execution & Concurrency Safety
+ * 4. Confirmation Handle Isolation & Revocation on Failed Execution
+ * 5. Replay Protection & Retry Policy across Executor Recreation
+ * 6. Read-only Action Execution & Legitimate Chat Confirmation Flows
  */
 class ActionAuthorizationSafetyRegressionTest {
 
@@ -49,7 +51,7 @@ class ActionAuthorizationSafetyRegressionTest {
     fun `test unconfirmed delete action is rejected`() = runBlocking {
         val task = repository.addTask(PremiumTask(id = 101L, title = "Task to protect", category = "Work", duration = "20m"))
 
-        // Unconfirmed delete action without security grant
+        // Unconfirmed delete action without proposal or security grant
         val unconfirmedAction = AiAction(
             id = UUID.randomUUID().toString(),
             type = AiActionType.DELETE_TASK,
@@ -89,25 +91,50 @@ class ActionAuthorizationSafetyRegressionTest {
     }
 
     @Test
-    fun `test valid confirmation authorizes only the matching pending action`() = runBlocking {
-        val task = repository.addTask(PremiumTask(id = 103L, title = "Authorized Delete Task", category = "Work", duration = "10m"))
+    fun `test calling confirmation API directly with an arbitrary action is rejected`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 103L, title = "Task unproposed", category = "Work", duration = "10m"))
 
-        val pendingAction = AiAction(
+        val arbitraryAction = AiAction(
             id = UUID.randomUUID().toString(),
             type = AiActionType.DELETE_TASK,
-            title = "Delete Task",
-            description = "Delete single task",
+            title = "Arbitrary Delete Task",
+            description = "Directly sent without proposal",
             taskId = task.id,
             requiresConfirmation = true
         )
 
-        // Grant explicit authorization (as done by confirmation flow)
-        val authorizedAction = NexoraSecurity.grantAuthorization(pendingAction)
+        // Calling confirmPendingAction directly without prior trusted proposal must be rejected
+        val result = engine.confirmPendingAction(arbitraryAction)
 
-        val result = actionExecutor.execute(authorizedAction)
+        assertFalse("Calling confirmation API directly with arbitrary action MUST be rejected", result.success)
+        assertEquals("No pending proposal", result.error)
+        assertNotNull("Task must remain in repository", repository.getTaskById(task.id))
+    }
 
-        assertTrue("Authorized action MUST succeed", result.success)
-        assertNull("Task must be deleted after authorized execution", repository.getTaskById(task.id))
+    @Test
+    fun `test valid pending proposal succeeds after explicit confirmation and mutates repository`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 104L, title = "Task to Confirm Delete", category = "Work", duration = "10m"))
+
+        val rawAction = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task",
+            description = "Legitimate delete proposal",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        // Trusted application flow proposes the action
+        val proposedAction = engine.proposeAction(rawAction)
+        assertTrue("Proposal must be registered as pending", engine.isProposalPending(proposedAction.id))
+        assertNotNull("Confirmation token must be generated", proposedAction.parameters["confirmationToken"])
+
+        // Explicit user confirmation
+        val result = engine.confirmPendingAction(proposedAction)
+
+        assertTrue("Valid pending proposal MUST succeed after explicit confirmation: ${result.error}", result.success)
+        assertNull("Task must be deleted from repository", repository.getTaskById(task.id))
+        assertFalse("Proposal must no longer be pending after consumption", engine.isProposalPending(proposedAction.id))
     }
 
     @Test
@@ -124,16 +151,15 @@ class ActionAuthorizationSafetyRegressionTest {
             requiresConfirmation = true
         )
 
-        // Grant authorization for Task A
-        val authorizedActionA = NexoraSecurity.grantAuthorization(actionA)
+        val proposedA = engine.proposeAction(actionA)
 
-        // Attacker swaps the target taskId to Task B using Task A's authorization
-        val tamperedAction = authorizedActionA.copy(taskId = taskB.id)
+        // Attacker swaps the target taskId to Task B using Task A's proposal
+        val tamperedAction = proposedA.copy(taskId = taskB.id)
 
-        val result = actionExecutor.execute(tamperedAction)
+        val result = engine.confirmPendingAction(tamperedAction)
 
         assertFalse("Tampered target action MUST be rejected", result.success)
-        assertEquals("Authorization error", result.error)
+        assertEquals("Target mismatch", result.error)
         assertNotNull("Task A must not be deleted", repository.getTaskById(taskA.id))
         assertNotNull("Task B must not be deleted", repository.getTaskById(taskB.id))
     }
@@ -152,23 +178,47 @@ class ActionAuthorizationSafetyRegressionTest {
             requiresConfirmation = true
         )
 
-        // Grant authorization for "Approved New Title"
-        val authorizedAction = NexoraSecurity.grantAuthorization(pendingAction)
+        val proposedAction = engine.proposeAction(pendingAction)
 
-        // Tamper with parameters after authorization
-        val tamperedParameters = authorizedAction.parameters.toMutableMap()
+        // Tamper with parameters after proposal
+        val tamperedParameters = proposedAction.parameters.toMutableMap()
         tamperedParameters["title"] = "Malicious Hijacked Title"
-        val tamperedAction = authorizedAction.copy(parameters = tamperedParameters)
+        val tamperedAction = proposedAction.copy(parameters = tamperedParameters)
 
-        val result = actionExecutor.execute(tamperedAction)
+        val result = engine.confirmPendingAction(tamperedAction)
 
-        assertFalse("Tampered parameters MUST invalidate authorization", result.success)
-        assertEquals("Authorization error", result.error)
+        assertFalse("Tampered parameters MUST invalidate confirmation", result.success)
+        assertEquals("Parameters modified", result.error)
         assertEquals("Original Title", repository.getTaskById(task.id)?.title)
     }
 
     @Test
-    fun `test cancellation leaves persisted state unchanged`() = runBlocking {
+    fun `test modifying action type after proposal creation invalidates confirmation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 302L, title = "Type Mismatch Task", category = "Work", duration = "30m"))
+
+        val pendingAction = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.COMPLETE_TASK,
+            title = "Complete Task",
+            description = "Complete task",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        val proposedAction = engine.proposeAction(pendingAction)
+
+        // Tamper with action type from COMPLETE_TASK to DELETE_TASK
+        val tamperedAction = proposedAction.copy(type = AiActionType.DELETE_TASK)
+
+        val result = engine.confirmPendingAction(tamperedAction)
+
+        assertFalse("Tampered action type MUST be rejected", result.success)
+        assertEquals("Action type mismatch", result.error)
+        assertNotNull("Task must not be deleted", repository.getTaskById(task.id))
+    }
+
+    @Test
+    fun `test cancelled or dismissed proposal cannot execute`() = runBlocking {
         val task = repository.addTask(PremiumTask(id = 401L, title = "Task to Cancel", category = "Work", duration = "25m"))
 
         val pendingAction = AiAction(
@@ -180,195 +230,217 @@ class ActionAuthorizationSafetyRegressionTest {
             requiresConfirmation = true
         )
 
-        // User cancels: revoke authorization and clear pending action
-        NexoraSecurity.revokeAuthorization(pendingAction.id)
+        val proposedAction = engine.proposeAction(pendingAction)
+        assertTrue(engine.isProposalPending(proposedAction.id))
 
-        val result = actionExecutor.execute(pendingAction)
+        // User dismisses / cancels proposal
+        engine.cancelProposal(proposedAction.id)
+        assertFalse(engine.isProposalPending(proposedAction.id))
 
-        assertFalse("Cancelled action cannot execute", result.success)
+        val result = engine.confirmPendingAction(proposedAction)
+
+        assertFalse("Cancelled proposal cannot execute", result.success)
+        assertEquals("Proposal cancelled", result.error)
         assertNotNull("Persisted state must remain unchanged after cancellation", repository.getTaskById(task.id))
     }
 
     @Test
-    fun `test repeated confirmation cannot execute the same action twice`() = runBlocking {
-        val task = repository.addTask(PremiumTask(id = 501L, title = "Single Execution Task", category = "Personal", duration = "15m"))
+    fun `test replaced proposal cannot execute`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 402L, title = "Replaced Proposal Task", category = "Work", duration = "15m"))
 
-        val action = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.COMPLETE_TASK,
-            title = "Complete Task",
-            description = "Complete task once",
+        val actionId = UUID.randomUUID().toString()
+        val action1 = AiAction(
+            id = actionId,
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task Old",
+            description = "Old proposal",
             taskId = task.id,
-            requiresConfirmation = false
+            parameters = mapOf("param" to "old"),
+            requiresConfirmation = true
         )
 
-        // First execution succeeds
-        val result1 = actionExecutor.execute(action)
-        assertTrue("First execution must succeed", result1.success)
+        val proposed1 = engine.proposeAction(action1)
 
-        // Repeated execution attempt of the exact same action ID
-        val result2 = actionExecutor.execute(action)
-        assertFalse("Repeated execution MUST be rejected as duplicate", result2.success)
-        assertEquals("Duplicate execution rejected", result2.error)
+        // Application flow issues a newer proposal replacing actionId
+        val action2 = AiAction(
+            id = actionId,
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task New",
+            description = "New proposal",
+            taskId = task.id,
+            parameters = mapOf("param" to "new"),
+            requiresConfirmation = true
+        )
+
+        val proposed2 = engine.proposeAction(action2)
+
+        // Attempting to confirm the superseded proposed1 MUST fail
+        val resultOld = engine.confirmPendingAction(proposed1)
+        assertFalse("Older replaced proposal MUST be rejected", resultOld.success)
+
+        // New proposed2 succeeds
+        val resultNew = engine.confirmPendingAction(proposed2)
+        assertTrue("Newest proposal MUST succeed", resultNew.success)
+        assertNull("Task must be deleted after newest proposal confirmation", repository.getTaskById(task.id))
     }
 
     @Test
-    fun `test two concurrent execution attempts cannot duplicate the same mutation`() = runBlocking {
+    fun `test expired proposal cannot execute`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 403L, title = "Expiring Task", category = "Work", duration = "10m"))
+
+        val action = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Expiring Task",
+            description = "Will expire",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        // Register proposal with very short TTL (1 ms)
+        val proposed = engine.proposeAction(action, ttlMs = 1L)
+        Thread.sleep(15) // Wait for expiration
+
+        val result = engine.confirmPendingAction(proposed)
+
+        assertFalse("Expired proposal MUST be rejected", result.success)
+        assertEquals("Proposal expired", result.error)
+        assertNotNull("Task must not be deleted by expired proposal", repository.getTaskById(task.id))
+    }
+
+    @Test
+    fun `test repeated confirmation attempts cannot perform mutation twice`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 501L, title = "Single Confirmation Task", category = "Personal", duration = "15m"))
+
+        val action = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task",
+            description = "Delete task once",
+            taskId = task.id,
+            requiresConfirmation = true
+        )
+
+        val proposedAction = engine.proposeAction(action)
+
+        // First confirmation succeeds
+        val result1 = engine.confirmPendingAction(proposedAction)
+        assertTrue("First confirmation must succeed", result1.success)
+        assertNull("Task must be deleted", repository.getTaskById(task.id))
+
+        // Repeated confirmation attempt of the exact same proposal
+        val result2 = engine.confirmPendingAction(proposedAction)
+        assertFalse("Repeated confirmation MUST be rejected as already consumed", result2.success)
+        assertEquals("Proposal already consumed", result2.error)
+    }
+
+    @Test
+    fun `test two concurrent confirmation attempts cannot perform mutation twice`() = runBlocking {
         val ruleName = "Unique Concurrent Rule"
         val action = AiAction(
             id = UUID.randomUUID().toString(),
             type = AiActionType.CREATE_AUTOMATION,
-            title = "Create Automation",
-            description = "Concurrent automation creation test",
+            title = "Create Rule",
+            description = "Create automation rule",
             parameters = mapOf("name" to ruleName),
-            requiresConfirmation = false
-        )
-
-        // Launch two concurrent execution attempts with the same action ID
-        val deferred1 = async { actionExecutor.execute(action) }
-        val deferred2 = async { actionExecutor.execute(action) }
-
-        val results = listOf(deferred1.await(), deferred2.await())
-
-        val successCount = results.count { it.success }
-        val rejectedCount = results.count { !it.success && (it.error == "Duplicate execution rejected" || it.error == "Duplicate rule name") }
-
-        assertEquals("Exactly one concurrent execution must succeed", 1, successCount)
-        assertEquals("Exactly one concurrent execution must be rejected as duplicate", 1, rejectedCount)
-        assertEquals("Exactly one rule must be created in automation system", 1, actionExecutor.getAutomationSystem().getRules().count { it.name == ruleName })
-    }
-
-    @Test
-    fun `test failed action can be retried according to a clearly defined policy`() = runBlocking {
-        val action = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.CREATE_TASK,
-            title = "Retryable Task",
-            description = "Create task with retry",
-            parameters = mapOf("title" to "Retryable Task", "category" to "Work", "duration" to "30m"),
-            requiresConfirmation = false
-        )
-
-        // Simulate repository failure during first execution attempt
-        repository.failAddTask = true
-        val failResult = actionExecutor.execute(action)
-        assertFalse("First attempt must fail due to repository error", failResult.success)
-
-        // Resolve the transient failure condition
-        repository.failAddTask = false
-
-        // Retry the exact same action
-        val retryResult = actionExecutor.execute(action)
-        assertTrue("Retry of failed action MUST be allowed and succeed", retryResult.success)
-        assertNotNull("Task must be created after successful retry", repository.observeTasksOnce().find { it.title == "Retryable Task" })
-    }
-
-    @Test
-    fun `test completed action cannot be replayed with modified parameters`() = runBlocking {
-        val task = repository.addTask(PremiumTask(id = 601L, title = "Original Name", category = "Work", duration = "10m"))
-
-        val actionId = UUID.randomUUID().toString()
-        val originalAction = AiAction(
-            id = actionId,
-            type = AiActionType.UPDATE_TASK,
-            title = "Update Task",
-            description = "Update task",
-            taskId = task.id,
-            parameters = mapOf("title" to "Legitimate Update"),
-            requiresConfirmation = false
-        )
-
-        val result1 = actionExecutor.execute(originalAction)
-        assertTrue("Initial execution succeeds", result1.success)
-
-        // Attempt to replay the completed action ID with modified parameters
-        val replayedActionWithModifiedParams = originalAction.copy(
-            parameters = mapOf("title" to "Tampered Replay Name")
-        )
-
-        val result2 = actionExecutor.execute(replayedActionWithModifiedParams)
-        assertFalse("Replay with modified parameters MUST be rejected", result2.success)
-        assertEquals("Replay with modified parameters rejected", result2.error)
-        assertEquals("Legitimate Update", repository.getTaskById(task.id)?.title)
-    }
-
-    @Test
-    fun `test two separately initiated identical create actions remain distinct`() = runBlocking {
-        // 1. Two separate goal creations with identical parameters remain distinct
-        val goalAction1 = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.CREATE_GOAL,
-            title = "Read 12 Books",
-            description = "First goal intent",
-            parameters = mapOf("title" to "Read 12 Books", "category" to "Personal", "targetDate" to "2026-12-31"),
-            requiresConfirmation = false
-        )
-
-        val goalAction2 = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.CREATE_GOAL,
-            title = "Read 12 Books",
-            description = "Second goal intent with identical parameters",
-            parameters = mapOf("title" to "Read 12 Books", "category" to "Personal", "targetDate" to "2026-12-31"),
-            requiresConfirmation = false
-        )
-
-        val result1 = actionExecutor.execute(goalAction1)
-        val result2 = actionExecutor.execute(goalAction2)
-
-        assertTrue("First create goal action must succeed", result1.success)
-        assertTrue("Second distinct create goal action must also succeed", result2.success)
-        assertNotEquals("Created goals must have different IDs", result1.affectedGoalId, result2.affectedGoalId)
-
-        val goals = repository.observeGoalsOnce().filter { it.title == "Read 12 Books" }
-        assertEquals("Both distinct actions must have created their goals in the repository", 2, goals.size)
-
-        // 2. Separate task creation after completion of prior identical task
-        val taskAction1 = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.CREATE_TASK,
-            title = "Weekly Review",
-            description = "First weekly review",
-            parameters = mapOf("title" to "Weekly Review", "category" to "Work", "duration" to "30m"),
-            requiresConfirmation = false
-        )
-        val taskResult1 = actionExecutor.execute(taskAction1)
-        assertTrue(taskResult1.success)
-
-        // Complete the first task
-        val createdTask1 = repository.getTaskById(taskResult1.affectedTaskId!!)!!
-        repository.updateTask(createdTask1.copy(completed = true))
-
-        // Create identical task in a new week
-        val taskAction2 = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.CREATE_TASK,
-            title = "Weekly Review",
-            description = "Second weekly review",
-            parameters = mapOf("title" to "Weekly Review", "category" to "Work", "duration" to "30m"),
-            requiresConfirmation = false
-        )
-        val taskResult2 = actionExecutor.execute(taskAction2)
-        assertTrue("Subsequent intentional action with identical parameters must succeed", taskResult2.success)
-        assertNotEquals("Tasks must have distinct IDs", taskResult1.affectedTaskId, taskResult2.affectedTaskId)
-    }
-
-    @Test
-    fun `test missing target fails safely and leaves state unchanged`() = runBlocking {
-        val missingTargetAction = AiAction(
-            id = UUID.randomUUID().toString(),
-            type = AiActionType.DELETE_GOAL,
-            title = "Delete Missing Goal",
-            description = "Delete nonexistent goal",
-            goalId = 999999L,
             requiresConfirmation = true
         )
 
-        val authorizedAction = NexoraSecurity.grantAuthorization(missingTargetAction)
-        val result = actionExecutor.execute(authorizedAction)
+        val proposedAction = engine.proposeAction(action)
 
-        assertFalse("Action targeting nonexistent goal MUST fail", result.success)
-        assertTrue("Message must indicate target not found", result.message.contains("not found", ignoreCase = true))
+        // Fire 10 concurrent confirmation attempts simultaneously
+        val deferredResults = (1..10).map {
+            async {
+                engine.confirmPendingAction(proposedAction)
+            }
+        }
+
+        val results = deferredResults.awaitAll()
+        val successCount = results.count { it.success }
+        val failCount = results.count { !it.success }
+
+        assertEquals("Exactly one confirmation attempt MUST succeed", 1, successCount)
+        assertEquals("Nine confirmation attempts MUST be rejected", 9, failCount)
+
+        // Verify rejected attempts were due to consumption
+        results.filter { !it.success }.forEach {
+            assertEquals("Proposal already consumed", it.error)
+        }
+
+        // Verify persisted state: exactly 1 rule created
+        val matchingRules = engine.getAutomationRules().filter { it.name == ruleName }
+        assertEquals("Exactly one automation rule must exist in repository", 1, matchingRules.size)
+    }
+
+    @Test
+    fun `test confirmation handle cannot be reused for another action`() = runBlocking {
+        val taskA = repository.addTask(PremiumTask(id = 601L, title = "Task A", category = "Work", duration = "15m"))
+        val taskB = repository.addTask(PremiumTask(id = 602L, title = "Task B", category = "Work", duration = "15m"))
+
+        val actionA = engine.proposeAction(AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task A",
+            description = "Delete Task A",
+            taskId = taskA.id,
+            requiresConfirmation = true
+        ))
+
+        val confirmationToken = actionA.parameters["confirmationToken"]
+        assertNotNull(confirmationToken)
+
+        // Attacker creates unproposed actionB targeting Task B and attaches actionA's confirmationToken
+        val actionB = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task B",
+            description = "Illegitimate copy of token",
+            taskId = taskB.id,
+            parameters = mapOf("confirmationToken" to confirmationToken!!),
+            requiresConfirmation = true
+        )
+
+        val result = engine.confirmPendingAction(actionB)
+
+        assertFalse("Confirmation handle cannot be reused for another action", result.success)
+        assertEquals("No pending proposal", result.error)
+        assertNotNull("Task B must not be deleted", repository.getTaskById(taskB.id))
+        assertNotNull("Task A must still exist", repository.getTaskById(taskA.id))
+    }
+
+    @Test
+    fun `test failed execution cannot accidentally reuse consumed approval`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 603L, title = "Failing Task", category = "Work", duration = "10m"))
+
+        val action = engine.proposeAction(AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_TASK,
+            title = "Delete Task",
+            description = "Will fail initially",
+            taskId = task.id,
+            requiresConfirmation = true
+        ))
+
+        // Force repository failure during execution
+        repository.failDeleteTask = true
+
+        val failResult = engine.confirmPendingAction(action)
+        assertFalse("Execution should fail when repository fails", failResult.success)
+
+        // Resolve repository failure
+        repository.failDeleteTask = false
+
+        // Attempting to confirm again MUST be rejected as already consumed
+        val retryConfirmResult = engine.confirmPendingAction(action)
+        assertFalse("Consumed approval cannot be reused after failure", retryConfirmResult.success)
+        assertEquals("Proposal already consumed", retryConfirmResult.error)
+
+        // Attempting direct execution via actionExecutor must also fail because authorization was revoked
+        val directResult = actionExecutor.execute(action)
+        assertFalse("Authorization must have been revoked after execution attempt", directResult.success)
+        assertEquals("Authorization error", directResult.error)
+
+        assertNotNull("Task must still exist in repository", repository.getTaskById(task.id))
     }
 
     @Test
@@ -413,22 +485,50 @@ class ActionAuthorizationSafetyRegressionTest {
     }
 
     @Test
-    fun `test genuine confirmation via confirmPendingAction authorizes only exact action and mutates data`() = runBlocking {
-        val task = repository.addTask(PremiumTask(id = 704L, title = "Task to Confirm Delete", category = "Work", duration = "20m"))
-
-        val pendingDelete = AiAction(
+    fun `test distinct intentional actions with identical parameters each succeed`() = runBlocking {
+        val taskAction1 = AiAction(
             id = UUID.randomUUID().toString(),
-            type = AiActionType.DELETE_TASK,
-            title = "Delete Task",
-            description = "Legitimate delete proposal",
-            taskId = task.id,
-            requiresConfirmation = true
+            type = AiActionType.CREATE_TASK,
+            title = "Create Task",
+            description = "Create daily task",
+            parameters = mapOf("title" to "Morning Routine", "category" to "Personal", "duration" to "15m"),
+            requiresConfirmation = false
         )
+        val taskResult1 = actionExecutor.execute(taskAction1)
+        assertTrue("First intentional action must succeed", taskResult1.success)
 
-        val result = engine.confirmPendingAction(pendingDelete)
+        // Complete the first task to permit creating a new task with identical parameters
+        val createdTask1 = repository.getTaskById(taskResult1.affectedTaskId!!)!!
+        repository.updateTask(createdTask1.copy(completed = true))
 
-        assertTrue("Genuine confirmation MUST succeed", result.success)
-        assertNull("Task must be deleted after genuine confirmation", repository.getTaskById(task.id))
+        val taskAction2 = AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.CREATE_TASK,
+            title = "Create Task",
+            description = "Create daily task",
+            parameters = mapOf("title" to "Morning Routine", "category" to "Personal", "duration" to "15m"),
+            requiresConfirmation = false
+        )
+        val taskResult2 = actionExecutor.execute(taskAction2)
+        assertTrue("Subsequent intentional action with identical parameters must succeed", taskResult2.success)
+        assertNotEquals("Tasks must have distinct IDs", taskResult1.affectedTaskId, taskResult2.affectedTaskId)
+    }
+
+    @Test
+    fun `test missing target fails safely and leaves state unchanged`() = runBlocking {
+        val missingTargetAction = engine.proposeAction(AiAction(
+            id = UUID.randomUUID().toString(),
+            type = AiActionType.DELETE_GOAL,
+            title = "Delete Missing Goal",
+            description = "Delete nonexistent goal",
+            goalId = 999999L,
+            requiresConfirmation = true
+        ))
+
+        val result = engine.confirmPendingAction(missingTargetAction)
+
+        assertFalse("Action targeting nonexistent goal MUST fail", result.success)
+        assertTrue("Message must indicate target not found", result.message.contains("not found", ignoreCase = true))
     }
 
     @Test
@@ -589,5 +689,22 @@ class ActionAuthorizationSafetyRegressionTest {
         )
         val openResult = engine.executeAction(openTaskAction)
         assertTrue("Open task action must execute without requiring confirmation: ${openResult.error}", openResult.success)
+    }
+
+    @Test
+    fun `test legitimate chat confirmation flow registers proposal and executes on user confirmation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 901L, title = "Study Rust", category = "Study", duration = "45m"))
+
+        // Step 1: User asks AI to delete task
+        val chatResponse = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Delete Study Rust"))
+        assertEquals(AiResponseType.ACTION_PROPOSAL, chatResponse.responseType)
+        val proposed = chatResponse.proposedActions.firstOrNull()
+        assertNotNull(proposed)
+        assertTrue("Chat action proposal must be registered as pending", engine.isProposalPending(proposed!!.id))
+
+        // Step 2: User confirms
+        val confirmResult = engine.confirmPendingAction(proposed)
+        assertTrue("Explicit confirmation of chat proposal must succeed", confirmResult.success)
+        assertNull("Task must be deleted after confirmation", repository.getTaskById(task.id))
     }
 }

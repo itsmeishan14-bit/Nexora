@@ -69,13 +69,13 @@ class NexoraUnifiedAiExperienceTest {
         val task = repository.addTask(PremiumTask(title = "Express Auth", category = "Work", duration = "45m", priority = TaskPriority.HIGH, goalTitle = goal.title))
 
         // Execute completion
-        val action = AiAction(
+        val action = engine.proposeAction(AiAction(
             type = AiActionType.COMPLETE_TASK,
             title = "Complete Task",
             description = "Complete Express Auth",
             taskId = task.id,
             parameters = mapOf("userConfirmed" to true)
-        )
+        ))
 
         val result = engine.confirmPendingAction(action)
         assertTrue(result.success)

@@ -45,6 +45,27 @@ object NexoraSecurity {
         }
     }
 
+    const val PROPOSAL_TTL_MS = 15 * 60 * 1000L // 15 minutes
+
+    enum class ProposalStatus {
+        PENDING,
+        CONSUMED,
+        CANCELLED,
+        EXPIRED
+    }
+
+    data class PendingProposal(
+        val actionId: String,
+        val actionType: AiActionType,
+        val targetTaskId: Long?,
+        val targetGoalId: Long?,
+        val fingerprint: String,
+        val confirmationToken: String,
+        val proposedAt: Long = System.currentTimeMillis(),
+        val expiresAt: Long = proposedAt + PROPOSAL_TTL_MS,
+        @Volatile var status: ProposalStatus = ProposalStatus.PENDING
+    )
+
     data class AuthorizationGrant(
         val actionId: String,
         val actionType: AiActionType,
@@ -55,43 +76,189 @@ object NexoraSecurity {
         val grantedAt: Long = System.currentTimeMillis()
     )
 
+    private val pendingProposals = java.util.concurrent.ConcurrentHashMap<String, PendingProposal>()
     private val activeGrants = java.util.concurrent.ConcurrentHashMap<String, AuthorizationGrant>()
 
     fun computeFingerprint(action: AiAction): String {
         val cleanParams = action.parameters.filterKeys { 
-            it != "userConfirmed" && it != "authorizationToken" 
+            it != "userConfirmed" && it != "authorizationToken" && it != "confirmationToken"
         }.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
         return "${action.type}:${action.taskId}:${action.goalId}:$cleanParams"
     }
 
     /**
-     * Authorizes an exact pending action proposal.
-     * Generates a unique authorization token bound to the action's type, target, and parameters.
+     * Registers a new pending action proposal issued by a trusted application flow.
+     * Generates a unique, one-time confirmation token bound to the action's type, target, and parameters.
+     * Any previous proposal for this actionId is cancelled and replaced.
      */
-    fun grantAuthorization(action: AiAction): AiAction {
+    fun registerProposal(action: AiAction, ttlMs: Long = PROPOSAL_TTL_MS): AiAction {
+        // If an existing proposal exists for this actionId, cancel it
+        pendingProposals[action.id]?.let { oldProposal ->
+            synchronized(oldProposal) {
+                if (oldProposal.status == ProposalStatus.PENDING) {
+                    oldProposal.status = ProposalStatus.CANCELLED
+                }
+            }
+        }
+        activeGrants.remove(action.id)
+
+        val confirmationToken = java.util.UUID.randomUUID().toString()
         val fingerprint = computeFingerprint(action)
-        val token = java.util.UUID.randomUUID().toString()
-        val grant = AuthorizationGrant(
+        val now = System.currentTimeMillis()
+        val proposal = PendingProposal(
             actionId = action.id,
             actionType = action.type,
             targetTaskId = action.taskId,
             targetGoalId = action.goalId,
             fingerprint = fingerprint,
-            token = token
+            confirmationToken = confirmationToken,
+            proposedAt = now,
+            expiresAt = now + ttlMs,
+            status = ProposalStatus.PENDING
         )
-        activeGrants[action.id] = grant
+        pendingProposals[action.id] = proposal
 
-        val authorizedParams = action.parameters.toMutableMap()
-        authorizedParams["userConfirmed"] = true
-        authorizedParams["authorizationToken"] = token
+        val updatedParams = action.parameters.toMutableMap()
+        updatedParams["confirmationToken"] = confirmationToken
 
-        return action.copy(
-            requiresConfirmation = false,
-            parameters = authorizedParams
-        )
+        return action.copy(parameters = updatedParams)
     }
 
-    fun authorize(action: AiAction): AiAction = grantAuthorization(action)
+    /**
+     * Explicitly cancels/dismisses a pending proposal so it cannot be confirmed.
+     */
+    fun cancelProposal(actionId: String) {
+        pendingProposals[actionId]?.let { proposal ->
+            synchronized(proposal) {
+                if (proposal.status == ProposalStatus.PENDING) {
+                    proposal.status = ProposalStatus.CANCELLED
+                }
+            }
+        }
+        revokeAuthorization(actionId)
+    }
+
+    /**
+     * Checks if an action has a currently pending (unexpired, unconsumed, uncancelled) proposal.
+     */
+    fun isProposalPending(actionId: String): Boolean {
+        val proposal = pendingProposals[actionId] ?: return false
+        if (proposal.status != ProposalStatus.PENDING) return false
+        if (System.currentTimeMillis() > proposal.expiresAt) {
+            proposal.status = ProposalStatus.EXPIRED
+            return false
+        }
+        return true
+    }
+
+    sealed class ConsumeResult {
+        data class Success(val authorizedAction: AiAction) : ConsumeResult()
+        data class Rejected(val reason: String, val error: String) : ConsumeResult()
+    }
+
+    /**
+     * Validates and atomically consumes a pending proposal, granting authorization.
+     * A proposal can be consumed at most ONCE.
+     */
+    fun consumeAndAuthorize(action: AiAction): ConsumeResult {
+        val proposal = pendingProposals[action.id]
+            ?: return ConsumeResult.Rejected(
+                "Action was not proposed by a trusted application flow.",
+                "No pending proposal"
+            )
+
+        synchronized(proposal) {
+            if (proposal.status == ProposalStatus.CONSUMED) {
+                return ConsumeResult.Rejected(
+                    "This action proposal has already been confirmed and consumed.",
+                    "Proposal already consumed"
+                )
+            }
+            if (proposal.status == ProposalStatus.CANCELLED) {
+                return ConsumeResult.Rejected(
+                    "This action proposal was cancelled or dismissed.",
+                    "Proposal cancelled"
+                )
+            }
+            if (System.currentTimeMillis() > proposal.expiresAt || proposal.status == ProposalStatus.EXPIRED) {
+                proposal.status = ProposalStatus.EXPIRED
+                return ConsumeResult.Rejected(
+                    "This action proposal has expired.",
+                    "Proposal expired"
+                )
+            }
+            if (proposal.status != ProposalStatus.PENDING) {
+                return ConsumeResult.Rejected(
+                    "Action proposal is not eligible for confirmation.",
+                    "Proposal not pending"
+                )
+            }
+
+            // 1. Verify action type matches
+            if (action.type != proposal.actionType) {
+                NexoraLogger.w("SECURITY", "Action type mismatch for proposal ${action.id}")
+                return ConsumeResult.Rejected(
+                    "Action type mismatch with pending proposal.",
+                    "Action type mismatch"
+                )
+            }
+
+            // 2. Verify target IDs match
+            if (action.taskId != proposal.targetTaskId || action.goalId != proposal.targetGoalId) {
+                NexoraLogger.w("SECURITY", "Target ID mismatch for proposal ${action.id}")
+                return ConsumeResult.Rejected(
+                    "Target ID mismatch with pending proposal.",
+                    "Target mismatch"
+                )
+            }
+
+            // 3. Verify parameters match proposal fingerprint
+            val currentFingerprint = computeFingerprint(action)
+            if (proposal.fingerprint != currentFingerprint) {
+                NexoraLogger.w("SECURITY", "Fingerprint mismatch for proposal ${action.id}")
+                return ConsumeResult.Rejected(
+                    "Action parameters were modified after proposal was issued.",
+                    "Parameters modified"
+                )
+            }
+
+            // 4. Verify confirmation token matches
+            val actionToken = action.parameters["confirmationToken"]?.toString()
+            if (actionToken.isNullOrBlank() || actionToken != proposal.confirmationToken) {
+                NexoraLogger.w("SECURITY", "Confirmation token mismatch for proposal ${action.id}")
+                return ConsumeResult.Rejected(
+                    "Invalid or missing confirmation handle for proposal.",
+                    "Invalid confirmation handle"
+                )
+            }
+
+            // Atomically mark CONSUMED
+            proposal.status = ProposalStatus.CONSUMED
+
+            // Issue the single-use authorization grant
+            val grantToken = java.util.UUID.randomUUID().toString()
+            val grant = AuthorizationGrant(
+                actionId = action.id,
+                actionType = action.type,
+                targetTaskId = action.taskId,
+                targetGoalId = action.goalId,
+                fingerprint = currentFingerprint,
+                token = grantToken
+            )
+            activeGrants[action.id] = grant
+
+            val authorizedParams = action.parameters.toMutableMap()
+            authorizedParams["userConfirmed"] = true
+            authorizedParams["authorizationToken"] = grantToken
+
+            return ConsumeResult.Success(
+                action.copy(
+                    requiresConfirmation = false,
+                    parameters = authorizedParams
+                )
+            )
+        }
+    }
 
     fun revokeAuthorization(actionId: String) {
         activeGrants.remove(actionId)
@@ -99,6 +266,7 @@ object NexoraSecurity {
 
     fun clearAllAuthorizations() {
         activeGrants.clear()
+        pendingProposals.clear()
     }
 
     /**
