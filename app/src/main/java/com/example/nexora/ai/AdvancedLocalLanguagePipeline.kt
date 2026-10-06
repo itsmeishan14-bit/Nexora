@@ -214,7 +214,12 @@ class AdvancedLocalLanguagePipeline {
                         targetGoalId = null
                         targetGoalTitle = null
                         resolvedEntities.remove("goalId")
-                        finalConfidence = AiConfidence.MEDIUM
+                        if (originalIntent == AiDecisionType.DECOMPOSE_GOAL) {
+                            resolvedEntities["title"] = queryTitle
+                            finalConfidence = AiConfidence.HIGH
+                        } else {
+                            finalConfidence = AiConfidence.MEDIUM
+                        }
                     }
                 }
             } else if (context.goals.size > 1 && (queryTitle.isBlank() || queryTitle in ambiguousGoalTitles)) {
@@ -249,7 +254,8 @@ class AdvancedLocalLanguagePipeline {
 
         val hasValidTarget = when (originalIntent) {
             AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK -> targetTaskId != null
-            AiDecisionType.DELETE_GOAL, AiDecisionType.UPDATE_GOAL, AiDecisionType.DECOMPOSE_GOAL -> targetGoalId != null
+            AiDecisionType.DELETE_GOAL, AiDecisionType.UPDATE_GOAL -> targetGoalId != null
+            AiDecisionType.DECOMPOSE_GOAL -> targetGoalId != null || (queryTitle.isNotBlank() && queryTitle !in ambiguousTitles)
             else -> true
         }
 
@@ -522,7 +528,8 @@ class AdvancedLocalLanguagePipeline {
         // 9. STRUCTURAL CLASS: DIRECTIVE ACTIONS (Goal Decomposition & Mutations)
         // ─────────────────────────────────────────────────────────────
         // Goal Decomposition Directive (Higher priority than generic "list")
-        if ((lower.contains("break down") || lower.contains("decompose")) && (lower.contains("goal") || lower.contains("into tasks") || lower.contains("into steps") || lower.contains("sub-tasks") || lower.startsWith("decompose") || lower.startsWith("break down"))) {
+        if ((lower.contains("break down") || lower.contains("decompose") || (lower.contains("plan") && lower.contains("goal"))) && 
+            (lower.contains("goal") || lower.contains("into tasks") || lower.contains("into steps") || lower.contains("sub-tasks") || lower.startsWith("decompose") || lower.startsWith("break down") || lower.startsWith("plan goal") || lower.startsWith("plan my goal"))) {
             return StructuralClassification(
                 intent = AiDecisionType.DECOMPOSE_GOAL,
                 confidence = AiConfidence.HIGH,
@@ -848,7 +855,7 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.DECOMPOSE_GOAL -> {
-                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps)\\b"), " ")
+                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan|how to|create a plan for|make a plan for)\\b"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }

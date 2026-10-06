@@ -66,12 +66,12 @@ fun HomeScreen(
         if (topRecommendedTaskId != null) {
             val recTask = incomplete.find { it.id == topRecommendedTaskId }
             if (recTask != null) {
-                listOf(recTask) + incomplete.filter { it.id != topRecommendedTaskId }.sortedBy { it.priority.ordinal }.take(2)
+                listOf(recTask) + incomplete.filter { it.id != topRecommendedTaskId }.sortedByDescending { it.priority.ordinal }.take(2)
             } else {
-                incomplete.sortedBy { it.priority.ordinal }.take(3)
+                incomplete.sortedByDescending { it.priority.ordinal }.take(3)
             }
         } else {
-            incomplete.sortedBy { it.priority.ordinal }.take(3)
+            incomplete.sortedByDescending { it.priority.ordinal }.take(3)
         }
     }
 

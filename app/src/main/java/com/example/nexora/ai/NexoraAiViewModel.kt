@@ -436,6 +436,59 @@ class NexoraAiViewModel(
         val isCancellation = response.decision?.type == AiDecisionType.CANCEL
         if (isCancellation) {
             _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
+            _uiState.update {
+                it.copy(
+                    conversationalState = AiConversationalState(),
+                    proposedAction = null
+                )
+            }
+            return
+        }
+
+        // Check if this response is an execution of an already-confirmed action
+        val isConfirmedExecution = response.decision?.reason == "User explicitly confirmed pending action." ||
+            (response.proposedActions.isNotEmpty() &&
+             response.proposedActions.first().let { !it.requiresConfirmation && it.parameters["userConfirmed"] == true })
+
+        if (isConfirmedExecution && response.proposedActions.isNotEmpty()) {
+            val action = response.proposedActions.first()
+            _uiState.update {
+                it.copy(
+                    conversationalState = AiConversationalState(),
+                    proposedAction = null
+                )
+            }
+            if (isActionExecuting.compareAndSet(false, true)) {
+                scope.launch {
+                    try {
+                        val result = engine.executeAction(action)
+                        _uiState.update {
+                            it.copy(
+                                lastActionResult = result,
+                                error = if (!result.success) (result.error ?: result.message) else null
+                            )
+                        }
+                        if (result.success) {
+                            analyze()
+                            loadAutomationRules()
+                        }
+                    } catch (e: Exception) {
+                        _uiState.update {
+                            it.copy(
+                                lastActionResult = AiActionResult(
+                                    success = false,
+                                    message = "Action failed: ${e.message ?: "Unknown error"}",
+                                    error = e.message ?: "Execution exception"
+                                ),
+                                error = e.message ?: "Action execution failed"
+                            )
+                        }
+                    } finally {
+                        isActionExecuting.set(false)
+                    }
+                }
+            }
+            return
         }
         
         when (response.responseType) {
@@ -446,7 +499,7 @@ class NexoraAiViewModel(
                 _uiState.update {
                     it.copy(
                         conversationalState = AiConversationalState(),
-                        proposedAction = if (isCancellation) null else it.proposedAction
+                        proposedAction = it.proposedAction
                     )
                 }
             }
@@ -465,7 +518,7 @@ class NexoraAiViewModel(
                     _uiState.update {
                         it.copy(
                             conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
-                            proposedAction = if (isCancellation) null else it.proposedAction
+                            proposedAction = it.proposedAction
                         )
                     }
                 }

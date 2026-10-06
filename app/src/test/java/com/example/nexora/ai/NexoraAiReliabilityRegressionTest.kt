@@ -397,4 +397,91 @@ class NexoraAiReliabilityRegressionTest {
         val insightResult = engine.executeAction(insightAction)
         assertTrue("SHOW_INSIGHT is a safe action and must succeed", insightResult.success)
     }
+
+    @Test
+    fun `11 - end to end goal planning workflow - understand request, create plan, approve, save tasks without duplicates, refresh context`() = runBlocking {
+        // Step 1: User describes a goal
+        val chatRequest = AiRequest(
+            type = AiRequestType.CHAT,
+            userMessage = "Plan goal Launch MVP"
+        )
+        val response = engine.processRequest(chatRequest)
+
+        // Step 2: Nexora understands request and creates a structured plan
+        assertEquals("Should propose actions for goal planning", AiResponseType.ACTION_PROPOSAL, response.responseType)
+        assertTrue("Proposed actions must not be empty", response.proposedActions.isNotEmpty())
+        assertEquals("Decision type must be DECOMPOSE_GOAL", AiDecisionType.DECOMPOSE_GOAL, response.decision?.type)
+
+        // Step 3: User reviews plan and approves: execute actions
+        var tasksCreated = 0
+        for (action in response.proposedActions) {
+            val authorized = if (action.requiresConfirmation) {
+                when (val cr = NexoraSecurity.consumeAndAuthorize(action)) {
+                    is NexoraSecurity.ConsumeResult.Success -> cr.authorizedAction
+                    else -> action
+                }
+            } else {
+                action
+            }
+            val result = engine.executeAction(authorized)
+            if (result.success && action.type == AiActionType.CREATE_TASK) {
+                tasksCreated++
+            }
+        }
+        assertTrue("Should have created multiple tasks for the plan", tasksCreated > 0)
+
+        // Step 4: Verify tasks and goal are saved to database with real IDs
+        val tasks = repository.observeTasksOnce()
+        val createdTasks = tasks.filter { it.goalTitle.equals("Launch MVP", ignoreCase = true) }
+        assertEquals("Created tasks count must match", tasksCreated, createdTasks.size)
+        assertTrue("Task IDs must be valid positive IDs", createdTasks.all { it.id > 0L })
+
+        // Step 5: Retrying must NOT create duplicate tasks
+        val firstTaskAction = response.proposedActions.firstOrNull { it.type == AiActionType.CREATE_TASK }
+        assertNotNull(firstTaskAction)
+        val retryResult = engine.executeAction(firstTaskAction!!)
+        assertFalse("Retry must not succeed or duplicate existing task", retryResult.success)
+        assertEquals("Task count must remain unchanged after retry", tasks.size, repository.observeTasksOnce().size)
+
+        // Step 6: Context refreshes with real data
+        val context = engine.getContext()
+        val tasksInContext = context.tasks.filter { it.goalTitle.equals("Launch MVP", ignoreCase = true) }
+        assertEquals("Refreshed context must contain the new tasks", tasksCreated, tasksInContext.size)
+    }
+
+    @Test
+    fun `12 - conversational confirmation executes action and updates database and UI state`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 88L, title = "Deploy Beta", category = "Work", duration = "25m"))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Step 1: User asks to complete the task conversationally
+        viewModel.sendMessage("Complete task Deploy Beta")
+        delay(250)
+
+        // Proposal should be pending
+        val stateAfterRequest = viewModel.uiState.value
+        assertNotNull("Should propose action", stateAfterRequest.proposedAction)
+        assertEquals(AiActionType.COMPLETE_TASK, stateAfterRequest.proposedAction?.type)
+
+        // Step 2: User confirms conversationally: "yes"
+        viewModel.sendMessage("yes")
+        delay(350)
+
+        // Step 3: Action executed, UI state updated, Room DB updated
+        val stateAfterConfirm = viewModel.uiState.value
+        assertNotNull("lastActionResult must be set", stateAfterConfirm.lastActionResult)
+        assertTrue("Action execution must succeed: ${stateAfterConfirm.lastActionResult?.error}", stateAfterConfirm.lastActionResult!!.success)
+
+        val updatedTask = repository.getTaskById(task.id)
+        assertNotNull(updatedTask)
+        assertTrue("Task in database must be marked complete", updatedTask!!.completed)
+    }
+
+    @Test
+    fun `13 - clarification requested when required information is missing`() = runBlocking {
+        // Goal action with no title or candidate specified
+        val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "break down goal"))
+        assertEquals("Missing title should request clarification", AiResponseType.CLARIFICATION_NEEDED, response.responseType)
+        assertTrue("Message should ask for clarification", response.message.contains("Which goal", ignoreCase = true) || response.message.contains("specify", ignoreCase = true))
+    }
 }

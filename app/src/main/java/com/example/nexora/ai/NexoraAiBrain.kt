@@ -849,9 +849,18 @@ class NexoraAiBrain(
                 AiDecisionType.DECOMPOSE_GOAL -> {
                     val goalId = langResult.targetGoalId
                     val goal = goalId?.let { id -> context.goals.find { it.id == id } }
+                    val targetTitle = goal?.title ?: langResult.entities["title"]?.toString()?.ifBlank { null }
                     
-                    if (goal != null) {
-                        return handleGoalDecomposition(AiRequest(AiRequestType.GOAL_DECOMPOSITION, goalId = goal.id, parameters = mapOf("title" to goal.title)), context)
+                    if (targetTitle != null) {
+                        return handleGoalDecomposition(
+                            AiRequest(
+                                AiRequestType.GOAL_DECOMPOSITION,
+                                goalId = goal?.id,
+                                parameters = mapOf("title" to targetTitle),
+                                conversationContext = convContext
+                            ),
+                            context
+                        )
                     } else {
                         return AiResponse(AiResponseType.CLARIFICATION_NEEDED, "Identify Goal", "Which goal would you like to decompose?")
                     }
@@ -1498,28 +1507,30 @@ class NexoraAiBrain(
         val goalId = request.goalId
         val goal = context.goals.find { it.id == goalId } 
             ?: request.parameters["title"]?.toString()?.let { title -> context.goals.find { it.title.contains(title, ignoreCase = true) } }
+        val targetTitle = goal?.title ?: request.parameters["title"]?.toString()?.trim()
             
-        if (goal == null) {
+        if (targetTitle.isNullOrBlank()) {
             return AiResponse(AiResponseType.CLARIFICATION_NEEDED, "Identify Goal", "I couldn't find which goal to decompose. Please specify a goal title.")
         }
 
-        val prompt = "Decompose the goal \"${goal.title}\" into actionable sub-tasks. " +
+        val prompt = "Decompose the goal \"$targetTitle\" into actionable sub-tasks. " +
                      "Return a structured list of tasks with titles and estimated durations."
         
         val structuredResult = providerManager.generateStructuredResponse(prompt, context)
+        val category = goal?.category ?: "Personal"
         
         val actions = if (structuredResult.actions.isNotEmpty()) {
             structuredResult.actions.map { action ->
                 if (action.type == AiActionType.CREATE_TASK) {
                     val params = action.parameters.toMutableMap()
-                    params["goalTitle"] = goal.title
-                    params["category"] = goal.category
+                    params["goalTitle"] = targetTitle
+                    params["category"] = category
                     action.copy(parameters = params)
                 } else action
             }
         } else {
-            val result = aiService.decomposeGoal(goal.title, "", goal.category)
-            result.steps.map { step ->
+            val result = aiService.decomposeGoal(targetTitle, "", category)
+            val taskActions = result.steps.map { step ->
                 AiAction(
                     type = AiActionType.CREATE_TASK,
                     title = "Create Task: ${step.title}",
@@ -1528,24 +1539,49 @@ class NexoraAiBrain(
                         "title" to step.title,
                         "duration" to step.estimatedDuration,
                         "priority" to step.priority.name,
-                        "goalTitle" to goal.title,
-                        "category" to goal.category
+                        "goalTitle" to targetTitle,
+                        "category" to category
                     )
                 )
             }
+            if (goal == null) {
+                val createGoalAction = AiAction(
+                    type = AiActionType.CREATE_GOAL,
+                    title = "Create Goal: $targetTitle",
+                    description = "Goal created for decomposition",
+                    parameters = mapOf(
+                        "title" to targetTitle,
+                        "category" to category
+                    )
+                )
+                listOf(createGoalAction) + taskActions
+            } else {
+                taskActions
+            }
         }
+
+        val primaryAction = actions.firstOrNull()
 
         return AiResponse(
             responseType = AiResponseType.ACTION_PROPOSAL,
             title = "Goal Decomposed",
-            message = structuredResult.textResponse ?: "I've broken down \"${goal.title}\" into several actionable steps.",
+            message = structuredResult.textResponse ?: "I've broken down \"$targetTitle\" into several actionable steps. Would you like me to add them to your tasks?",
             proposedActions = actions,
-            relatedGoalId = goal.id,
+            relatedGoalId = goal?.id,
             decision = AiDecision(
                 type = AiDecisionType.DECOMPOSE_GOAL,
                 title = "Decompose Goal",
-                reason = "Break down ${goal.title} into actionable steps.",
-                goalId = goal.id
+                reason = "Break down $targetTitle into actionable steps.",
+                goalId = goal?.id
+            ),
+            conversationContext = request.conversationContext?.copy(
+                lastIntent = AiDecisionType.DECOMPOSE_GOAL,
+                lastGoalId = goal?.id,
+                pendingAction = primaryAction
+            ) ?: AiConversationContext(
+                lastIntent = AiDecisionType.DECOMPOSE_GOAL,
+                lastGoalId = goal?.id,
+                pendingAction = primaryAction
             )
         )
     }

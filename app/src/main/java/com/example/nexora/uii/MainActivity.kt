@@ -216,13 +216,23 @@ class MainActivity : ComponentActivity() {
                                     )
                                     "aiGoalDecomposer" -> AiGoalDecomposerScreen(
                                         engine = aiEngine,
-                                        onBack = { mainViewModel.navigateTo("insights") },
+                                        initialGoalTitle = mainState.selectedGoal?.title ?: "",
+                                        initialGoalDescription = "",
+                                        onBack = {
+                                            if (mainState.selectedGoal != null) {
+                                                mainViewModel.navigateTo("goalDetails")
+                                            } else {
+                                                mainViewModel.navigateTo("insights")
+                                            }
+                                        },
                                         onTasksCreated = {
-                                            // ViewModel should handle internal refresh if needed, 
-                                            // but we might need a signal to reload data.
-                                            // loadData is already reactive if it was using Flows.
-                                            // Since we use Lists in State, we might need a refresh method.
                                             mainViewModel.refreshAll()
+                                            aiViewModel.analyze()
+                                            if (mainState.selectedGoal != null) {
+                                                mainViewModel.navigateTo("goalDetails")
+                                            } else {
+                                                mainViewModel.navigateTo("tasks")
+                                            }
                                         }
                                     )
                                     "aiAutomations" -> AiAutomationScreen(

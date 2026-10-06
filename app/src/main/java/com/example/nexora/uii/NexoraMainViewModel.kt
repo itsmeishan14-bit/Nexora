@@ -236,6 +236,8 @@ class NexoraMainViewModel(
 
     fun refreshAll() {
         viewModelScope.launch {
+            val savedTasks = repository.observeTasks().first()
+            updateTodayProgressInternal(savedTasks)
             refreshData()
         }
     }

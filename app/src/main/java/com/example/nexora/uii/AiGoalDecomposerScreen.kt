@@ -43,6 +43,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AiGoalDecomposerScreen(
     engine: NexoraAiEngine,
+    initialGoalTitle: String = "",
+    initialGoalDescription: String = "",
     onBack: () -> Unit = {},
     onTasksCreated: () -> Unit = {}
 ) {
@@ -58,9 +60,15 @@ fun AiGoalDecomposerScreen(
     )
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var goalTitle by remember { mutableStateOf("") }
-    var goalDescription by remember { mutableStateOf("") }
+    var goalTitle by remember(initialGoalTitle) { mutableStateOf(initialGoalTitle) }
+    var goalDescription by remember(initialGoalDescription) { mutableStateOf(initialGoalDescription) }
     var showConfirmDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialGoalTitle) {
+        if (initialGoalTitle.isNotBlank() && uiState.decomposition == null) {
+            viewModel.decompose(initialGoalTitle, initialGoalDescription)
+        }
+    }
 
     BackHandler { onBack() }
 
@@ -314,7 +322,27 @@ class AiGoalDecomposerViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isCreatingTasks = true, error = null) }
             var successCount = 0
+            var alreadyExistsCount = 0
             try {
+                // Ensure parent goal entity is persisted in Room if not already present
+                val goalTitle = state.decomposition.goalTitle.trim()
+                if (goalTitle.isNotBlank()) {
+                    val existingGoals = engine.getContext().goals
+                    val goalExists = existingGoals.any { it.title.equals(goalTitle, ignoreCase = true) }
+                    if (!goalExists) {
+                        engine.executeAction(com.example.nexora.ai.AiAction(
+                            type = com.example.nexora.ai.AiActionType.CREATE_GOAL,
+                            title = goalTitle,
+                            description = state.decomposition.summary.ifBlank { "Goal created from decomposition" },
+                            parameters = mapOf(
+                                "title" to goalTitle,
+                                "description" to state.decomposition.summary
+                            ),
+                            requiresConfirmation = false
+                        ))
+                    }
+                }
+
                 steps.forEach { step ->
                     val result = engine.executeAction(com.example.nexora.ai.AiAction(
                         type = com.example.nexora.ai.AiActionType.CREATE_TASK,
@@ -322,7 +350,7 @@ class AiGoalDecomposerViewModel(
                         description = step.description,
                         parameters = mapOf(
                             "title" to step.title,
-                            "goalTitle" to state.decomposition.goalTitle,
+                            "goalTitle" to goalTitle,
                             "duration" to step.estimatedDuration,
                             "priority" to step.priority.name
                         ),
@@ -330,9 +358,11 @@ class AiGoalDecomposerViewModel(
                     ))
                     if (result.success) {
                         successCount++
+                    } else if (result.message.contains("already exists", ignoreCase = true) || result.error?.contains("Duplicate", ignoreCase = true) == true) {
+                        alreadyExistsCount++
                     }
                 }
-                if (successCount > 0) {
+                if (successCount > 0 || (alreadyExistsCount > 0 && (successCount + alreadyExistsCount) == steps.size)) {
                     onComplete()
                     _uiState.update { it.copy(decomposition = null) }
                 } else {

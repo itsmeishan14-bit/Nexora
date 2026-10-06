@@ -46,7 +46,7 @@ fun TasksScreen(
 
     val filteredTasks = remember(tasks.toList(), selectedFilter) {
         when (selectedFilter) {
-            TaskFilter.Active -> tasks.filter { !it.completed }.sortedBy { it.priority.ordinal }
+            TaskFilter.Active -> tasks.filter { !it.completed }.sortedByDescending { it.priority.ordinal }
             TaskFilter.Completed -> tasks.filter { it.completed }
         }
     }
