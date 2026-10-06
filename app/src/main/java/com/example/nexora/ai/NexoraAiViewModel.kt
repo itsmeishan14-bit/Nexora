@@ -39,52 +39,70 @@ data class NexoraAiUiState(
 
 class NexoraAiViewModel(
     private val engine: NexoraAiEngine,
-    private val applicationContext: android.content.Context? = null
+    private val applicationContext: android.content.Context? = null,
+    private val coroutineScope: kotlinx.coroutines.CoroutineScope? = null
 ) : ViewModel() {
+
+    private val scope: kotlinx.coroutines.CoroutineScope
+        get() = coroutineScope ?: viewModelScope
 
     private val _uiState = MutableStateFlow(NexoraAiUiState())
 
     val uiState: StateFlow<NexoraAiUiState> =
         _uiState.asStateFlow()
 
+    private val isActionExecuting = java.util.concurrent.atomic.AtomicBoolean(false)
+
     init {
         analyze()
         loadAutomationRules()
         loadInitialHomeState()
-        viewModelScope.launch {
+        scope.launch {
             engine.observeAutomationRules().collect { rules ->
-                _uiState.value = _uiState.value.copy(automationRules = rules)
+                _uiState.update { it.copy(automationRules = rules) }
             }
         }
     }
 
     private fun loadInitialHomeState() {
-        viewModelScope.launch {
+        scope.launch {
             try {
                 val context = engine.getContext()
                 val response = engine.processRequest(AiRequest(AiRequestType.PROACTIVE_ANALYSIS))
                 
-                var homeAction: AiAction? = null
-                if (context.incompleteTasks.size >= 8) {
-                    val rawHomeAction = AiAction(
-                        type = AiActionType.RESCHEDULE_TASK,
-                        title = "High Workload Detected",
-                        description = "You have ${context.incompleteTasks.size} tasks. Should I move lower priority items to tomorrow?",
-                        reason = "Too many tasks today reduces focus.",
-                        requiresConfirmation = true
+                val signals = response.proactiveSignals.toMutableList()
+                if (context.incompleteTasks.size >= 8 && signals.none { it.type == ProactiveSignalType.WORKLOAD_RISK }) {
+                    signals.add(
+                        0,
+                        AiProactiveSignal(
+                            type = ProactiveSignalType.WORKLOAD_RISK,
+                            title = "High Workload Detected",
+                            message = "You have ${context.incompleteTasks.size} incomplete tasks. Focusing on top priority items is recommended.",
+                            severity = AiPriority.HIGH,
+                            confidence = AiConfidence.HIGH,
+                            evidence = "Incomplete tasks: ${context.incompleteTasks.size}",
+                            fingerprint = "home_workload_advisory_${context.incompleteTasks.size}",
+                            suggestedAction = null
+                        )
                     )
-                    homeAction = engine.proposeAction(rawHomeAction)
                 }
 
-                _uiState.value = _uiState.value.copy(
-                    personalContext = context.personalContext,
-                    proactiveSignals = response.proactiveSignals,
-                    homeProposedAction = homeAction
-                )
+                val candidateAction = response.proposedActions.firstOrNull()
+                val homeAction = if (candidateAction != null && candidateAction.requiresConfirmation) {
+                    if (engine.isProposalPending(candidateAction.id)) candidateAction else engine.proposeAction(candidateAction)
+                } else null
+
+                _uiState.update {
+                    it.copy(
+                        personalContext = context.personalContext,
+                        proactiveSignals = (signals + it.proactiveSignals).distinctBy { s -> s.fingerprint },
+                        homeProposedAction = homeAction
+                    )
+                }
 
                 // Trigger notifications for new high-priority signals
                 applicationContext?.let { appContext ->
-                    response.proactiveSignals.forEach { signal ->
+                    signals.forEach { signal ->
                         if (signal.severity >= AiPriority.HIGH) {
                             com.example.nexora.util.NexoraNotificationManager.showProactiveNotification(appContext, signal)
                         }
@@ -98,35 +116,57 @@ class NexoraAiViewModel(
 
     fun dismissHomeAction() {
         _uiState.value.homeProposedAction?.let { engine.cancelProposal(it.id) }
-        _uiState.value = _uiState.value.copy(homeProposedAction = null)
+        _uiState.update { it.copy(homeProposedAction = null) }
     }
 
     fun executeHomeAction(action: AiAction, onComplete: () -> Unit) {
-        if (_uiState.value.isLoading) return
+        if (!isActionExecuting.compareAndSet(false, true)) return
         
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            engine.confirmPendingAction(action)
-            _uiState.value = _uiState.value.copy(
-                homeProposedAction = null,
-                isLoading = false
-            )
-            onComplete()
-            analyze()
-            loadAutomationRules()
-            loadInitialHomeState()
+        scope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                val result = engine.confirmPendingAction(action)
+                _uiState.update {
+                    it.copy(
+                        homeProposedAction = null,
+                        lastActionResult = result,
+                        error = if (!result.success) (result.error ?: result.message) else null
+                    )
+                }
+                if (result.success) {
+                    onComplete()
+                    analyze()
+                    loadAutomationRules()
+                    loadInitialHomeState()
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        homeProposedAction = null,
+                        lastActionResult = AiActionResult(
+                            success = false,
+                            message = "Action failed: ${e.message ?: "Unknown error"}",
+                            error = e.message ?: "Execution exception"
+                        ),
+                        error = e.message ?: "Action execution failed"
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+                isActionExecuting.set(false)
+            }
         }
     }
 
     fun loadAutomationRules() {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val rules = engine.getAutomationRules()
             _uiState.update { it.copy(automationRules = rules) }
         }
     }
 
     fun toggleAutomationRule(rule: AiAutomationRule) {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val updated = rule.copy(enabled = !rule.enabled)
             engine.updateAutomationRule(updated)
             val rules = engine.getAutomationRules()
@@ -135,7 +175,7 @@ class NexoraAiViewModel(
     }
 
     fun deleteAutomationRule(idOrName: String): Boolean {
-        viewModelScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             val deleted = engine.deleteAutomationRule(idOrName)
             if (deleted) {
                 val rules = engine.getAutomationRules()
@@ -148,25 +188,30 @@ class NexoraAiViewModel(
     fun analyze() {
         if (_uiState.value.isLoading) return
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null
-            )
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null
+                )
+            }
 
             try {
                 val response = engine.processRequest(AiRequest(AiRequestType.GENERAL_ANALYSIS))
                 val context = engine.getContext()
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    recommendations = response.recommendations,
-                    proactiveInsights = response.recommendations.filter { it.type == AiRecommendationType.WARNING || it.type == AiRecommendationType.GOAL_ACTION },
-                    memory = context.memory,
-                    lastBrainResponse = response,
-                    currentWorkflow = response.workflow,
-                    proactiveSignals = response.proactiveSignals
-                )
+                _uiState.update {
+                    it.copy(
+                        recommendations = response.recommendations,
+                        proactiveInsights = response.recommendations.filter { rec ->
+                            rec.type == AiRecommendationType.WARNING || rec.type == AiRecommendationType.GOAL_ACTION
+                        },
+                        memory = context.memory,
+                        lastBrainResponse = response,
+                        currentWorkflow = response.workflow,
+                        proactiveSignals = (response.proactiveSignals + it.proactiveSignals).distinctBy { s -> s.fingerprint }
+                    )
+                }
 
                 // Trigger notifications for new high-priority signals
                 applicationContext?.let { appContext ->
@@ -177,10 +222,13 @@ class NexoraAiViewModel(
                     }
                 }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Unable to analyze your data."
-                )
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Unable to analyze your data."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -188,30 +236,36 @@ class NexoraAiViewModel(
     fun createDailyPlan() {
         if (_uiState.value.isLoading) return
         
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null,
-                dailyPlan = null
-            )
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    dailyPlan = null
+                )
+            }
 
             try {
                 val response = engine.processRequest(AiRequest(AiRequestType.DAILY_PLAN))
                 val plan = engine.createDailyPlan() // Keep using the specialized plan for legacy UI
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    dailyPlan = plan,
-                    recommendations = emptyList(),
-                    lastBrainResponse = response,
-                    currentWorkflow = response.workflow,
-                    proactiveSignals = response.proactiveSignals
-                )
+                _uiState.update {
+                    it.copy(
+                        dailyPlan = plan,
+                        recommendations = emptyList(),
+                        lastBrainResponse = response,
+                        currentWorkflow = response.workflow,
+                        proactiveSignals = response.proactiveSignals
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Unable to create your daily plan."
-                )
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Unable to create your daily plan."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -219,26 +273,32 @@ class NexoraAiViewModel(
     fun analyzeGoals() {
         if (_uiState.value.isLoading) return
         
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null
-            )
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null
+                )
+            }
 
             try {
                 val response = engine.processRequest(AiRequest(AiRequestType.GOAL_ANALYSIS))
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    recommendations = response.recommendations,
-                    lastBrainResponse = response,
-                    proactiveSignals = response.proactiveSignals
-                )
+                _uiState.update {
+                    it.copy(
+                        recommendations = response.recommendations,
+                        lastBrainResponse = response,
+                        proactiveSignals = response.proactiveSignals
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Unable to analyze your goals."
-                )
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Unable to analyze your goals."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -246,47 +306,55 @@ class NexoraAiViewModel(
     fun analyzeProductivity() {
         if (_uiState.value.isLoading) return
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null
-            )
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null
+                )
+            }
 
             try {
                 val response = engine.processRequest(AiRequest(AiRequestType.PRODUCTIVITY_ANALYSIS))
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    recommendations = response.recommendations,
-                    lastBrainResponse = response,
-                    proactiveSignals = response.proactiveSignals
-                )
+                _uiState.update {
+                    it.copy(
+                        recommendations = response.recommendations,
+                        lastBrainResponse = response,
+                        proactiveSignals = response.proactiveSignals
+                    )
+                }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Unable to analyze productivity."
-                )
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Unable to analyze productivity."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
     fun clearResults() {
-        _uiState.value = _uiState.value.copy(
-            recommendations = emptyList(),
-            error = null,
-            currentWorkflow = null
-        )
+        _uiState.update {
+            it.copy(
+                recommendations = emptyList(),
+                error = null,
+                currentWorkflow = null
+            )
+        }
     }
 
     fun deleteMemory(id: String) {
-        viewModelScope.launch {
+        scope.launch {
             engine.deleteMemory(id)
             refreshMemory()
         }
     }
 
     fun clearAllMemory() {
-        viewModelScope.launch {
+        scope.launch {
             engine.clearAllMemory()
             refreshMemory()
         }
@@ -294,9 +362,11 @@ class NexoraAiViewModel(
 
     private suspend fun refreshMemory() {
         val context = engine.getContext()
-        _uiState.value = _uiState.value.copy(
-            memory = context.memory
-        )
+        _uiState.update {
+            it.copy(
+                memory = context.memory
+            )
+        }
     }
 
     fun sendMessage(text: String) {
@@ -309,13 +379,15 @@ class NexoraAiViewModel(
 
         val currentState = _uiState.value.conversationalState
         
-        _uiState.value = _uiState.value.copy(
-            chatMessages = _uiState.value.chatMessages + userMessage,
-            isChatLoading = true,
-            error = null
-        )
+        _uiState.update {
+            it.copy(
+                chatMessages = it.chatMessages + userMessage,
+                isChatLoading = true,
+                error = null
+            )
+        }
 
-        viewModelScope.launch {
+        scope.launch {
             try {
                 // 1. Handle follow-up if we have pending candidates
                 if (currentState.candidateTaskIds.isNotEmpty()) {
@@ -335,22 +407,26 @@ class NexoraAiViewModel(
                     isFromUser = false
                 )
 
-                _uiState.value = _uiState.value.copy(
-                    chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false,
-                    lastBrainResponse = response,
-                    currentWorkflow = response.workflow,
-                    proactiveSignals = response.proactiveSignals,
-                    conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState()
-                )
+                _uiState.update {
+                    it.copy(
+                        chatMessages = it.chatMessages + aiMessage,
+                        lastBrainResponse = response,
+                        currentWorkflow = response.workflow,
+                        proactiveSignals = response.proactiveSignals,
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState()
+                    )
+                }
 
                 processBrainResponse(response)
 
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isChatLoading = false,
-                    error = e.message ?: "Nexora Brain is having trouble reasoning."
-                )
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Nexora Brain is having trouble reasoning."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isChatLoading = false) }
             }
         }
     }
@@ -364,14 +440,15 @@ class NexoraAiViewModel(
         
         when (response.responseType) {
             AiResponseType.CLARIFICATION_NEEDED -> {
-                // Conversational state should ideally be in AiResponse, but for now we maintain compatibility
-                // If the brain returned proposed actions that are ambiguous, handle it
+                // Ambiguous request; no mutation or action proposed
             }
             AiResponseType.NO_ACTION, AiResponseType.INFORMATION -> {
-                 _uiState.value = _uiState.value.copy(
-                    conversationalState = AiConversationalState(),
-                    proposedAction = if (isCancellation) null else _uiState.value.proposedAction
-                )
+                _uiState.update {
+                    it.copy(
+                        conversationalState = AiConversationalState(),
+                        proposedAction = if (isCancellation) null else it.proposedAction
+                    )
+                }
             }
             else -> {
                 if (response.proposedActions.isNotEmpty()) {
@@ -379,14 +456,18 @@ class NexoraAiViewModel(
                     proposeAction(action)
                     
                     // Also store in conversational state for confirmation flow
-                    _uiState.value = _uiState.value.copy(
-                        conversationalState = _uiState.value.conversationalState.copy(pendingAction = action)
-                    )
+                    _uiState.update {
+                        it.copy(
+                            conversationalState = it.conversationalState.copy(pendingAction = action)
+                        )
+                    }
                 } else {
-                    _uiState.value = _uiState.value.copy(
-                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
-                        proposedAction = if (isCancellation) null else _uiState.value.proposedAction
-                    )
+                    _uiState.update {
+                        it.copy(
+                            conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
+                            proposedAction = if (isCancellation) null else it.proposedAction
+                        )
+                    }
                 }
             }
         }
@@ -407,13 +488,14 @@ class NexoraAiViewModel(
                     isFromUser = false
                 )
 
-                _uiState.value = _uiState.value.copy(
-                    chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false,
-                    lastBrainResponse = response,
-                    currentWorkflow = response.workflow,
-                    proactiveSignals = response.proactiveSignals
-                )
+                _uiState.update {
+                    it.copy(
+                        chatMessages = it.chatMessages + aiMessage,
+                        lastBrainResponse = response,
+                        currentWorkflow = response.workflow,
+                        proactiveSignals = response.proactiveSignals
+                    )
+                }
                 
                 processBrainResponse(response)
             }
@@ -422,22 +504,24 @@ class NexoraAiViewModel(
                     text = "I still found multiple matches among those candidates. Could you be more specific?",
                     isFromUser = false
                 )
-                _uiState.value = _uiState.value.copy(
-                    chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false,
-                    conversationalState = state.copy(candidateTaskIds = match.candidates.map { it.id })
-                )
+                _uiState.update {
+                    it.copy(
+                        chatMessages = it.chatMessages + aiMessage,
+                        conversationalState = state.copy(candidateTaskIds = match.candidates.map { it.id })
+                    )
+                }
             }
             is ResolutionResult.NotFound -> {
                 val aiMessage = NexoraChatMessage(
                     text = "I couldn't match that to any of the candidate tasks.",
                     isFromUser = false
                 )
-                _uiState.value = _uiState.value.copy(
-                    chatMessages = _uiState.value.chatMessages + aiMessage,
-                    isChatLoading = false,
-                    conversationalState = AiConversationalState()
-                )
+                _uiState.update {
+                    it.copy(
+                        chatMessages = it.chatMessages + aiMessage,
+                        conversationalState = AiConversationalState()
+                    )
+                }
             }
         }
     }
@@ -456,46 +540,72 @@ class NexoraAiViewModel(
         } else {
             action
         }
-        _uiState.value = _uiState.value.copy(
-            proposedAction = registered
-        )
+        _uiState.update {
+            it.copy(
+                proposedAction = registered
+            )
+        }
     }
 
     fun confirmAction() {
         val action = _uiState.value.proposedAction ?: return
+        if (!isActionExecuting.compareAndSet(false, true)) return
         
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                proposedAction = null
-            )
-            
-            val result = engine.confirmPendingAction(action)
-            
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                lastActionResult = result,
-                currentWorkflow = null
-            )
-            
-            if (result.success) {
-                // Refresh data
-                analyze()
-                loadAutomationRules()
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    proposedAction = null,
+                    error = null
+                )
+            }
+            try {
+                val result = engine.confirmPendingAction(action)
+                
+                _uiState.update {
+                    it.copy(
+                        lastActionResult = result,
+                        currentWorkflow = null,
+                        error = if (!result.success) (result.error ?: result.message) else null
+                    )
+                }
+                
+                if (result.success) {
+                    analyze()
+                    loadAutomationRules()
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        lastActionResult = AiActionResult(
+                            success = false,
+                            message = "Action failed: ${e.message ?: "Unknown error"}",
+                            error = e.message ?: "Execution exception"
+                        ),
+                        error = e.message ?: "Action execution failed"
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false) }
+                isActionExecuting.set(false)
             }
         }
     }
 
     fun dismissAction() {
         _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
-        _uiState.value = _uiState.value.copy(
-            proposedAction = null
-        )
+        _uiState.update {
+            it.copy(
+                proposedAction = null
+            )
+        }
     }
 
     fun dismissResult() {
-        _uiState.value = _uiState.value.copy(
-            lastActionResult = null
-        )
+        _uiState.update {
+            it.copy(
+                lastActionResult = null
+            )
+        }
     }
 }

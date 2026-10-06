@@ -144,12 +144,14 @@ class MainActivity : ComponentActivity() {
                                         proactiveSignals = aiState.proactiveSignals,
                                         aiRecommendations = aiState.recommendations,
                                         proposedAction = aiState.homeProposedAction,
+                                        lastActionResult = aiState.lastActionResult,
                                         onApproveAction = { action ->
                                             aiViewModel.executeHomeAction(action) {
                                                 mainViewModel.refreshAll()
                                             }
                                         },
                                         onDismissAction = { aiViewModel.dismissHomeAction() },
+                                        onDismissResult = { aiViewModel.dismissResult() },
                                         onRecommendationAction = { rec ->
                                             rec.relatedGoalId?.let { id -> mainState.goals.find { it.id == id }?.let { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") } }
                                             rec.relatedTaskId?.let { mainViewModel.navigateTo("tasks") }

@@ -49,12 +49,7 @@ class NexoraProactiveEngine {
                 confidence = mapAdaptiveConfidence(profile.confidence),
                 evidence = "Planned: $plannedToday, Typical Capacity: $capacity",
                 fingerprint = "workload_overload_${plannedToday}",
-                suggestedAction = AiAction(
-                    type = AiActionType.RESCHEDULE_TASK,
-                    title = "Review Today's Plan",
-                    description = "Should we move some low-priority tasks to tomorrow?",
-                    reason = "Overloaded workload detected."
-                )
+                suggestedAction = null
             ))
         }
 
@@ -171,12 +166,7 @@ class NexoraProactiveEngine {
                 confidence = AiConfidence.MEDIUM,
                 evidence = "${context.carriedTasks} tasks carried forward today.",
                 fingerprint = "tasks_carry_over_high",
-                suggestedAction = AiAction(
-                    type = AiActionType.RESCHEDULE_TASK,
-                    title = "Review Carry-over",
-                    description = "Should we break these down or reschedule them?",
-                    reason = "High carry-over count detected."
-                )
+                suggestedAction = null
             ))
         }
 
@@ -315,12 +305,7 @@ class NexoraProactiveEngine {
                         confidence = prediction.confidence,
                         evidence = prediction.evidence,
                         fingerprint = "predictive_workload_risk_${System.currentTimeMillis() / 86400000}",
-                        suggestedAction = AiAction(
-                            type = AiActionType.RESCHEDULE_TASK,
-                            title = "Rebalance Workload",
-                            description = "Move low-priority tasks to tomorrow?",
-                            reason = "Workload exceeds daily capacity."
-                        )
+                        suggestedAction = null
                     ))
                 }
                 else -> {}

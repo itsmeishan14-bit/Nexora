@@ -36,6 +36,7 @@ import com.example.nexora.ui.theme.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 
@@ -308,24 +309,40 @@ class AiGoalDecomposerViewModel(
     fun createTasks(onComplete: () -> Unit) {
         val state = _uiState.value
         val steps = state.decomposition?.steps?.filter { it.order in state.selectedSteps } ?: return
+        if (steps.isEmpty()) return
+
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isCreatingTasks = true)
-            steps.forEach { step ->
-                engine.executeAction(com.example.nexora.ai.AiAction(
-                    type = com.example.nexora.ai.AiActionType.CREATE_TASK,
-                    title = step.title,
-                    description = step.description,
-                    parameters = mapOf(
-                        "title" to step.title,
-                        "goalTitle" to state.decomposition.goalTitle,
-                        "duration" to step.estimatedDuration,
-                        "priority" to step.priority.name
-                    ),
-                    requiresConfirmation = false
-                ))
+            _uiState.update { it.copy(isCreatingTasks = true, error = null) }
+            var successCount = 0
+            try {
+                steps.forEach { step ->
+                    val result = engine.executeAction(com.example.nexora.ai.AiAction(
+                        type = com.example.nexora.ai.AiActionType.CREATE_TASK,
+                        title = step.title,
+                        description = step.description,
+                        parameters = mapOf(
+                            "title" to step.title,
+                            "goalTitle" to state.decomposition.goalTitle,
+                            "duration" to step.estimatedDuration,
+                            "priority" to step.priority.name
+                        ),
+                        requiresConfirmation = false
+                    ))
+                    if (result.success) {
+                        successCount++
+                    }
+                }
+                if (successCount > 0) {
+                    onComplete()
+                    _uiState.update { it.copy(decomposition = null) }
+                } else {
+                    _uiState.update { it.copy(error = "Failed to create any tasks.") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message ?: "Failed to create tasks.") }
+            } finally {
+                _uiState.update { it.copy(isCreatingTasks = false) }
             }
-            onComplete()
-            _uiState.value = _uiState.value.copy(isCreatingTasks = false, decomposition = null)
         }
     }
 }

@@ -1418,6 +1418,7 @@ class NexoraAiBrain(
         val criticalSignal = filteredSignals.find { it.severity == AiPriority.CRITICAL } ?: filteredSignals.firstOrNull()
         
         return if (criticalSignal != null) {
+            val executableActions = listOfNotNull(criticalSignal.suggestedAction).filter { isExecutableAction(it) }
             AiResponse(
                 responseType = if (criticalSignal.severity >= AiPriority.MEDIUM) AiResponseType.WARNING else AiResponseType.INFORMATION,
                 title = criticalSignal.title,
@@ -1427,10 +1428,21 @@ class NexoraAiBrain(
                 proactiveSignals = filteredSignals,
                 relatedTaskId = criticalSignal.relatedTaskId,
                 relatedGoalId = criticalSignal.relatedGoalId,
-                proposedActions = listOfNotNull(criticalSignal.suggestedAction)
+                proposedActions = executableActions
             )
         } else {
             AiResponse(AiResponseType.NO_ACTION, "System Healthy", "Nexora hasn't detected any new immediate issues with your workflow.")
+        }
+    }
+
+    private fun isExecutableAction(action: AiAction): Boolean {
+        return when (action.type) {
+            AiActionType.DECOMPOSE_GOAL -> false
+            AiActionType.RESCHEDULE_TASK -> action.taskId != null && (action.parameters.containsKey("priority") || action.parameters.containsKey("duration"))
+            AiActionType.COMPLETE_TASK, AiActionType.DELETE_TASK -> action.taskId != null
+            AiActionType.UPDATE_TASK -> action.taskId != null
+            AiActionType.DELETE_GOAL, AiActionType.UPDATE_GOAL -> action.goalId != null
+            else -> true
         }
     }
 

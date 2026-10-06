@@ -382,43 +382,7 @@ private fun IntelligenceActionChip(
 }
 
 // ─────────────────────────────────────────────
-// ACTION RESULT BANNER
 // ─────────────────────────────────────────────
-
-@Composable
-private fun ActionResultBanner(result: AiActionResult, onDismiss: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .nexoraClickable { onDismiss() },
-        shape = NexoraShapes.medium,
-        color = if (result.success) Green95 else NexoraError.copy(alpha = 0.08f),
-        border = BorderStroke(
-            0.5.dp,
-            if (result.success) Green80 else NexoraError.copy(alpha = 0.3f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (result.success) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                contentDescription = null,
-                tint = if (result.success) Green60 else NexoraError,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = result.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Green10,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(Icons.Rounded.Close, null, tint = Green40, modifier = Modifier.size(14.dp))
-        }
-    }
-}
 
 // ─────────────────────────────────────────────
 // PREMIUM DAILY PLAN HEADER

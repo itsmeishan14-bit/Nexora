@@ -39,8 +39,10 @@ fun HomeScreen(
     proactiveSignals: List<AiProactiveSignal> = emptyList(),
     aiRecommendations: List<AiRecommendation> = emptyList(),
     proposedAction: AiAction? = null,
+    lastActionResult: AiActionResult? = null,
     onApproveAction: (AiAction) -> Unit = {},
     onDismissAction: () -> Unit = {},
+    onDismissResult: () -> Unit = {},
     onRecommendationAction: (AiRecommendation) -> Unit = {}
 ) {
     var revealed by remember { mutableStateOf(false) }
@@ -90,11 +92,14 @@ fun HomeScreen(
         }
 
         // 2. AI INTELLIGENCE — Only shown when there's real signal
-        if (proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
+        if (lastActionResult != null || proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
             item {
                 HomeEntranceAnim(revealed, 1) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SectionDivider(label = "NEXORA INTELLIGENCE")
+                        if (lastActionResult != null) {
+                            ActionResultBanner(result = lastActionResult, onDismiss = onDismissResult)
+                        }
                         if (proposedAction != null) {
                             ProposedActionCard(
                                 action = proposedAction,

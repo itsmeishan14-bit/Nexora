@@ -38,7 +38,15 @@ class AiProviderManager(
             provider.generateResponse(prompt, context)
         } catch (e: Exception) {
             NexoraLogger.w("AI", "Provider ${provider.providerName} failed: ${e.message}")
-            localProvider.generateResponse(prompt, context)
+            try {
+                localProvider.generateResponse(prompt, context)
+            } catch (fallbackError: Exception) {
+                NexoraLogger.e("AI", "Fallback local provider failed: ${fallbackError.message}", fallbackError)
+                AiModelResponse(
+                    text = "I encountered an error processing your request. Please try again.",
+                    modelName = "error-fallback"
+                )
+            }
         }
     }
 
@@ -53,7 +61,21 @@ class AiProviderManager(
             validateResponse(response, context)
         } catch (e: Exception) {
             NexoraLogger.w("AI", "Structured provider ${provider.providerName} failed: ${e.message}")
-            localProvider.generateStructuredResponse(prompt, context, conversationContext)
+            try {
+                val fallbackResponse = localProvider.generateStructuredResponse(prompt, context, conversationContext)
+                validateResponse(fallbackResponse, context)
+            } catch (fallbackError: Exception) {
+                NexoraLogger.e("AI", "Fallback local provider failed: ${fallbackError.message}", fallbackError)
+                AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.NO_ACTION,
+                        title = "Service Unavailable",
+                        reason = fallbackError.message ?: "AI provider failed to generate a response."
+                    ),
+                    textResponse = "I'm having trouble processing your request right now. Please try again.",
+                    modelName = "error-fallback"
+                )
+            }
         }
     }
 
@@ -80,12 +102,16 @@ class AiProviderManager(
         val validatedActions = response.actions.filter { action ->
             when (action.type) {
                 AiActionType.COMPLETE_TASK, AiActionType.DELETE_TASK, AiActionType.UPDATE_TASK, AiActionType.RESCHEDULE_TASK -> {
-                    val id = action.taskId ?: (action.parameters["taskId"] as? Number)?.toLong()
-                    id == null || context.tasks.any { it.id == id }
+                    val id = action.taskId 
+                        ?: (action.parameters["taskId"] as? Number)?.toLong()
+                        ?: (action.parameters["taskId"] as? String)?.toLongOrNull()
+                    id != null && context.tasks.any { it.id == id }
                 }
                 AiActionType.DELETE_GOAL, AiActionType.UPDATE_GOAL, AiActionType.DECOMPOSE_GOAL -> {
-                    val id = action.goalId ?: (action.parameters["goalId"] as? Number)?.toLong()
-                    id == null || context.goals.any { it.id == id }
+                    val id = action.goalId 
+                        ?: (action.parameters["goalId"] as? Number)?.toLong()
+                        ?: (action.parameters["goalId"] as? String)?.toLongOrNull()
+                    id != null && context.goals.any { it.id == id }
                 }
                 else -> true
             }
