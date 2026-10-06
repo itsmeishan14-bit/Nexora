@@ -27,7 +27,9 @@ data class NexoraAiUiState(
     val chatMessages: List<NexoraChatMessage> = emptyList(),
     val isChatLoading: Boolean = false,
     val proposedAction: AiAction? = null,
+    val proposedPlan: List<AiAction> = emptyList(),
     val lastActionResult: AiActionResult? = null,
+    val lastPlanResults: List<AiActionResult> = emptyList(),
     val conversationalState: AiConversationalState = AiConversationalState(),
     val lastBrainResponse: AiResponse? = null,
     val currentWorkflow: AgentWorkflow? = null,
@@ -432,54 +434,85 @@ class NexoraAiViewModel(
     }
 
     private fun processBrainResponse(response: AiResponse) {
-        // Clear proposed action if the new response is explicitly CANCEL
+        // Clear proposed action/plan if the new response is explicitly CANCEL
         val isCancellation = response.decision?.type == AiDecisionType.CANCEL
         if (isCancellation) {
-            _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
+            val planToCancel = _uiState.value.proposedPlan.ifEmpty { listOfNotNull(_uiState.value.proposedAction) }
+            planToCancel.forEach { engine.cancelProposal(it.id) }
             _uiState.update {
                 it.copy(
                     conversationalState = AiConversationalState(),
-                    proposedAction = null
+                    proposedAction = null,
+                    proposedPlan = emptyList()
                 )
             }
             return
         }
 
-        // Check if this response is an execution of an already-confirmed action
-        val isConfirmedExecution = response.decision?.reason == "User explicitly confirmed pending action." ||
+        // Check if this response is an execution of an already-confirmed action/plan
+        val isConfirmedExecution = response.decision?.reason?.contains("confirmed pending") == true ||
             (response.proposedActions.isNotEmpty() &&
-             response.proposedActions.first().let { !it.requiresConfirmation && it.parameters["userConfirmed"] == true })
+             response.proposedActions.all { !it.requiresConfirmation && it.parameters["userConfirmed"] == true })
 
         if (isConfirmedExecution && response.proposedActions.isNotEmpty()) {
-            val action = response.proposedActions.first()
+            val actions = response.proposedActions
             _uiState.update {
                 it.copy(
                     conversationalState = AiConversationalState(),
-                    proposedAction = null
+                    proposedAction = null,
+                    proposedPlan = emptyList()
                 )
             }
             if (isActionExecuting.compareAndSet(false, true)) {
                 scope.launch {
                     try {
-                        val result = engine.executeAction(action)
+                        val results = engine.executePlan(actions)
+                        val successCount = results.count { it.success }
+                        val failureCount = results.count { !it.success }
+                        val firstFailed = results.find { !it.success }
+                        val allSuccess = failureCount == 0 && results.isNotEmpty()
+
+                        val summaryResult = if (allSuccess) {
+                            AiActionResult(
+                                success = true,
+                                message = if (results.size > 1) "Successfully executed all ${results.size} actions." else results.first().message,
+                                affectedTaskId = results.firstNotNullOfOrNull { it.affectedTaskId },
+                                affectedGoalId = results.firstNotNullOfOrNull { it.affectedGoalId }
+                            )
+                        } else if (successCount > 0) {
+                            AiActionResult(
+                                success = false,
+                                message = "Partially executed: $successCount of ${results.size} actions succeeded, $failureCount failed.",
+                                error = firstFailed?.error ?: firstFailed?.message,
+                                affectedTaskId = results.firstNotNullOfOrNull { it.affectedTaskId },
+                                affectedGoalId = results.firstNotNullOfOrNull { it.affectedGoalId }
+                            )
+                        } else {
+                            firstFailed ?: AiActionResult(false, "Plan execution failed", error = "Execution failed")
+                        }
+
                         _uiState.update {
                             it.copy(
-                                lastActionResult = result,
-                                error = if (!result.success) (result.error ?: result.message) else null
+                                lastActionResult = summaryResult,
+                                lastPlanResults = results,
+                                error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                             )
                         }
-                        if (result.success) {
+                        if (successCount > 0) {
                             analyze()
                             loadAutomationRules()
+                            loadInitialHomeState()
                         }
                     } catch (e: Exception) {
+                        val errorResult = AiActionResult(
+                            success = false,
+                            message = "Action failed: ${e.message ?: "Unknown error"}",
+                            error = e.message ?: "Execution exception"
+                        )
                         _uiState.update {
                             it.copy(
-                                lastActionResult = AiActionResult(
-                                    success = false,
-                                    message = "Action failed: ${e.message ?: "Unknown error"}",
-                                    error = e.message ?: "Execution exception"
-                                ),
+                                lastActionResult = errorResult,
+                                lastPlanResults = listOf(errorResult),
                                 error = e.message ?: "Action execution failed"
                             )
                         }
@@ -499,26 +532,30 @@ class NexoraAiViewModel(
                 _uiState.update {
                     it.copy(
                         conversationalState = AiConversationalState(),
-                        proposedAction = it.proposedAction
+                        proposedAction = it.proposedAction,
+                        proposedPlan = it.proposedPlan
                     )
                 }
             }
             else -> {
                 if (response.proposedActions.isNotEmpty()) {
-                    val action = response.proposedActions.first()
-                    proposeAction(action)
+                    proposePlan(response.proposedActions)
                     
                     // Also store in conversational state for confirmation flow
                     _uiState.update {
                         it.copy(
-                            conversationalState = it.conversationalState.copy(pendingAction = action)
+                            conversationalState = it.conversationalState.copy(
+                                pendingAction = response.proposedActions.first(),
+                                pendingPlan = response.proposedActions
+                            )
                         )
                     }
                 } else {
                     _uiState.update {
                         it.copy(
                             conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
-                            proposedAction = it.proposedAction
+                            proposedAction = it.proposedAction,
+                            proposedPlan = it.proposedPlan
                         )
                     }
                 }
@@ -579,29 +616,38 @@ class NexoraAiViewModel(
         }
     }
 
-    fun proposeAction(action: AiAction) {
-        val current = _uiState.value.proposedAction
-        if (current != null && current.id != action.id) {
-            engine.cancelProposal(current.id)
+    fun proposePlan(actions: List<AiAction>) {
+        val currentPlan = _uiState.value.proposedPlan.ifEmpty { listOfNotNull(_uiState.value.proposedAction) }
+        val newIds = actions.map { it.id }.toSet()
+        currentPlan.filter { it.id !in newIds }.forEach {
+            engine.cancelProposal(it.id)
         }
-        val registered = if (action.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(action)) {
-            if (engine.isProposalPending(action.id)) {
-                action
+        val registeredPlan = actions.map { action ->
+            if (action.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(action)) {
+                if (engine.isProposalPending(action.id)) {
+                    action
+                } else {
+                    engine.proposeAction(action)
+                }
             } else {
-                engine.proposeAction(action)
+                action
             }
-        } else {
-            action
         }
         _uiState.update {
             it.copy(
-                proposedAction = registered
+                proposedAction = registeredPlan.firstOrNull(),
+                proposedPlan = registeredPlan
             )
         }
     }
 
+    fun proposeAction(action: AiAction) {
+        proposePlan(listOf(action))
+    }
+
     fun confirmAction() {
-        val action = _uiState.value.proposedAction ?: return
+        val plan = _uiState.value.proposedPlan.ifEmpty { listOfNotNull(_uiState.value.proposedAction) }
+        if (plan.isEmpty()) return
         if (!isActionExecuting.compareAndSet(false, true)) return
         
         scope.launch {
@@ -609,33 +655,61 @@ class NexoraAiViewModel(
                 it.copy(
                     isLoading = true,
                     proposedAction = null,
+                    proposedPlan = emptyList(),
                     error = null
                 )
             }
             try {
-                val result = engine.confirmPendingAction(action)
-                
+                val results = engine.confirmPendingPlan(plan)
+                val successCount = results.count { it.success }
+                val failureCount = results.count { !it.success }
+                val firstFailed = results.find { !it.success }
+                val allSuccess = failureCount == 0 && results.isNotEmpty()
+
+                val summaryResult = if (allSuccess) {
+                    AiActionResult(
+                        success = true,
+                        message = if (results.size > 1) "Successfully executed all ${results.size} actions." else results.first().message,
+                        affectedTaskId = results.firstNotNullOfOrNull { it.affectedTaskId },
+                        affectedGoalId = results.firstNotNullOfOrNull { it.affectedGoalId }
+                    )
+                } else if (successCount > 0) {
+                    AiActionResult(
+                        success = false,
+                        message = "Partially executed: $successCount of ${results.size} actions succeeded, $failureCount failed.",
+                        error = firstFailed?.error ?: firstFailed?.message,
+                        affectedTaskId = results.firstNotNullOfOrNull { it.affectedTaskId },
+                        affectedGoalId = results.firstNotNullOfOrNull { it.affectedGoalId }
+                    )
+                } else {
+                    firstFailed ?: AiActionResult(false, "Plan execution failed", error = "Execution failed")
+                }
+
                 _uiState.update {
                     it.copy(
-                        lastActionResult = result,
+                        lastActionResult = summaryResult,
+                        lastPlanResults = results,
                         currentWorkflow = null,
-                        error = if (!result.success) (result.error ?: result.message) else null
+                        error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                     )
                 }
                 
-                if (result.success) {
+                if (successCount > 0) {
                     analyze()
                     loadAutomationRules()
+                    loadInitialHomeState()
                 }
             } catch (e: Exception) {
+                val errorResult = AiActionResult(
+                    success = false,
+                    message = "Plan failed: ${e.message ?: "Unknown error"}",
+                    error = e.message ?: "Execution exception"
+                )
                 _uiState.update {
                     it.copy(
-                        lastActionResult = AiActionResult(
-                            success = false,
-                            message = "Action failed: ${e.message ?: "Unknown error"}",
-                            error = e.message ?: "Execution exception"
-                        ),
-                        error = e.message ?: "Action execution failed"
+                        lastActionResult = errorResult,
+                        lastPlanResults = listOf(errorResult),
+                        error = e.message ?: "Plan execution failed"
                     )
                 }
             } finally {
@@ -646,10 +720,12 @@ class NexoraAiViewModel(
     }
 
     fun dismissAction() {
-        _uiState.value.proposedAction?.let { engine.cancelProposal(it.id) }
+        val plan = _uiState.value.proposedPlan.ifEmpty { listOfNotNull(_uiState.value.proposedAction) }
+        plan.forEach { engine.cancelProposal(it.id) }
         _uiState.update {
             it.copy(
-                proposedAction = null
+                proposedAction = null,
+                proposedPlan = emptyList()
             )
         }
     }

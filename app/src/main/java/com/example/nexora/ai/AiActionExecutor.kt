@@ -413,13 +413,19 @@ open class AiActionExecutor(
         // 1. Sanity check for duplicates
         val tasks = repository.observeTasksOnce()
         if (tasks.any { it.title.lowercase().trim() == title.lowercase().trim() && !it.completed }) {
-            return AiActionResult(false, "A similar active task already exists: \"$title\"")
+            return AiActionResult(false, "A similar active task already exists: \"$title\"", error = "Duplicate task")
         }
 
         val category = action.parameters["category"] as? String ?: "Personal"
         val duration = action.parameters["duration"] as? String ?: "30 minutes"
         val priorityStr = action.parameters["priority"] as? String ?: "MEDIUM"
-        val goalTitle = action.parameters["goalTitle"] as? String
+        val goalIdParam = (action.parameters["goalId"] as? Number)?.toLong() ?: action.goalId
+        val goalTitleParam = action.parameters["goalTitle"] as? String
+        val resolvedGoalTitle = if (goalIdParam != null && goalIdParam > 0) {
+            repository.getGoalById(goalIdParam)?.title ?: goalTitleParam
+        } else {
+            goalTitleParam
+        }
 
         val priority = parsePriority(priorityStr)
             ?: return AiActionResult(false, "Invalid priority \"$priorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.", error = "Invalid priority")
@@ -433,7 +439,7 @@ open class AiActionExecutor(
             category = category,
             duration = duration,
             priority = priority,
-            goalTitle = goalTitle,
+            goalTitle = resolvedGoalTitle,
             completed = false
         )
 
@@ -585,11 +591,22 @@ open class AiActionExecutor(
         if (title.isBlank()) {
             return AiActionResult(false, "Goal title cannot be empty.", error = "Empty title")
         }
+        val cleanTitle = title.trim()
         val category = action.parameters["category"] as? String ?: "Personal"
         val targetDate = action.parameters["targetDate"] as? String ?: ""
 
+        val existingGoals = repository.observeGoalsOnce()
+        val existing = existingGoals.find { it.title.equals(cleanTitle, ignoreCase = true) }
+        if (existing != null) {
+            return AiActionResult(
+                success = true,
+                message = "Goal already exists: ${existing.title}",
+                affectedGoalId = existing.id
+            )
+        }
+
         val goal = NexoraGoal(
-            title = title,
+            title = cleanTitle,
             category = category,
             targetDate = targetDate,
             progress = 0f
@@ -597,7 +614,7 @@ open class AiActionExecutor(
 
         val created = repository.addGoal(goal)
         if (created.id == 0L) {
-            return AiActionResult(false, "Failed to persist goal \"$title\" in database.", error = "Database insert failed")
+            return AiActionResult(false, "Failed to persist goal \"$cleanTitle\" in database.", error = "Database insert failed")
         }
         return AiActionResult(
             success = true,

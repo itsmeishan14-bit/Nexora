@@ -45,6 +45,21 @@ class NexoraAiEngine(
                 action
             }
         }
+        val contextPlan = response.conversationContext?.pendingPlan ?: emptyList()
+        val registeredPendingPlan = if (contextPlan.isNotEmpty()) {
+            contextPlan.map { planAction ->
+                registeredActions.find { it.id == planAction.id }
+                    ?: if (!com.example.nexora.util.NexoraSecurity.isAuthorized(planAction) &&
+                        !com.example.nexora.util.NexoraSecurity.isProposalPending(planAction.id) &&
+                        (planAction.requiresConfirmation || com.example.nexora.util.NexoraSecurity.isDestructiveAction(planAction))) {
+                        com.example.nexora.util.NexoraSecurity.registerProposal(planAction)
+                    } else {
+                        planAction
+                    }
+            }
+        } else {
+            emptyList()
+        }
         val registeredPending = response.conversationContext?.pendingAction?.let { pending ->
             registeredActions.find { it.id == pending.id }
                 ?: if (!com.example.nexora.util.NexoraSecurity.isAuthorized(pending) &&
@@ -55,11 +70,10 @@ class NexoraAiEngine(
                     pending
                 }
         }
-        val updatedContext = if (registeredPending != null) {
-            response.conversationContext?.copy(pendingAction = registeredPending)
-        } else {
-            response.conversationContext
-        }
+        val updatedContext = response.conversationContext?.copy(
+            pendingAction = registeredPending,
+            pendingPlan = if (registeredPendingPlan.isNotEmpty()) registeredPendingPlan else listOfNotNull(registeredPending)
+        )
         return response.copy(
             proposedActions = registeredActions,
             conversationContext = updatedContext
@@ -101,26 +115,113 @@ class NexoraAiEngine(
     }
 
     /**
+     * Executes a list of actions in a plan sequentially, respecting dependencies.
+     * If an earlier prerequisite fails (e.g., CREATE_GOAL), subsequent dependent actions
+     * (e.g., CREATE_TASK referencing that goal) are skipped with an explanatory error.
+     */
+    suspend fun executePlan(actions: List<AiAction>): List<AiActionResult> {
+        if (actions.isEmpty()) return emptyList()
+        val results = mutableListOf<AiActionResult>()
+        val failedGoalTitles = mutableSetOf<String>()
+        val createdGoalTitles = mutableSetOf<String>()
+
+        for (action in actions) {
+            val goalTitle = action.parameters["goalTitle"] as? String
+
+            // Check dependency: if this action depends on a goal that failed to be created
+            if (goalTitle != null && failedGoalTitles.contains(goalTitle.trim().lowercase())) {
+                results.add(
+                    AiActionResult(
+                        success = false,
+                        message = "Skipped dependent action: parent goal \"$goalTitle\" creation failed.",
+                        error = "Parent goal dependency failed"
+                    )
+                )
+                continue
+            }
+
+            // If action is CREATE_TASK referencing a goal, verify parent goal exists or was created in this plan
+            if (action.type == AiActionType.CREATE_TASK && goalTitle != null && goalTitle.isNotBlank()) {
+                val existingGoals = repository.observeGoalsOnce()
+                val goalExists = existingGoals.any { it.title.equals(goalTitle.trim(), ignoreCase = true) } ||
+                    createdGoalTitles.contains(goalTitle.trim().lowercase())
+                if (!goalExists) {
+                    results.add(
+                        AiActionResult(
+                            success = false,
+                            message = "Skipped dependent task: parent goal \"$goalTitle\" does not exist.",
+                            error = "Parent goal dependency failed"
+                        )
+                    )
+                    continue
+                }
+            }
+
+            val result = executeAction(action)
+            results.add(result)
+
+            if (action.type == AiActionType.CREATE_GOAL) {
+                val title = (action.parameters["title"] as? String ?: action.title).trim().lowercase()
+                if (result.success) {
+                    createdGoalTitles.add(title)
+                } else {
+                    failedGoalTitles.add(title)
+                }
+            }
+        }
+
+        brain.invalidateContext()
+        return results
+    }
+
+    /**
+     * Confirms and executes an entire pending plan of action proposals that the user approved.
+     * Atomically validates that each action proposal in the plan is pending and eligible,
+     * consuming their confirmation tokens before execution.
+     */
+    suspend fun confirmPendingPlan(actions: List<AiAction>): List<AiActionResult> {
+        if (actions.isEmpty()) return emptyList()
+
+        // 1. Authorize all actions in the plan atomically
+        val authorizedPlan = mutableListOf<AiAction>()
+        for (action in actions) {
+            val authorized = if (com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
+                action
+            } else {
+                when (val consumeResult = com.example.nexora.util.NexoraSecurity.consumeAndAuthorize(action)) {
+                    is com.example.nexora.util.NexoraSecurity.ConsumeResult.Success -> consumeResult.authorizedAction
+                    is com.example.nexora.util.NexoraSecurity.ConsumeResult.Rejected -> {
+                        // Return rejection immediately for this action, and skip remaining
+                        val rejectedResult = AiActionResult(
+                            success = false,
+                            message = consumeResult.reason,
+                            error = consumeResult.error
+                        )
+                        val skippedResults = actions.drop(authorizedPlan.size + 1).map {
+                            AiActionResult(
+                                success = false,
+                                message = "Skipped action due to authorization failure on prior plan action.",
+                                error = "Plan authorization aborted"
+                            )
+                        }
+                        return listOf(rejectedResult) + skippedResults
+                    }
+                }
+            }
+            authorizedPlan.add(authorized)
+        }
+
+        // 2. Execute the authorized plan
+        return executePlan(authorizedPlan)
+    }
+
+    /**
      * Confirms and executes a pending action proposal that the user has explicitly approved.
      * Validates that the proposal is still pending, unchanged, and eligible for execution.
      * Consumes the pending confirmation exactly once atomically before execution.
      */
     suspend fun confirmPendingAction(action: AiAction): AiActionResult {
-        val authorizedAction = if (com.example.nexora.util.NexoraSecurity.isAuthorized(action)) {
-            action
-        } else {
-            when (val consumeResult = com.example.nexora.util.NexoraSecurity.consumeAndAuthorize(action)) {
-                is com.example.nexora.util.NexoraSecurity.ConsumeResult.Success -> consumeResult.authorizedAction
-                is com.example.nexora.util.NexoraSecurity.ConsumeResult.Rejected -> {
-                    return AiActionResult(
-                        success = false,
-                        message = consumeResult.reason,
-                        error = consumeResult.error
-                    )
-                }
-            }
-        }
-        return executeAction(authorizedAction)
+        return confirmPendingPlan(listOf(action)).firstOrNull() ?: AiActionResult(false, "No action executed")
     }
 
     fun invalidateContext() {

@@ -279,7 +279,10 @@ data class AiGoalDecomposerUiState(
     val selectedSteps: Set<Int> = emptySet(),
     val error: String? = null,
     val successMessage: String? = null,
-    val isCreatingTasks: Boolean = false
+    val isCreatingTasks: Boolean = false,
+    val createdCount: Int = 0,
+    val skippedDuplicatesCount: Int = 0,
+    val failedCount: Int = 0
 )
 
 class AiGoalDecomposerViewModel(
@@ -320,17 +323,23 @@ class AiGoalDecomposerViewModel(
         if (steps.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isCreatingTasks = true, error = null) }
+            _uiState.update { it.copy(isCreatingTasks = true, error = null, successMessage = null) }
             var successCount = 0
-            var alreadyExistsCount = 0
+            var duplicateCount = 0
+            var failureCount = 0
+            var firstError: String? = null
             try {
-                // Ensure parent goal entity is persisted in Room if not already present
+                // Ensure parent goal entity is persisted in Room before dependent tasks are created
                 val goalTitle = state.decomposition.goalTitle.trim()
+                var parentGoalId: Long? = null
+
                 if (goalTitle.isNotBlank()) {
                     val existingGoals = engine.getContext().goals
-                    val goalExists = existingGoals.any { it.title.equals(goalTitle, ignoreCase = true) }
-                    if (!goalExists) {
-                        engine.executeAction(com.example.nexora.ai.AiAction(
+                    val existingGoal = existingGoals.find { it.title.equals(goalTitle, ignoreCase = true) }
+                    if (existingGoal != null) {
+                        parentGoalId = existingGoal.id
+                    } else {
+                        val goalResult = engine.executeAction(com.example.nexora.ai.AiAction(
                             type = com.example.nexora.ai.AiActionType.CREATE_GOAL,
                             title = goalTitle,
                             description = state.decomposition.summary.ifBlank { "Goal created from decomposition" },
@@ -340,33 +349,84 @@ class AiGoalDecomposerViewModel(
                             ),
                             requiresConfirmation = false
                         ))
+                        if (!goalResult.success) {
+                            _uiState.update {
+                                it.copy(
+                                    error = "Failed to create parent goal \"$goalTitle\": ${goalResult.error ?: goalResult.message}",
+                                    isCreatingTasks = false
+                                )
+                            }
+                            return@launch
+                        }
+                        parentGoalId = goalResult.affectedGoalId
                     }
                 }
 
+                val failedStepOrders = mutableSetOf<Int>()
                 steps.forEach { step ->
-                    val result = engine.executeAction(com.example.nexora.ai.AiAction(
+                    val taskAction = com.example.nexora.ai.AiAction(
                         type = com.example.nexora.ai.AiActionType.CREATE_TASK,
                         title = step.title,
                         description = step.description,
-                        parameters = mapOf(
-                            "title" to step.title,
-                            "goalTitle" to goalTitle,
-                            "duration" to step.estimatedDuration,
-                            "priority" to step.priority.name
-                        ),
+                        parameters = buildMap {
+                            put("title", step.title)
+                            put("goalTitle", goalTitle)
+                            put("duration", step.estimatedDuration)
+                            put("priority", step.priority.name)
+                            if (parentGoalId != null && parentGoalId > 0L) {
+                                put("goalId", parentGoalId)
+                            }
+                        },
                         requiresConfirmation = false
-                    ))
+                    )
+                    val result = engine.executeAction(taskAction)
                     if (result.success) {
                         successCount++
-                    } else if (result.message.contains("already exists", ignoreCase = true) || result.error?.contains("Duplicate", ignoreCase = true) == true) {
-                        alreadyExistsCount++
+                    } else if (result.error == "Duplicate task" || result.message.contains("already exists", ignoreCase = true)) {
+                        duplicateCount++
+                    } else {
+                        failureCount++
+                        failedStepOrders.add(step.order)
+                        if (firstError == null) {
+                            firstError = result.error ?: result.message
+                        }
                     }
                 }
-                if (successCount > 0 || (alreadyExistsCount > 0 && (successCount + alreadyExistsCount) == steps.size)) {
+
+                if (failureCount == 0 && (successCount > 0 || duplicateCount > 0)) {
+                    val msg = if (duplicateCount > 0) {
+                        "Created $successCount task(s), skipped $duplicateCount existing duplicate(s)."
+                    } else {
+                        "Successfully created all $successCount tasks for \"$goalTitle\"."
+                    }
+                    _uiState.update {
+                        it.copy(
+                            decomposition = null,
+                            successMessage = msg,
+                            createdCount = successCount,
+                            skippedDuplicatesCount = duplicateCount,
+                            failedCount = 0
+                        )
+                    }
                     onComplete()
-                    _uiState.update { it.copy(decomposition = null) }
+                } else if (successCount > 0 || duplicateCount > 0) {
+                    // Partial success: keep only the failed steps selected so the user can easily retry
+                    _uiState.update {
+                        it.copy(
+                            selectedSteps = failedStepOrders,
+                            error = "Partially saved: $successCount created, $duplicateCount skipped, $failureCount failed: $firstError",
+                            createdCount = successCount,
+                            skippedDuplicatesCount = duplicateCount,
+                            failedCount = failureCount
+                        )
+                    }
                 } else {
-                    _uiState.update { it.copy(error = "Failed to create any tasks.") }
+                    _uiState.update {
+                        it.copy(
+                            error = firstError ?: "Failed to create tasks.",
+                            failedCount = failureCount
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message ?: "Failed to create tasks.") }

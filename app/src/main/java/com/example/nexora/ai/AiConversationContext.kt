@@ -37,6 +37,7 @@ data class AiConversationContext(
     val lastEntityTitle: String? = null,
     val activeClarification: AiClarification? = null,
     val pendingAction: AiAction? = null,
+    val pendingPlan: List<AiAction> = emptyList(),
     val candidateIds: List<Long> = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 ) {

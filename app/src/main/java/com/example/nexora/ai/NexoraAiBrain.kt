@@ -94,6 +94,21 @@ class NexoraAiBrain(
                 action
             }
         }
+        val contextPlan = response.conversationContext?.pendingPlan ?: emptyList()
+        val registeredPendingPlan = if (contextPlan.isNotEmpty()) {
+            contextPlan.map { planAction ->
+                registeredActions.find { it.id == planAction.id }
+                    ?: if (!NexoraSecurity.isAuthorized(planAction) &&
+                        !NexoraSecurity.isProposalPending(planAction.id) &&
+                        (planAction.requiresConfirmation || NexoraSecurity.isDestructiveAction(planAction))) {
+                        NexoraSecurity.registerProposal(planAction)
+                    } else {
+                        planAction
+                    }
+            }
+        } else {
+            emptyList()
+        }
         val registeredPending = response.conversationContext?.pendingAction?.let { pending ->
             registeredActions.find { it.id == pending.id }
                 ?: if (!NexoraSecurity.isAuthorized(pending) &&
@@ -104,11 +119,10 @@ class NexoraAiBrain(
                     pending
                 }
         }
-        val updatedContext = if (registeredPending != null) {
-            response.conversationContext?.copy(pendingAction = registeredPending)
-        } else {
-            response.conversationContext
-        }
+        val updatedContext = response.conversationContext?.copy(
+            pendingAction = registeredPending,
+            pendingPlan = if (registeredPendingPlan.isNotEmpty()) registeredPendingPlan else listOfNotNull(registeredPending)
+        )
         val finalResponse = response.copy(
             proposedActions = registeredActions,
             conversationContext = updatedContext
@@ -215,7 +229,8 @@ class NexoraAiBrain(
 
         // 2. Cancellation
         if (langResult.isCancellation || langResult.intent == AiDecisionType.CANCEL) {
-            convContext.pendingAction?.let {
+            val planToCancel = if (convContext.pendingPlan.isNotEmpty()) convContext.pendingPlan else listOfNotNull(convContext.pendingAction)
+            planToCancel.forEach {
                 NexoraSecurity.cancelProposal(it.id)
                 NexoraSecurity.revokeAuthorization(it.id)
             }
@@ -231,54 +246,70 @@ class NexoraAiBrain(
         }
 
         // 3. Confirmation Flow
-        if (langResult.isConfirmation && convContext.pendingAction != null) {
-            val action = convContext.pendingAction
-            val authorizedAction = if (action.requiresConfirmation || NexoraSecurity.isDestructiveAction(action)) {
-                val consumeResult = NexoraSecurity.consumeAndAuthorize(action)
-                if (consumeResult !is NexoraSecurity.ConsumeResult.Success) {
-                    val reason = (consumeResult as? NexoraSecurity.ConsumeResult.Rejected)?.reason ?: "Pending action confirmation failed or expired."
-                    return AiResponse(
-                        responseType = AiResponseType.NO_ACTION,
-                        title = "Confirmation Failed",
-                        message = reason,
-                        confidence = AiConfidence.HIGH,
-                        decision = AiDecision(
-                            type = AiDecisionType.CANCEL,
-                            title = "Confirmation Failed",
-                            reason = reason
-                        ),
-                        conversationContext = convContext.copy(pendingAction = null)
-                    )
+        if (langResult.isConfirmation && (convContext.pendingPlan.isNotEmpty() || convContext.pendingAction != null)) {
+            val planToConfirm = if (convContext.pendingPlan.isNotEmpty()) convContext.pendingPlan else listOfNotNull(convContext.pendingAction)
+            val authorizedPlan = mutableListOf<AiAction>()
+            var rejectionReason: String? = null
+            for (action in planToConfirm) {
+                if (action.requiresConfirmation || NexoraSecurity.isDestructiveAction(action)) {
+                    val consumeResult = NexoraSecurity.consumeAndAuthorize(action)
+                    if (consumeResult !is NexoraSecurity.ConsumeResult.Success) {
+                        rejectionReason = (consumeResult as? NexoraSecurity.ConsumeResult.Rejected)?.reason 
+                            ?: "Pending action confirmation failed or expired."
+                        break
+                    }
+                    authorizedPlan.add(consumeResult.authorizedAction)
+                } else {
+                    authorizedPlan.add(action)
                 }
-                consumeResult.authorizedAction
-            } else {
-                action
+            }
+
+            if (rejectionReason != null) {
+                authorizedPlan.forEach { NexoraSecurity.revokeAuthorization(it.id) }
+                return AiResponse(
+                    responseType = AiResponseType.NO_ACTION,
+                    title = "Confirmation Failed",
+                    message = rejectionReason,
+                    confidence = AiConfidence.HIGH,
+                    decision = AiDecision(
+                        type = AiDecisionType.CANCEL,
+                        title = "Confirmation Failed",
+                        reason = rejectionReason
+                    ),
+                    conversationContext = convContext.copy(pendingAction = null, pendingPlan = emptyList())
+                )
             }
             
             invalidateContext()
 
-            val confirmedDecisionType = mapActionTypeToDecision(action.type)
+            val primaryAction = authorizedPlan.firstOrNull() ?: convContext.pendingAction!!
+            val confirmedDecisionType = mapActionTypeToDecision(primaryAction.type)
 
             return AiResponse(
                 responseType = AiResponseType.ACTION_PROPOSAL,
-                title = "Executing Confirmed Action",
-                message = "Proceeding with ${action.title.lowercase()} as confirmed.",
+                title = if (authorizedPlan.size > 1) "Executing Confirmed Plan" else "Executing Confirmed Action",
+                message = if (authorizedPlan.size > 1) {
+                    "Proceeding with ${authorizedPlan.size} confirmed actions."
+                } else {
+                    "Proceeding with ${primaryAction.title.lowercase()} as confirmed."
+                },
                 confidence = AiConfidence.HIGH,
-                proposedActions = listOf(authorizedAction),
-                relatedTaskId = action.taskId,
-                relatedGoalId = action.goalId,
+                proposedActions = authorizedPlan,
+                relatedTaskId = primaryAction.taskId,
+                relatedGoalId = primaryAction.goalId,
                 decision = AiDecision(
                     type = confirmedDecisionType,
-                    title = "Executing Confirmed Action",
-                    reason = "User explicitly confirmed pending action.",
-                    taskId = action.taskId,
-                    goalId = action.goalId
+                    title = "Executing Confirmed Actions",
+                    reason = "User explicitly confirmed pending plan.",
+                    taskId = primaryAction.taskId,
+                    goalId = primaryAction.goalId
                 ),
                 conversationContext = convContext.copy(
                     lastIntent = confirmedDecisionType,
-                    lastTaskId = action.taskId ?: convContext.lastTaskId,
-                    lastGoalId = action.goalId ?: convContext.lastGoalId,
-                    pendingAction = null
+                    lastTaskId = primaryAction.taskId ?: convContext.lastTaskId,
+                    lastGoalId = primaryAction.goalId ?: convContext.lastGoalId,
+                    pendingAction = null,
+                    pendingPlan = emptyList()
                 )
             )
         }
@@ -1525,8 +1556,8 @@ class NexoraAiBrain(
                     val params = action.parameters.toMutableMap()
                     params["goalTitle"] = targetTitle
                     params["category"] = category
-                    action.copy(parameters = params)
-                } else action
+                    action.copy(parameters = params, requiresConfirmation = true)
+                } else action.copy(requiresConfirmation = true)
             }
         } else {
             val result = aiService.decomposeGoal(targetTitle, "", category)
@@ -1541,7 +1572,8 @@ class NexoraAiBrain(
                         "priority" to step.priority.name,
                         "goalTitle" to targetTitle,
                         "category" to category
-                    )
+                    ),
+                    requiresConfirmation = true
                 )
             }
             if (goal == null) {
@@ -1552,7 +1584,8 @@ class NexoraAiBrain(
                     parameters = mapOf(
                         "title" to targetTitle,
                         "category" to category
-                    )
+                    ),
+                    requiresConfirmation = true
                 )
                 listOf(createGoalAction) + taskActions
             } else {
@@ -1577,11 +1610,13 @@ class NexoraAiBrain(
             conversationContext = request.conversationContext?.copy(
                 lastIntent = AiDecisionType.DECOMPOSE_GOAL,
                 lastGoalId = goal?.id,
-                pendingAction = primaryAction
+                pendingAction = primaryAction,
+                pendingPlan = actions
             ) ?: AiConversationContext(
                 lastIntent = AiDecisionType.DECOMPOSE_GOAL,
                 lastGoalId = goal?.id,
-                pendingAction = primaryAction
+                pendingAction = primaryAction,
+                pendingPlan = actions
             )
         )
     }

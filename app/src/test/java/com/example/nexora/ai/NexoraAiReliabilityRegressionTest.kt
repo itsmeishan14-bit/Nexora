@@ -400,53 +400,52 @@ class NexoraAiReliabilityRegressionTest {
 
     @Test
     fun `11 - end to end goal planning workflow - understand request, create plan, approve, save tasks without duplicates, refresh context`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
         // Step 1: User describes a goal
-        val chatRequest = AiRequest(
-            type = AiRequestType.CHAT,
-            userMessage = "Plan goal Launch MVP"
-        )
-        val response = engine.processRequest(chatRequest)
+        viewModel.sendMessage("Plan goal Launch MVP")
+        delay(300)
 
         // Step 2: Nexora understands request and creates a structured plan
-        assertEquals("Should propose actions for goal planning", AiResponseType.ACTION_PROPOSAL, response.responseType)
-        assertTrue("Proposed actions must not be empty", response.proposedActions.isNotEmpty())
-        assertEquals("Decision type must be DECOMPOSE_GOAL", AiDecisionType.DECOMPOSE_GOAL, response.decision?.type)
+        val stateAfterPlan = viewModel.uiState.value
+        assertTrue("Proposed plan must contain multiple actions", stateAfterPlan.proposedPlan.size >= 2)
+        val goalAction = stateAfterPlan.proposedPlan.find { it.type == AiActionType.CREATE_GOAL }
+        assertNotNull("Plan must propose creating the goal", goalAction)
+        val taskActions = stateAfterPlan.proposedPlan.filter { it.type == AiActionType.CREATE_TASK }
+        assertTrue("Plan must propose tasks", taskActions.isNotEmpty())
 
-        // Step 3: User reviews plan and approves: execute actions
-        var tasksCreated = 0
-        for (action in response.proposedActions) {
-            val authorized = if (action.requiresConfirmation) {
-                when (val cr = NexoraSecurity.consumeAndAuthorize(action)) {
-                    is NexoraSecurity.ConsumeResult.Success -> cr.authorizedAction
-                    else -> action
-                }
-            } else {
-                action
-            }
-            val result = engine.executeAction(authorized)
-            if (result.success && action.type == AiActionType.CREATE_TASK) {
-                tasksCreated++
-            }
-        }
-        assertTrue("Should have created multiple tasks for the plan", tasksCreated > 0)
+        // Step 3: User reviews plan and approves via production ViewModel path
+        viewModel.confirmAction()
+        delay(400)
 
-        // Step 4: Verify tasks and goal are saved to database with real IDs
-        val tasks = repository.observeTasksOnce()
-        val createdTasks = tasks.filter { it.goalTitle.equals("Launch MVP", ignoreCase = true) }
-        assertEquals("Created tasks count must match", tasksCreated, createdTasks.size)
-        assertTrue("Task IDs must be valid positive IDs", createdTasks.all { it.id > 0L })
+        // Step 4: Verify all intended actions executed and reported success
+        val stateAfterConfirm = viewModel.uiState.value
+        assertNotNull("lastActionResult must be populated", stateAfterConfirm.lastActionResult)
+        assertTrue("Plan execution must succeed: ${stateAfterConfirm.lastActionResult?.error}", stateAfterConfirm.lastActionResult!!.success)
+        assertNull("Pending proposed action must be cleared", stateAfterConfirm.proposedAction)
+        assertTrue("Pending plan list must be empty", stateAfterConfirm.proposedPlan.isEmpty())
 
-        // Step 5: Retrying must NOT create duplicate tasks
-        val firstTaskAction = response.proposedActions.firstOrNull { it.type == AiActionType.CREATE_TASK }
-        assertNotNull(firstTaskAction)
-        val retryResult = engine.executeAction(firstTaskAction!!)
+        // Step 5: Verify parent goal exists in database and dependent tasks are linked to it with real IDs
+        val savedGoals = repository.observeGoalsOnce()
+        val savedGoal = savedGoals.find { it.title.equals("Launch MVP", ignoreCase = true) }
+        assertNotNull("Parent goal must exist in repository", savedGoal)
+        assertTrue("Goal ID must be valid positive ID", savedGoal!!.id > 0L)
+
+        val savedTasks = repository.observeTasksOnce()
+        val createdTasks = savedTasks.filter { it.goalTitle.equals("Launch MVP", ignoreCase = true) }
+        assertEquals("All proposed tasks must be persisted in repository", taskActions.size, createdTasks.size)
+        assertTrue("All task IDs must be valid positive IDs", createdTasks.all { it.id > 0L })
+
+        // Step 6: Retrying must NOT create duplicate tasks
+        val firstTaskAction = taskActions.first()
+        val retryResult = engine.executeAction(firstTaskAction)
         assertFalse("Retry must not succeed or duplicate existing task", retryResult.success)
-        assertEquals("Task count must remain unchanged after retry", tasks.size, repository.observeTasksOnce().size)
+        assertEquals("Task count must remain unchanged after retry", savedTasks.size, repository.observeTasksOnce().size)
 
-        // Step 6: Context refreshes with real data
+        // Step 7: Context refreshes with real data
         val context = engine.getContext()
         val tasksInContext = context.tasks.filter { it.goalTitle.equals("Launch MVP", ignoreCase = true) }
-        assertEquals("Refreshed context must contain the new tasks", tasksCreated, tasksInContext.size)
+        assertEquals("Refreshed context must contain all new tasks", createdTasks.size, tasksInContext.size)
     }
 
     @Test
@@ -483,5 +482,252 @@ class NexoraAiReliabilityRegressionTest {
         val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "break down goal"))
         assertEquals("Missing title should request clarification", AiResponseType.CLARIFICATION_NEEDED, response.responseType)
         assertTrue("Message should ask for clarification", response.message.contains("Which goal", ignoreCase = true) || response.message.contains("specify", ignoreCase = true))
+    }
+
+    @Test
+    fun `14 - confirm the same plan twice cannot execute twice`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+        viewModel.sendMessage("Plan goal Learn Rust")
+        delay(300)
+
+        val originalPlan = viewModel.uiState.value.proposedPlan
+        assertTrue("Must have proposed plan", originalPlan.isNotEmpty())
+
+        // First confirmation
+        viewModel.confirmAction()
+        delay(400)
+
+        val firstState = viewModel.uiState.value
+        assertTrue("First confirmation must succeed", firstState.lastActionResult!!.success)
+        val initialTaskCount = repository.observeTasksOnce().size
+        val initialGoalCount = repository.observeGoalsOnce().size
+
+        // Attempt second confirmation with the same original plan
+        val secondResults = engine.confirmPendingPlan(originalPlan)
+        assertFalse("Second confirmation must be rejected", secondResults.first().success)
+        assertTrue("Second confirmation must report proposal already consumed: ${secondResults.first().error}",
+            secondResults.first().error?.contains("consumed", ignoreCase = true) == true ||
+            secondResults.first().message.contains("consumed", ignoreCase = true)
+        )
+
+        // Database records must not have duplicated
+        assertEquals("Task count must not increase on double confirmation", initialTaskCount, repository.observeTasksOnce().size)
+        assertEquals("Goal count must not increase on double confirmation", initialGoalCount, repository.observeGoalsOnce().size)
+    }
+
+    @Test
+    fun `15 - cancel pending plan prevents any mutations`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+        viewModel.sendMessage("Plan goal Build Skynet")
+        delay(300)
+
+        val plan = viewModel.uiState.value.proposedPlan
+        assertTrue("Must propose plan", plan.isNotEmpty())
+
+        // User cancels
+        viewModel.dismissAction()
+        delay(100)
+
+        val stateAfterDismiss = viewModel.uiState.value
+        assertNull("Proposed action must be cleared", stateAfterDismiss.proposedAction)
+        assertTrue("Proposed plan must be empty", stateAfterDismiss.proposedPlan.isEmpty())
+
+        // Verify proposals are cancelled and cannot be confirmed
+        val confirmResults = engine.confirmPendingPlan(plan)
+        assertFalse("Cancelled plan cannot be confirmed", confirmResults.first().success)
+        assertTrue("Must report cancelled proposal",
+            confirmResults.first().error?.contains("cancelled", ignoreCase = true) == true ||
+            confirmResults.first().message.contains("cancelled", ignoreCase = true)
+        )
+
+        // Verify repository has no mutations
+        assertTrue("No goal should be created", repository.observeGoalsOnce().none { it.title.contains("Skynet", ignoreCase = true) })
+        assertTrue("No tasks should be created", repository.observeTasksOnce().none { it.goalTitle?.contains("Skynet", ignoreCase = true) == true })
+    }
+
+    @Test
+    fun `16 - fail first required action ensures dependent actions do not run`() = runBlocking {
+        // Goal creation will fail
+        repository.failAddGoal = true
+
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+        viewModel.sendMessage("Plan goal Master Kotlin")
+        delay(300)
+
+        val plan = viewModel.uiState.value.proposedPlan
+        assertTrue("Plan must contain actions", plan.size >= 2)
+
+        viewModel.confirmAction()
+        delay(400)
+
+        val state = viewModel.uiState.value
+        assertNotNull(state.lastActionResult)
+        assertFalse("Execution must not report overall success when first required action fails", state.lastActionResult!!.success)
+
+        val planResults = state.lastPlanResults
+        assertTrue("Plan results must be populated", planResults.isNotEmpty())
+        assertFalse("First action (CREATE_GOAL) must fail", planResults.first().success)
+
+        // Subsequent task actions must be skipped due to dependency failure
+        val taskResults = planResults.drop(1)
+        assertTrue("Dependent tasks must report dependency failure",
+            taskResults.all { !it.success && it.error == "Parent goal dependency failed" }
+        )
+
+        // Database must have 0 tasks created
+        assertEquals("No tasks should be created when parent goal fails", 0, repository.observeTasksOnce().size)
+    }
+
+    @Test
+    fun `17 - fail later action reports partial success truthfully`() = runBlocking {
+        var tasksAdded = 0
+        val testRepo = object : MockNexoraRepository() {
+            override suspend fun addTask(task: PremiumTask): PremiumTask {
+                tasksAdded++
+                if (tasksAdded > 1) {
+                    return task.copy(id = 0L) // Fail on second task
+                }
+                return super.addTask(task)
+            }
+        }
+        val customExecutor = AiActionExecutor(testRepo)
+        val customEngine = NexoraAiEngine(
+            contextBuilder = AiContextBuilder(testRepo),
+            aiService = LocalNexoraAiService(providerManager = providerManager),
+            providerManager = providerManager,
+            actionExecutor = customExecutor,
+            toolRegistry = AiToolRegistry(testRepo, customExecutor),
+            repository = testRepo
+        )
+
+        val customViewModel = NexoraAiViewModel(engine = customEngine, coroutineScope = testScope)
+        customViewModel.sendMessage("Plan goal Read Books")
+        delay(300)
+
+        customViewModel.confirmAction()
+        delay(400)
+
+        val state = customViewModel.uiState.value
+        assertNotNull("Must have action result", state.lastActionResult)
+        assertFalse("Must NOT claim complete success when a task fails", state.lastActionResult!!.success)
+        assertTrue("Message must truthfully report partial execution",
+            state.lastActionResult!!.message.contains("Partially executed", ignoreCase = true)
+        )
+        assertNotNull("Error must be populated with failure reason", state.error)
+
+        // First task succeeded in DB
+        val tasksInDb = testRepo.observeTasksOnce()
+        assertEquals("Exactly 1 task should be persisted", 1, tasksInDb.size)
+    }
+
+    @Test
+    fun `18 - retry after partial failure does not duplicate already-completed actions`() = runBlocking {
+        var failSecondTask = true
+        var taskAddCount = 0
+        val testRepo = object : MockNexoraRepository() {
+            override suspend fun addTask(task: PremiumTask): PremiumTask {
+                taskAddCount++
+                if (failSecondTask && taskAddCount > 1) {
+                    return task.copy(id = 0L)
+                }
+                return super.addTask(task)
+            }
+        }
+        val customExecutor = AiActionExecutor(testRepo)
+        val customEngine = NexoraAiEngine(
+            contextBuilder = AiContextBuilder(testRepo),
+            aiService = LocalNexoraAiService(providerManager = providerManager),
+            providerManager = providerManager,
+            actionExecutor = customExecutor,
+            toolRegistry = AiToolRegistry(testRepo, customExecutor),
+            repository = testRepo
+        )
+        val customViewModel = NexoraAiViewModel(engine = customEngine, coroutineScope = testScope)
+        customViewModel.sendMessage("Plan goal Fitness Journey")
+        delay(300)
+
+        val firstPlan = customViewModel.uiState.value.proposedPlan
+        customViewModel.confirmAction()
+        delay(400)
+
+        // Attempt 1 was partial failure: 1 goal + 1 task succeeded, 2nd task failed
+        assertEquals(1, testRepo.observeGoalsOnce().size)
+        assertEquals(1, testRepo.observeTasksOnce().size)
+
+        // Now fix the failure condition and retry the plan
+        failSecondTask = false
+        val retryPlan = firstPlan.map { customEngine.proposeAction(it.copy(id = UUID.randomUUID().toString())) }
+        customViewModel.proposePlan(retryPlan)
+        customViewModel.confirmAction()
+        delay(400)
+
+        // On retry, goal was not duplicated
+        assertEquals("Goal must not be duplicated on retry", 1, testRepo.observeGoalsOnce().size)
+        // First task was already existing (skipped), remaining task was created
+        val allTasks = testRepo.observeTasksOnce()
+        val distinctTaskTitles = allTasks.map { it.title.lowercase().trim() }.distinct()
+        assertEquals("Tasks must not have duplicates on retry", distinctTaskTitles.size, allTasks.size)
+    }
+
+    @Test
+    fun `19 - confirmation for one plan cannot authorize a different plan`() = runBlocking {
+        // Propose Plan A
+        val planARequest = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Plan goal Project Alpha"))
+        val planA = planARequest.proposedActions
+
+        // Propose Plan B
+        val planBRequest = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Plan goal Project Beta"))
+        val planB = planBRequest.proposedActions
+
+        assertTrue(planA.isNotEmpty())
+        assertTrue(planB.isNotEmpty())
+
+        // Attempt to execute Plan B using confirmation tokens from Plan A
+        val spoofedPlanB = planB.mapIndexed { index, bAction ->
+            val aToken = planA.getOrNull(index)?.parameters?.get("confirmationToken")?.toString() ?: ""
+            val params = bAction.parameters.toMutableMap()
+            params["confirmationToken"] = aToken
+            bAction.copy(parameters = params)
+        }
+
+        val results = engine.confirmPendingPlan(spoofedPlanB)
+        assertFalse("Spoofed confirmation must fail", results.first().success)
+        assertTrue("Must be rejected due to mismatch or invalid token",
+            results.first().error?.contains("mismatch", ignoreCase = true) == true ||
+            results.first().error?.contains("token", ignoreCase = true) == true ||
+            results.first().error?.contains("handle", ignoreCase = true) == true ||
+            results.first().error?.contains("proposal", ignoreCase = true) == true
+        )
+
+        // No actions from Plan B should have executed
+        assertTrue(repository.observeGoalsOnce().none { it.title.contains("Project Beta", ignoreCase = true) })
+        assertTrue(repository.observeTasksOnce().none { it.goalTitle?.contains("Project Beta", ignoreCase = true) == true })
+    }
+
+    @Test
+    fun `20 - conversational confirmation executes entire multi-action plan end to end`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Step 1: User requests plan in chat
+        viewModel.sendMessage("Plan goal Launch Podcast")
+        delay(300)
+
+        val stateAfterRequest = viewModel.uiState.value
+        assertTrue("Plan must propose multiple actions", stateAfterRequest.proposedPlan.size >= 2)
+
+        // Step 2: User confirms conversationally
+        viewModel.sendMessage("yes")
+        delay(400)
+
+        // Step 3: Verify all actions executed
+        val stateAfterConfirm = viewModel.uiState.value
+        assertNotNull(stateAfterConfirm.lastActionResult)
+        assertTrue("Plan execution must succeed: ${stateAfterConfirm.lastActionResult?.error}", stateAfterConfirm.lastActionResult!!.success)
+
+        val savedGoals = repository.observeGoalsOnce()
+        assertTrue("Goal must be created in DB", savedGoals.any { it.title.equals("Launch Podcast", ignoreCase = true) })
+
+        val savedTasks = repository.observeTasksOnce().filter { it.goalTitle.equals("Launch Podcast", ignoreCase = true) }
+        assertTrue("Tasks must be created in DB and linked to goal", savedTasks.isNotEmpty())
     }
 }
