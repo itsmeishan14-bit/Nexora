@@ -40,6 +40,7 @@ fun HomeScreen(
     aiRecommendations: List<AiRecommendation> = emptyList(),
     proposedAction: AiAction? = null,
     lastActionResult: AiActionResult? = null,
+    lastExecutionRecord: AiExecutionRecord? = null,
     onApproveAction: (AiAction) -> Unit = {},
     onDismissAction: () -> Unit = {},
     onDismissResult: () -> Unit = {},
@@ -92,13 +93,20 @@ fun HomeScreen(
         }
 
         // 2. AI INTELLIGENCE — Only shown when there's real signal
-        if (lastActionResult != null || proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
+        val displayResult = lastActionResult ?: lastExecutionRecord?.let {
+            AiActionResult(it.isCompleteSuccess, it.summaryMessage)
+        }
+        if (displayResult != null || proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
             item {
                 HomeEntranceAnim(revealed, 1) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SectionDivider(label = "NEXORA INTELLIGENCE")
-                        if (lastActionResult != null) {
-                            ActionResultBanner(result = lastActionResult, onDismiss = onDismissResult)
+                        if (displayResult != null) {
+                            ActionResultBanner(
+                                result = displayResult,
+                                executionRecord = lastExecutionRecord,
+                                onDismiss = onDismissResult
+                            )
                         }
                         if (proposedAction != null) {
                             ProposedActionCard(

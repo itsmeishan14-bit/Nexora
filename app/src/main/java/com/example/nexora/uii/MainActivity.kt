@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
                                         aiRecommendations = aiState.recommendations,
                                         proposedAction = aiState.homeProposedAction,
                                         lastActionResult = aiState.lastActionResult,
+                                        lastExecutionRecord = aiState.lastExecutionRecord,
                                         onApproveAction = { action ->
                                             aiViewModel.executeHomeAction(action) {
                                                 mainViewModel.refreshAll()

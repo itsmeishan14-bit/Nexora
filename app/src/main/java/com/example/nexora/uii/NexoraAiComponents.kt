@@ -543,36 +543,123 @@ fun ReasoningList(factors: List<ReasoningFactor>) {
 // ============================================================
 
 @Composable
-fun ActionResultBanner(result: AiActionResult, onDismiss: () -> Unit) {
+fun ActionResultBanner(
+    result: AiActionResult,
+    executionRecord: AiExecutionRecord? = null,
+    onDismiss: () -> Unit
+) {
+    val isSuccess = executionRecord?.isCompleteSuccess ?: result.success
+    val isPartial = executionRecord?.isPartial == true
+    val isCancelled = executionRecord?.isCancelled == true
+    val isRejected = executionRecord?.isRejected == true
+
+    val backgroundColor = when {
+        isSuccess -> Green95
+        isPartial -> Clay90.copy(alpha = 0.35f)
+        isCancelled -> Color.LightGray.copy(alpha = 0.2f)
+        else -> NexoraError.copy(alpha = 0.08f)
+    }
+
+    val borderColor = when {
+        isSuccess -> Green80
+        isPartial -> Clay40.copy(alpha = 0.5f)
+        isCancelled -> Color.Gray.copy(alpha = 0.3f)
+        else -> NexoraError.copy(alpha = 0.3f)
+    }
+
+    val primaryTint = when {
+        isSuccess -> Green60
+        isPartial -> Clay40
+        isCancelled -> Color.DarkGray
+        else -> NexoraError
+    }
+
+    val headerIcon = when {
+        isSuccess -> Icons.Rounded.CheckCircle
+        isPartial -> Icons.Rounded.Warning
+        isCancelled -> Icons.Rounded.Cancel
+        else -> Icons.Rounded.Error
+    }
+
+    val headerTitle = when {
+        isSuccess -> if ((executionRecord?.actionExecutions?.size ?: 0) > 1) "Completed plan" else result.message
+        isPartial -> "Partially completed"
+        isCancelled -> "Plan cancelled"
+        isRejected -> "Execution rejected"
+        else -> if ((executionRecord?.actionExecutions?.size ?: 0) > 1) "Plan failed" else result.message
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .nexoraClickable { onDismiss() },
         shape = NexoraShapes.medium,
-        color = if (result.success) Green95 else NexoraError.copy(alpha = 0.08f),
-        border = BorderStroke(
-            0.5.dp,
-            if (result.success) Green80 else NexoraError.copy(alpha = 0.3f)
-        )
+        color = backgroundColor,
+        border = BorderStroke(0.5.dp, borderColor)
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(14.dp)
         ) {
-            Icon(
-                imageVector = if (result.success) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
-                contentDescription = null,
-                tint = if (result.success) Green60 else NexoraError,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = result.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Green10,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(Icons.Rounded.Close, null, tint = Green40, modifier = Modifier.size(14.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = headerIcon,
+                    contentDescription = null,
+                    tint = primaryTint,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = headerTitle,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = Green10,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.Rounded.Close, null, tint = Green40, modifier = Modifier.size(14.dp))
+            }
+
+            // Compact transparent breakdown for multi-action plan or detailed records
+            if (executionRecord != null && executionRecord.actionExecutions.isNotEmpty()) {
+                val lines = executionRecord.actionExecutions.sortedBy { it.executionOrder }
+                if (lines.size > 1 || !isSuccess) {
+                    Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier.padding(start = 28.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        lines.forEach { child ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val (childIcon, childTint) = when (child.status) {
+                                    ActionExecutionStatus.SUCCESS -> Pair(Icons.Rounded.Check, Green60)
+                                    ActionExecutionStatus.SKIPPED -> Pair(Icons.Rounded.Redo, Clay40)
+                                    ActionExecutionStatus.FAILED -> Pair(Icons.Rounded.Close, NexoraError)
+                                }
+                                Icon(
+                                    imageVector = childIcon,
+                                    contentDescription = null,
+                                    tint = childTint,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                val reasonSuffix = when {
+                                    child.status == ActionExecutionStatus.SKIPPED -> " — ${child.error ?: "prerequisite failed"}"
+                                    child.status == ActionExecutionStatus.FAILED -> " — ${child.error ?: child.failureReason ?: child.message}"
+                                    else -> ""
+                                }
+                                Text(
+                                    text = "${child.actionTitle}$reasonSuffix",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Green20,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

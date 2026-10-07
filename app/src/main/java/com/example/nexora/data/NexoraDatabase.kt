@@ -21,8 +21,10 @@ import androidx.sqlite.execSQL
         AiMemoryEntity::class,
         AiAutomationRuleEntity::class,
         AutomationExecutionEntity::class,
+        AiExecutionRecordEntity::class,
+        AiActionExecutionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class NexoraDatabase : RoomDatabase() {
@@ -38,6 +40,8 @@ abstract class NexoraDatabase : RoomDatabase() {
     abstract fun aiMemoryDao(): AiMemoryDao
 
     abstract fun aiAutomationDao(): AiAutomationDao
+
+    abstract fun aiExecutionDao(): AiExecutionDao
 
     companion object {
 
@@ -96,6 +100,69 @@ abstract class NexoraDatabase : RoomDatabase() {
             )
         }
 
+        /**
+         * Migration from version 4 to 5.
+         * Creates persistent tables for AI execution history and individual child action execution items.
+         * All existing task, goal, progress, automation, and learning data is preserved.
+         */
+        private val MIGRATION_4_5 = Migration(4, 5) { connection: SQLiteConnection ->
+            connection.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_execution_record` (
+                    `id` TEXT NOT NULL,
+                    `userPrompt` TEXT,
+                    `detectedIntent` TEXT,
+                    `overallStatus` TEXT NOT NULL,
+                    `confirmationRequired` INTEGER NOT NULL,
+                    `userConfirmed` INTEGER,
+                    `totalProposedActions` INTEGER NOT NULL,
+                    `executedActionCount` INTEGER NOT NULL,
+                    `successActionCount` INTEGER NOT NULL,
+                    `failedActionCount` INTEGER NOT NULL,
+                    `skippedActionCount` INTEGER NOT NULL,
+                    `summaryMessage` TEXT NOT NULL,
+                    `timestamp` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            connection.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_ai_execution_record_timestamp` ON `ai_execution_record` (`timestamp`)
+                """.trimIndent()
+            )
+            connection.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `ai_action_execution_record` (
+                    `id` TEXT NOT NULL,
+                    `executionRecordId` TEXT NOT NULL,
+                    `actionId` TEXT NOT NULL,
+                    `executionOrder` INTEGER NOT NULL,
+                    `actionType` TEXT NOT NULL,
+                    `actionTitle` TEXT NOT NULL,
+                    `status` TEXT NOT NULL,
+                    `affectedTaskId` INTEGER,
+                    `affectedGoalId` INTEGER,
+                    `message` TEXT NOT NULL,
+                    `error` TEXT,
+                    `failureReason` TEXT,
+                    `timestamp` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+            connection.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_ai_action_execution_record_executionRecordId` ON `ai_action_execution_record` (`executionRecordId`)
+                """.trimIndent()
+            )
+            connection.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_ai_action_execution_record_timestamp` ON `ai_action_execution_record` (`timestamp`)
+                """.trimIndent()
+            )
+        }
+
         fun getDatabase(context: Context): NexoraDatabase {
 
             return INSTANCE ?: synchronized(this) {
@@ -110,7 +177,8 @@ abstract class NexoraDatabase : RoomDatabase() {
                         )
                         .addMigrations(
                             MIGRATION_2_3,
-                            MIGRATION_3_4
+                            MIGRATION_3_4,
+                            MIGRATION_4_5
                         )
                         .build()
 

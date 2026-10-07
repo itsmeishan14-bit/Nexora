@@ -276,6 +276,34 @@ open class MockNexoraRepository : NexoraRepository(null) {
         }
     }
 
+    // ─────────────────────────────────────
+    // AI EXECUTION HISTORY (MOCK)
+    // ─────────────────────────────────────
+
+    private val executionRecords = mutableListOf<com.example.nexora.ai.AiExecutionRecord>()
+
+    override suspend fun saveExecutionRecord(record: com.example.nexora.ai.AiExecutionRecord): com.example.nexora.ai.AiExecutionRecord {
+        executionRecords.removeAll { it.id == record.id }
+        executionRecords.add(record)
+        return record
+    }
+
+    override suspend fun getRecentExecutionRecords(limit: Int): List<com.example.nexora.ai.AiExecutionRecord> {
+        return executionRecords.takeLast(limit).reversed()
+    }
+
+    override fun observeRecentExecutionRecords(limit: Int): kotlinx.coroutines.flow.Flow<List<com.example.nexora.ai.AiExecutionRecord>> {
+        return kotlinx.coroutines.flow.flowOf(executionRecords.takeLast(limit).reversed())
+    }
+
+    override suspend fun getExecutionRecordById(id: String): com.example.nexora.ai.AiExecutionRecord? {
+        return executionRecords.find { it.id == id }
+    }
+
+    override suspend fun clearAllExecutionRecords() {
+        executionRecords.clear()
+    }
+
     // Initialize with data
     fun seed(tasks: List<PremiumTask> = emptyList(), goals: List<NexoraGoal> = emptyList()) {
         this.tasks.clear()

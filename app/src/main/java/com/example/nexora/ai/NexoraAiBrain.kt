@@ -234,6 +234,62 @@ class NexoraAiBrain(
                 NexoraSecurity.cancelProposal(it.id)
                 NexoraSecurity.revokeAuthorization(it.id)
             }
+            if (planToCancel.isNotEmpty()) {
+                val parentRecordId = java.util.UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+                val childRecords = planToCancel.mapIndexed { index, action ->
+                    AiActionExecutionRecord(
+                        id = java.util.UUID.randomUUID().toString(),
+                        executionRecordId = parentRecordId,
+                        actionId = action.id,
+                        executionOrder = index + 1,
+                        actionType = action.type,
+                        actionTitle = action.title,
+                        status = ActionExecutionStatus.SKIPPED,
+                        affectedTaskId = action.taskId,
+                        affectedGoalId = action.goalId,
+                        message = "Cancelled by user",
+                        error = "Cancelled by user",
+                        failureReason = ActionFailureReason.CANCELLED,
+                        timestamp = now
+                    )
+                }
+                val record = AiExecutionRecord(
+                    id = parentRecordId,
+                    userPrompt = rawMessage,
+                    detectedIntent = AiDecisionType.CANCEL.name,
+                    overallStatus = ExecutionOverallStatus.CANCELLED,
+                    confirmationRequired = true,
+                    userConfirmed = false,
+                    totalProposedActions = planToCancel.size,
+                    executedActionCount = 0,
+                    successActionCount = 0,
+                    failedActionCount = 0,
+                    skippedActionCount = planToCancel.size,
+                    summaryMessage = "Action proposal cancelled by user.",
+                    timestamp = now,
+                    actionExecutions = childRecords
+                )
+                repository.saveExecutionRecord(record)
+                planToCancel.forEach { act ->
+                    try {
+                        repository.saveOutcome(
+                            AiOutcome(
+                                id = java.util.UUID.randomUUID().toString(),
+                                recommendationId = null,
+                                actionId = act.id,
+                                type = AiOutcomeType.REJECTED,
+                                timestamp = now,
+                                relatedTaskId = act.taskId,
+                                relatedGoalId = act.goalId,
+                                expectedResult = act.title,
+                                actualResult = "Cancelled by user",
+                                evidence = "Cancelled by user"
+                            )
+                        )
+                    } catch (_: Exception) {}
+                }
+            }
             val text = "Okay, I've cancelled that. What else can I help with?"
             return AiResponse(
                 responseType = AiResponseType.NO_ACTION,
@@ -266,6 +322,42 @@ class NexoraAiBrain(
 
             if (rejectionReason != null) {
                 authorizedPlan.forEach { NexoraSecurity.revokeAuthorization(it.id) }
+                val parentRecordId = java.util.UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+                val childRecords = planToConfirm.mapIndexed { index, action ->
+                    AiActionExecutionRecord(
+                        id = java.util.UUID.randomUUID().toString(),
+                        executionRecordId = parentRecordId,
+                        actionId = action.id,
+                        executionOrder = index + 1,
+                        actionType = action.type,
+                        actionTitle = action.title,
+                        status = ActionExecutionStatus.FAILED,
+                        affectedTaskId = action.taskId,
+                        affectedGoalId = action.goalId,
+                        message = rejectionReason,
+                        error = "Authorization rejected",
+                        failureReason = ActionFailureReason.AUTHORIZATION_FAILURE,
+                        timestamp = now
+                    )
+                }
+                val record = AiExecutionRecord(
+                    id = parentRecordId,
+                    userPrompt = rawMessage,
+                    detectedIntent = AiDecisionType.CANCEL.name,
+                    overallStatus = ExecutionOverallStatus.REJECTED,
+                    confirmationRequired = true,
+                    userConfirmed = false,
+                    totalProposedActions = planToConfirm.size,
+                    executedActionCount = 0,
+                    successActionCount = 0,
+                    failedActionCount = planToConfirm.size,
+                    skippedActionCount = 0,
+                    summaryMessage = rejectionReason,
+                    timestamp = now,
+                    actionExecutions = childRecords
+                )
+                repository.saveExecutionRecord(record)
                 return AiResponse(
                     responseType = AiResponseType.NO_ACTION,
                     title = "Confirmation Failed",

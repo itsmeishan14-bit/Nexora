@@ -30,6 +30,8 @@ data class NexoraAiUiState(
     val proposedPlan: List<AiAction> = emptyList(),
     val lastActionResult: AiActionResult? = null,
     val lastPlanResults: List<AiActionResult> = emptyList(),
+    val lastExecutionRecord: AiExecutionRecord? = null,
+    val executionHistory: List<AiExecutionRecord> = emptyList(),
     val conversationalState: AiConversationalState = AiConversationalState(),
     val lastBrainResponse: AiResponse? = null,
     val currentWorkflow: AgentWorkflow? = null,
@@ -62,6 +64,11 @@ class NexoraAiViewModel(
         scope.launch {
             engine.observeAutomationRules().collect { rules ->
                 _uiState.update { it.copy(automationRules = rules) }
+            }
+        }
+        scope.launch {
+            engine.observeRecentExecutionRecords().collect { history ->
+                _uiState.update { it.copy(executionHistory = history) }
             }
         }
     }
@@ -117,8 +124,19 @@ class NexoraAiViewModel(
     }
 
     fun dismissHomeAction() {
-        _uiState.value.homeProposedAction?.let { engine.cancelProposal(it.id) }
-        _uiState.update { it.copy(homeProposedAction = null) }
+        _uiState.value.homeProposedAction?.let { action ->
+            scope.launch {
+                val record = engine.recordCancellation(listOf(action))
+                _uiState.update {
+                    it.copy(
+                        homeProposedAction = null,
+                        lastExecutionRecord = record
+                    )
+                }
+            }
+        } ?: run {
+            _uiState.update { it.copy(homeProposedAction = null) }
+        }
     }
 
     fun executeHomeAction(action: AiAction, onComplete: () -> Unit) {
@@ -128,10 +146,12 @@ class NexoraAiViewModel(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val result = engine.confirmPendingAction(action)
+                val record = engine.lastExecutionRecord
                 _uiState.update {
                     it.copy(
                         homeProposedAction = null,
                         lastActionResult = result,
+                        lastExecutionRecord = record,
                         error = if (!result.success) (result.error ?: result.message) else null
                     )
                 }
@@ -467,6 +487,7 @@ class NexoraAiViewModel(
                 scope.launch {
                     try {
                         val results = engine.executePlan(actions)
+                        val record = engine.lastExecutionRecord
                         val successCount = results.count { it.success }
                         val failureCount = results.count { !it.success }
                         val firstFailed = results.find { !it.success }
@@ -495,6 +516,7 @@ class NexoraAiViewModel(
                             it.copy(
                                 lastActionResult = summaryResult,
                                 lastPlanResults = results,
+                                lastExecutionRecord = record,
                                 error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                             )
                         }
@@ -661,6 +683,7 @@ class NexoraAiViewModel(
             }
             try {
                 val results = engine.confirmPendingPlan(plan)
+                val record = engine.lastExecutionRecord
                 val successCount = results.count { it.success }
                 val failureCount = results.count { !it.success }
                 val firstFailed = results.find { !it.success }
@@ -689,6 +712,7 @@ class NexoraAiViewModel(
                     it.copy(
                         lastActionResult = summaryResult,
                         lastPlanResults = results,
+                        lastExecutionRecord = record,
                         currentWorkflow = null,
                         error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                     )
@@ -721,19 +745,33 @@ class NexoraAiViewModel(
 
     fun dismissAction() {
         val plan = _uiState.value.proposedPlan.ifEmpty { listOfNotNull(_uiState.value.proposedAction) }
-        plan.forEach { engine.cancelProposal(it.id) }
-        _uiState.update {
-            it.copy(
-                proposedAction = null,
-                proposedPlan = emptyList()
-            )
+        if (plan.isNotEmpty()) {
+            scope.launch {
+                val record = engine.recordCancellation(plan)
+                _uiState.update {
+                    it.copy(
+                        proposedAction = null,
+                        proposedPlan = emptyList(),
+                        lastExecutionRecord = record
+                    )
+                }
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    proposedAction = null,
+                    proposedPlan = emptyList()
+                )
+            }
         }
     }
 
     fun dismissResult() {
         _uiState.update {
             it.copy(
-                lastActionResult = null
+                lastActionResult = null,
+                lastPlanResults = emptyList(),
+                lastExecutionRecord = null
             )
         }
     }

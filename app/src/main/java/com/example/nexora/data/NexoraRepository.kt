@@ -18,6 +18,10 @@ import com.example.nexora.ai.AutomationExecutionRecord
 import com.example.nexora.ai.AutomationExecutionStage
 import com.example.nexora.ai.AutomationTriggerType
 import com.example.nexora.uii.TaskPriority
+import com.example.nexora.ai.AiExecutionRecord
+import com.example.nexora.ai.AiActionExecutionRecord
+import com.example.nexora.ai.ExecutionOverallStatus
+import com.example.nexora.ai.ActionExecutionStatus
 import com.example.nexora.util.NexoraLogger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -32,6 +36,7 @@ open class NexoraRepository(
     private val dailyProgressDao = database?.dailyProgressDao()
     private val aiLearningDao = database?.aiLearningDao()
     private val aiAutomationDao = database?.aiAutomationDao()
+    private val aiExecutionDao = database?.aiExecutionDao()
 
     // ─────────────────────────────────────
     // TASKS
@@ -533,6 +538,127 @@ open class NexoraRepository(
 
     open suspend fun trimAutomationExecutions(keepCount: Int = 50) {
         aiAutomationDao?.trimExecutions(keepCount)
+    }
+
+    // ─────────────────────────────────────
+    // AI EXECUTION HISTORY
+    // ─────────────────────────────────────
+
+    open suspend fun saveExecutionRecord(record: AiExecutionRecord): AiExecutionRecord {
+        val dao = aiExecutionDao ?: return record
+        dao.insertExecutionRecord(mapExecutionRecordToEntity(record))
+        if (record.actionExecutions.isNotEmpty()) {
+            dao.insertActionExecutions(record.actionExecutions.map { mapActionExecutionToEntity(it) })
+        }
+        return record
+    }
+
+    open suspend fun getRecentExecutionRecords(limit: Int = 20): List<AiExecutionRecord> {
+        val dao = aiExecutionDao ?: return emptyList()
+        val entities = dao.getRecentExecutionRecords(limit)
+        return entities.map { entity ->
+            val childEntities = dao.getActionExecutionsForRecord(entity.id)
+            mapExecutionRecordEntityToDomain(entity, childEntities)
+        }
+    }
+
+    open fun observeRecentExecutionRecords(limit: Int = 20): Flow<List<AiExecutionRecord>> {
+        val dao = aiExecutionDao ?: return flowOf(emptyList())
+        return dao.observeRecentExecutionRecords(limit).map { entities ->
+            entities.map { entity ->
+                val childEntities = dao.getActionExecutionsForRecord(entity.id)
+                mapExecutionRecordEntityToDomain(entity, childEntities)
+            }
+        }
+    }
+
+    open suspend fun getExecutionRecordById(id: String): AiExecutionRecord? {
+        val dao = aiExecutionDao ?: return null
+        val entity = dao.getExecutionRecordById(id) ?: return null
+        val childEntities = dao.getActionExecutionsForRecord(id)
+        return mapExecutionRecordEntityToDomain(entity, childEntities)
+    }
+
+    open suspend fun clearAllExecutionRecords() {
+        val dao = aiExecutionDao ?: return
+        dao.clearAllActionExecutions()
+        dao.clearAllExecutionRecords()
+    }
+
+    private fun mapExecutionRecordToEntity(domain: AiExecutionRecord): AiExecutionRecordEntity {
+        return AiExecutionRecordEntity(
+            id = domain.id,
+            userPrompt = domain.userPrompt,
+            detectedIntent = domain.detectedIntent,
+            overallStatus = domain.overallStatus.name,
+            confirmationRequired = domain.confirmationRequired,
+            userConfirmed = domain.userConfirmed,
+            totalProposedActions = domain.totalProposedActions,
+            executedActionCount = domain.executedActionCount,
+            successActionCount = domain.successActionCount,
+            failedActionCount = domain.failedActionCount,
+            skippedActionCount = domain.skippedActionCount,
+            summaryMessage = domain.summaryMessage,
+            timestamp = domain.timestamp
+        )
+    }
+
+    private fun mapActionExecutionToEntity(domain: AiActionExecutionRecord): AiActionExecutionEntity {
+        return AiActionExecutionEntity(
+            id = domain.id,
+            executionRecordId = domain.executionRecordId,
+            actionId = domain.actionId,
+            executionOrder = domain.executionOrder,
+            actionType = domain.actionType.name,
+            actionTitle = domain.actionTitle,
+            status = domain.status.name,
+            affectedTaskId = domain.affectedTaskId,
+            affectedGoalId = domain.affectedGoalId,
+            message = domain.message,
+            error = domain.error,
+            failureReason = domain.failureReason,
+            timestamp = domain.timestamp
+        )
+    }
+
+    private fun mapExecutionRecordEntityToDomain(
+        entity: AiExecutionRecordEntity,
+        childEntities: List<AiActionExecutionEntity>
+    ): AiExecutionRecord {
+        return AiExecutionRecord(
+            id = entity.id,
+            userPrompt = entity.userPrompt,
+            detectedIntent = entity.detectedIntent,
+            overallStatus = try { ExecutionOverallStatus.valueOf(entity.overallStatus) } catch (_: Exception) { ExecutionOverallStatus.FAILURE },
+            confirmationRequired = entity.confirmationRequired,
+            userConfirmed = entity.userConfirmed,
+            totalProposedActions = entity.totalProposedActions,
+            executedActionCount = entity.executedActionCount,
+            successActionCount = entity.successActionCount,
+            failedActionCount = entity.failedActionCount,
+            skippedActionCount = entity.skippedActionCount,
+            summaryMessage = entity.summaryMessage,
+            timestamp = entity.timestamp,
+            actionExecutions = childEntities.map { mapActionExecutionEntityToDomain(it) }
+        )
+    }
+
+    private fun mapActionExecutionEntityToDomain(entity: AiActionExecutionEntity): AiActionExecutionRecord {
+        return AiActionExecutionRecord(
+            id = entity.id,
+            executionRecordId = entity.executionRecordId,
+            actionId = entity.actionId,
+            executionOrder = entity.executionOrder,
+            actionType = try { AiActionType.valueOf(entity.actionType) } catch (_: Exception) { AiActionType.CREATE_TASK },
+            actionTitle = entity.actionTitle,
+            status = try { ActionExecutionStatus.valueOf(entity.status) } catch (_: Exception) { ActionExecutionStatus.FAILED },
+            affectedTaskId = entity.affectedTaskId,
+            affectedGoalId = entity.affectedGoalId,
+            message = entity.message,
+            error = entity.error,
+            failureReason = entity.failureReason,
+            timestamp = entity.timestamp
+        )
     }
 
     private fun mapAutomationRuleEntityToDomain(entity: AiAutomationRuleEntity): AiAutomationRule {

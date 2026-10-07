@@ -102,13 +102,23 @@ fun AiScreen(
                 }
 
                 // ACTION RESULT BANNER
-                uiState.lastActionResult?.let { result ->
+                val displayResult = uiState.lastActionResult ?: uiState.lastExecutionRecord?.let {
+                    AiActionResult(
+                        success = it.isCompleteSuccess,
+                        message = it.summaryMessage
+                    )
+                }
+                displayResult?.let { result ->
                     item {
                         AnimatedVisibility(
                             visible = true,
                             enter = fadeIn(tween(200)) + expandVertically(tween(200))
                         ) {
-                            ActionResultBanner(result = result, onDismiss = { viewModel.dismissResult() })
+                            ActionResultBanner(
+                                result = result,
+                                executionRecord = uiState.lastExecutionRecord,
+                                onDismiss = { viewModel.dismissResult() }
+                            )
                         }
                         Spacer(Modifier.height(16.dp))
                     }

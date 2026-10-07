@@ -28,13 +28,33 @@ class NexoraAiEngine(
         }
     }
 
+    @Volatile
+    private var lastActiveUserPrompt: String? = null
+    @Volatile
+    private var lastActiveIntent: String? = null
+    @Volatile
+    var lastExecutionRecord: AiExecutionRecord? = null
+        internal set
+
+    suspend fun getRecentExecutionRecords(limit: Int = 20): List<AiExecutionRecord> =
+        repository.getRecentExecutionRecords(limit)
+
+    fun observeRecentExecutionRecords(limit: Int = 20): kotlinx.coroutines.flow.Flow<List<AiExecutionRecord>> =
+        repository.observeRecentExecutionRecords(limit)
+
     fun getBrain(): NexoraAiBrain = brain
 
     /**
      * Unified entry point for all AI requests.
      */
     suspend fun processRequest(request: AiRequest): AiResponse {
+        if (!request.userMessage.isNullOrBlank()) {
+            lastActiveUserPrompt = request.userMessage
+        }
         val response = brain.processRequest(request)
+        if (response.decision != null) {
+            lastActiveIntent = response.decision.type.name
+        }
         // Automatically register proposed actions requiring confirmation as pending proposals if not already registered or authorized
         val registeredActions = response.proposedActions.map { action ->
             if (!com.example.nexora.util.NexoraSecurity.isAuthorized(action) &&
@@ -102,12 +122,9 @@ class NexoraAiEngine(
     }
 
     /**
-     * Executes an AI action.
-     * Does NOT automatically grant authorization to unconfirmed actions.
-     * Only actions that do not require confirmation (e.g. safe/read-only actions)
-     * or actions already authorized by a genuine user confirmation flow will be executed.
+     * Internal single-action execution without creating a top-level plan execution record.
      */
-    suspend fun executeAction(action: AiAction): AiActionResult {
+    private suspend fun executeSingleActionInternal(action: AiAction): AiActionResult {
         brain.invalidateContext()
         val result = actionExecutor.execute(action)
         brain.invalidateContext()
@@ -115,28 +132,55 @@ class NexoraAiEngine(
     }
 
     /**
+     * Executes an AI action.
+     * Records a truthful execution record with parent-child linkage.
+     * Does NOT automatically grant authorization to unconfirmed actions.
+     */
+    suspend fun executeAction(action: AiAction): AiActionResult {
+        return executePlan(listOf(action)).firstOrNull() ?: AiActionResult(false, "No action executed")
+    }
+
+    /**
      * Executes a list of actions in a plan sequentially, respecting dependencies.
-     * If an earlier prerequisite fails (e.g., CREATE_GOAL), subsequent dependent actions
-     * (e.g., CREATE_TASK referencing that goal) are skipped with an explanatory error.
+     * If an earlier prerequisite fails (e.g., CREATE_GOAL or prerequisite task), subsequent dependent actions
+     * are skipped with an explanatory error.
+     * Persists a complete, transparent execution record preserving order and outcomes.
      */
     suspend fun executePlan(actions: List<AiAction>): List<AiActionResult> {
         if (actions.isEmpty()) return emptyList()
         val results = mutableListOf<AiActionResult>()
         val failedGoalTitles = mutableSetOf<String>()
         val createdGoalTitles = mutableSetOf<String>()
+        val failedTaskTitles = mutableSetOf<String>()
+        val createdTaskTitles = mutableSetOf<String>()
 
         for (action in actions) {
             val goalTitle = action.parameters["goalTitle"] as? String
+            val prereqTaskTitle = (action.parameters["dependsOn"] as? String)
+                ?: (action.parameters["prerequisite"] as? String)
+                ?: (action.parameters["prerequisiteTaskTitle"] as? String)
 
             // Check dependency: if this action depends on a goal that failed to be created
             if (goalTitle != null && failedGoalTitles.contains(goalTitle.trim().lowercase())) {
-                results.add(
-                    AiActionResult(
-                        success = false,
-                        message = "Skipped dependent action: parent goal \"$goalTitle\" creation failed.",
-                        error = "Parent goal dependency failed"
-                    )
+                val skipped = AiActionResult(
+                    success = false,
+                    message = "Skipped dependent action: parent goal \"$goalTitle\" creation failed.",
+                    error = "Parent goal dependency failed"
                 )
+                results.add(skipped)
+                recordSkippedOutcome(action, skipped)
+                continue
+            }
+
+            // Check dependency: if this action depends on a prerequisite task that failed
+            if (prereqTaskTitle != null && failedTaskTitles.contains(prereqTaskTitle.trim().lowercase())) {
+                val skipped = AiActionResult(
+                    success = false,
+                    message = "Skipped dependent action: prerequisite task \"$prereqTaskTitle\" failed.",
+                    error = "Prerequisite task dependency failed"
+                )
+                results.add(skipped)
+                recordSkippedOutcome(action, skipped)
                 continue
             }
 
@@ -146,31 +190,42 @@ class NexoraAiEngine(
                 val goalExists = existingGoals.any { it.title.equals(goalTitle.trim(), ignoreCase = true) } ||
                     createdGoalTitles.contains(goalTitle.trim().lowercase())
                 if (!goalExists) {
-                    results.add(
-                        AiActionResult(
-                            success = false,
-                            message = "Skipped dependent task: parent goal \"$goalTitle\" does not exist.",
-                            error = "Parent goal dependency failed"
-                        )
+                    val skipped = AiActionResult(
+                        success = false,
+                        message = "Skipped dependent task: parent goal \"$goalTitle\" does not exist.",
+                        error = "Parent goal dependency failed"
                     )
+                    results.add(skipped)
+                    recordSkippedOutcome(action, skipped)
                     continue
                 }
             }
 
-            val result = executeAction(action)
+            val result = executeSingleActionInternal(action)
             results.add(result)
 
+            val actionTitleKey = (action.parameters["title"] as? String ?: action.title).trim().lowercase()
+
             if (action.type == AiActionType.CREATE_GOAL) {
-                val title = (action.parameters["title"] as? String ?: action.title).trim().lowercase()
                 if (result.success) {
-                    createdGoalTitles.add(title)
+                    createdGoalTitles.add(actionTitleKey)
                 } else {
-                    failedGoalTitles.add(title)
+                    failedGoalTitles.add(actionTitleKey)
+                }
+            } else if (action.type == AiActionType.CREATE_TASK) {
+                if (result.success) {
+                    createdTaskTitles.add(actionTitleKey)
+                } else {
+                    failedTaskTitles.add(actionTitleKey)
                 }
             }
         }
 
         brain.invalidateContext()
+
+        // Construct and persist parent AiExecutionRecord
+        recordExecutionResult(actions, results, forcedStatus = null, userConfirmed = true)
+
         return results
     }
 
@@ -178,6 +233,7 @@ class NexoraAiEngine(
      * Confirms and executes an entire pending plan of action proposals that the user approved.
      * Atomically validates that each action proposal in the plan is pending and eligible,
      * consuming their confirmation tokens before execution.
+     * On rejection, records a transparent REJECTED execution record.
      */
     suspend fun confirmPendingPlan(actions: List<AiAction>): List<AiActionResult> {
         if (actions.isEmpty()) return emptyList()
@@ -204,6 +260,36 @@ class NexoraAiEngine(
                                 error = "Plan authorization aborted"
                             )
                         }
+                        val allResults = authorizedPlan.map { AiActionResult(false, "Aborted", error = "Authorization aborted") } +
+                            listOf(rejectedResult) + skippedResults
+
+                        recordExecutionResult(
+                            actions = actions,
+                            results = allResults,
+                            forcedStatus = ExecutionOverallStatus.REJECTED,
+                            userConfirmed = false,
+                            summaryOverride = "Authorization rejected: ${consumeResult.reason}"
+                        )
+
+                        actions.forEach { act ->
+                            try {
+                                repository.saveOutcome(
+                                    AiOutcome(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        recommendationId = null,
+                                        actionId = act.id,
+                                        type = AiOutcomeType.REJECTED,
+                                        timestamp = System.currentTimeMillis(),
+                                        relatedTaskId = act.taskId,
+                                        relatedGoalId = act.goalId,
+                                        expectedResult = act.title,
+                                        actualResult = consumeResult.reason,
+                                        evidence = "Authorization rejected: ${consumeResult.error}"
+                                    )
+                                )
+                            } catch (_: Exception) {}
+                        }
+
                         return listOf(rejectedResult) + skippedResults
                     }
                 }
@@ -222,6 +308,174 @@ class NexoraAiEngine(
      */
     suspend fun confirmPendingAction(action: AiAction): AiActionResult {
         return confirmPendingPlan(listOf(action)).firstOrNull() ?: AiActionResult(false, "No action executed")
+    }
+
+    /**
+     * Records a cancellation execution record and updates AI telemetry outcomes.
+     */
+    suspend fun recordCancellation(
+        actions: List<AiAction>,
+        userPrompt: String? = null,
+        reason: String = "Action proposal cancelled by user."
+    ): AiExecutionRecord {
+        actions.forEach { cancelProposal(it.id) }
+        val results = actions.map {
+            AiActionResult(
+                success = false,
+                message = reason,
+                error = "Cancelled by user"
+            )
+        }
+        val record = recordExecutionResult(
+            actions = actions,
+            results = results,
+            forcedStatus = ExecutionOverallStatus.CANCELLED,
+            userConfirmed = false,
+            summaryOverride = reason
+        )
+        actions.forEach { act ->
+            try {
+                repository.saveOutcome(
+                    AiOutcome(
+                        id = java.util.UUID.randomUUID().toString(),
+                        recommendationId = null,
+                        actionId = act.id,
+                        type = AiOutcomeType.REJECTED,
+                        timestamp = System.currentTimeMillis(),
+                        relatedTaskId = act.taskId,
+                        relatedGoalId = act.goalId,
+                        expectedResult = act.title,
+                        actualResult = reason,
+                        evidence = "Cancelled by user"
+                    )
+                )
+            } catch (_: Exception) {}
+        }
+        return record
+    }
+
+    suspend fun cancelPendingPlan(
+        actions: List<AiAction>,
+        userPrompt: String? = null,
+        reason: String = "Action proposal cancelled by user."
+    ): AiExecutionRecord {
+        return recordCancellation(actions, userPrompt, reason)
+    }
+
+    private suspend fun recordSkippedOutcome(action: AiAction, result: AiActionResult) {
+        try {
+            val outcome = AiOutcome(
+                id = java.util.UUID.randomUUID().toString(),
+                recommendationId = null,
+                actionId = action.id,
+                type = AiOutcomeType.NOT_COMPLETED,
+                timestamp = System.currentTimeMillis(),
+                relatedTaskId = result.affectedTaskId ?: action.taskId,
+                relatedGoalId = result.affectedGoalId ?: action.goalId,
+                expectedResult = action.title,
+                actualResult = result.message,
+                evidence = "Skipped dependent action: ${result.error}"
+            )
+            repository.saveOutcome(outcome)
+        } catch (e: Exception) {
+            com.example.nexora.util.NexoraLogger.e("ENGINE", "Failed to record outcome for skipped action", e)
+        }
+    }
+
+    private suspend fun recordExecutionResult(
+        actions: List<AiAction>,
+        results: List<AiActionResult>,
+        forcedStatus: ExecutionOverallStatus? = null,
+        userConfirmed: Boolean? = true,
+        summaryOverride: String? = null
+    ): AiExecutionRecord {
+        val parentRecordId = java.util.UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+
+        val userPrompt = actions.firstNotNullOfOrNull { it.parameters["userPrompt"] as? String }
+            ?: lastActiveUserPrompt
+        val detectedIntent = actions.firstNotNullOfOrNull { it.parameters["detectedIntent"] as? String }
+            ?: lastActiveIntent
+
+        val isCancelled = forcedStatus == ExecutionOverallStatus.CANCELLED
+        val isRejected = forcedStatus == ExecutionOverallStatus.REJECTED
+
+        val childRecords = actions.mapIndexed { index, action ->
+            val result = results.getOrNull(index) ?: AiActionResult(false, "Unexecuted", error = "Unexecuted")
+            val status = when {
+                result.success -> ActionExecutionStatus.SUCCESS
+                isCancelled || result.error?.contains("dependency", ignoreCase = true) == true ||
+                    result.message.startsWith("Skipped", ignoreCase = true) -> ActionExecutionStatus.SKIPPED
+                else -> ActionExecutionStatus.FAILED
+            }
+            val failureReason = if (!result.success) {
+                if (isCancelled) ActionFailureReason.CANCELLED
+                else if (isRejected) ActionFailureReason.AUTHORIZATION_FAILURE
+                else classifyFailureReason(result.error, result.message)
+            } else null
+
+            AiActionExecutionRecord(
+                id = java.util.UUID.randomUUID().toString(),
+                executionRecordId = parentRecordId,
+                actionId = action.id,
+                executionOrder = index + 1,
+                actionType = action.type,
+                actionTitle = action.title,
+                status = status,
+                affectedTaskId = result.affectedTaskId ?: action.taskId,
+                affectedGoalId = result.affectedGoalId ?: action.goalId,
+                message = result.message,
+                error = result.error,
+                failureReason = failureReason,
+                timestamp = now
+            )
+        }
+
+        val successCount = childRecords.count { it.status == ActionExecutionStatus.SUCCESS }
+        val failedCount = childRecords.count { it.status == ActionExecutionStatus.FAILED }
+        val skippedCount = childRecords.count { it.status == ActionExecutionStatus.SKIPPED }
+
+        val overallStatus = forcedStatus ?: when {
+            successCount == actions.size -> ExecutionOverallStatus.SUCCESS
+            successCount > 0 -> ExecutionOverallStatus.PARTIAL
+            else -> ExecutionOverallStatus.FAILURE
+        }
+
+        val summaryMessage = summaryOverride ?: when (overallStatus) {
+            ExecutionOverallStatus.SUCCESS ->
+                if (actions.size > 1) "Completed plan: all ${actions.size} actions succeeded."
+                else results.firstOrNull()?.message ?: "Action completed successfully."
+            ExecutionOverallStatus.PARTIAL ->
+                "Partially completed: $successCount of ${actions.size} actions succeeded, ${actions.size - successCount} failed or skipped."
+            ExecutionOverallStatus.FAILURE ->
+                if (actions.size > 1) "Plan execution failed: none of the ${actions.size} actions succeeded."
+                else results.firstOrNull()?.message ?: "Action execution failed."
+            ExecutionOverallStatus.CANCELLED -> "Execution cancelled by user."
+            ExecutionOverallStatus.REJECTED -> "Execution rejected: authorization error."
+        }
+
+        val executedActionCount = if (isCancelled) 0 else (actions.size - skippedCount)
+
+        val record = AiExecutionRecord(
+            id = parentRecordId,
+            userPrompt = userPrompt,
+            detectedIntent = detectedIntent,
+            overallStatus = overallStatus,
+            confirmationRequired = actions.any { it.requiresConfirmation },
+            userConfirmed = userConfirmed,
+            totalProposedActions = actions.size,
+            executedActionCount = executedActionCount,
+            successActionCount = successCount,
+            failedActionCount = failedCount,
+            skippedActionCount = skippedCount,
+            summaryMessage = summaryMessage,
+            timestamp = now,
+            actionExecutions = childRecords
+        )
+
+        repository.saveExecutionRecord(record)
+        lastExecutionRecord = record
+        return record
     }
 
     fun invalidateContext() {

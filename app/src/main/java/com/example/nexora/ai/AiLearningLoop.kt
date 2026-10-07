@@ -115,6 +115,24 @@ class AiLearningLoop(
                 )
             }
         }
+
+        // Pattern 5: Multi-Action Plan Feasibility
+        val recentExecutions = repository.getRecentExecutionRecords(20)
+        val multiActionPlans = recentExecutions.filter { it.totalProposedActions > 1 }
+        if (multiActionPlans.size >= 3) {
+            val partialOrFailed = multiActionPlans.count { 
+                it.overallStatus == ExecutionOverallStatus.PARTIAL || it.overallStatus == ExecutionOverallStatus.FAILURE 
+            }
+            if (partialOrFailed.toFloat() / multiActionPlans.size >= 0.5f) {
+                updateOrSaveMemory(
+                    category = AiMemoryCategory.WORKLOAD_PATTERN,
+                    title = "Multi-Action Plan Feasibility",
+                    content = "Several multi-step plans had partial or failed executions. Focusing on smaller, 1-2 step plans improves consistency.",
+                    confidence = AiMemoryConfidence.MEDIUM,
+                    importance = AiMemoryImportance.MEDIUM
+                )
+            }
+        }
     }
 
     private suspend fun updateOrSaveMemory(

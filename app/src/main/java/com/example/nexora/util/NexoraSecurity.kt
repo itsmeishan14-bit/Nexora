@@ -81,7 +81,8 @@ object NexoraSecurity {
 
     fun computeFingerprint(action: AiAction): String {
         val cleanParams = action.parameters.filterKeys { 
-            it != "userConfirmed" && it != "authorizationToken" && it != "confirmationToken"
+            it != "userConfirmed" && it != "authorizationToken" && it != "confirmationToken" &&
+            it != "userPrompt" && it != "detectedIntent" && it != "planId"
         }.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
         return "${action.type}:${action.taskId}:${action.goalId}:$cleanParams"
     }
