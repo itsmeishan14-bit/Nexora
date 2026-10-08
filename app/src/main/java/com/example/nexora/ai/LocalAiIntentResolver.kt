@@ -146,6 +146,52 @@ class LocalAiIntentResolver(
         val q = query.lowercase().trim()
         val entityQuery = langResult.entities["query"]?.toString()?.lowercase() ?: ""
 
+        if (langResult.entities["type"] == "why_behind" || q.contains("why am i behind") || q.contains("why behind")) {
+            val incompleteCount = context.incompleteTasks.size
+            val carriedCount = context.carriedTasks
+            val completedToday = context.completedTasks.size
+            val highPriorityCount = context.incompleteTasks.count { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
+            val highestPriorityTask = context.incompleteTasks.maxByOrNull { it.priority.ordinal }
+            val workloadState = context.personalContext.workload.state
+
+            val diagnosis = if (incompleteCount == 0) {
+                "You are not behind. You have 0 pending tasks remaining on your schedule."
+            } else {
+                val workloadNote = if (workloadState == WorkloadState.HIGH || workloadState == WorkloadState.VERY_HIGH) {
+                    " and your workload is above your normal capacity"
+                } else ""
+                val carriedNote = if (carriedCount > 0) " including $carriedCount carried forward from yesterday" else ""
+                "You're behind because $incompleteCount ${if (incompleteCount == 1) "task remains" else "tasks remain"} incomplete$carriedNote$workloadNote."
+            }
+
+            val evidence = "Evidence:\n• $incompleteCount incomplete tasks\n• $highPriorityCount high-priority tasks\n• $completedToday tasks completed today" +
+                (if (carriedCount > 0) "\n• $carriedCount carried-forward tasks" else "")
+
+            val nextStep = if (highestPriorityTask != null) "Next:\nFocus on \"${highestPriorityTask.title}\"." else "Next:\nReview your backlog."
+            val text = "$diagnosis\n\n$evidence\n\n$nextStep"
+
+            return AiModelStructuredResponse(
+                decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Behind Schedule Diagnosis", reason = text, taskId = highestPriorityTask?.id),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
+        if (langResult.entities["type"] == "goal_review" || q.contains("review my goals") || q.contains("review goals") || q.contains("analyze my goals")) {
+            val activeGoals = context.activeGoals
+            if (activeGoals.isEmpty()) {
+                return notFoundResult("You don't have any active goals configured yet.")
+            }
+            val avgProgress = (activeGoals.map { it.progress }.average() * 100).toInt()
+            val text = "Goals Review (${activeGoals.size} active, $avgProgress% average progress):\n" +
+                activeGoals.joinToString("\n") { "• \"${it.title}\": ${(it.progress * 100).toInt()}% progress" }
+            return AiModelStructuredResponse(
+                decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Goals Review", reason = text),
+                textResponse = text,
+                modelName = "local-heuristic"
+            )
+        }
+
         // 1. Follow-up conversational reasoning: "why?" / "why is it behind?"
         if (q == "why" || q == "why?" || q.startsWith("why is it") || q.startsWith("why is that")) {
             val lastGoalId = conversationContext.lastGoalId
@@ -777,7 +823,21 @@ class LocalAiIntentResolver(
                 )
             }
             is ResolutionResult.Ambiguous -> ambiguousResult("Which goal should I break down?", resolution.candidates.map { it.id })
-            else -> notFoundResult("I couldn't find the goal you want to break down.")
+            else -> {
+                if (title.isNotBlank()) {
+                    AiModelStructuredResponse(
+                        decision = AiDecision(
+                            type = AiDecisionType.CLARIFY,
+                            title = "Goal Not Found",
+                            reason = "Goal \"$title\" not found."
+                        ),
+                        textResponse = "I couldn't find a goal named \"$title\". Would you like me to create a new goal called \"$title\" and break it into tasks?",
+                        modelName = "local-heuristic"
+                    )
+                } else {
+                    notFoundResult("I couldn't find the goal you want to break down.")
+                }
+            }
         }
     }
 
@@ -848,14 +908,15 @@ class LocalAiIntentResolver(
         
         val textResponse = if (next != null) {
             val task = context.tasks.find { it.id == next.relatedTaskId }
+            val taskTitle = task?.title ?: next.title.removePrefix("Priority: ")
             val factors = next.evidence.joinToString("; ") { it.evidence }
             val why = if (factors.isNotBlank()) factors else next.message
             val goalConn = if (task?.goalTitle != null) " Linked to goal '${task.goalTitle}'." else ""
             val effort = if (task != null) " Estimated effort: ${task.duration}." else ""
             
-            "Next recommended task: \"${next.title}\".\nWhy: $why$goalConn$effort"
+            "WHAT:\n$taskTitle\n\nWHY:\n$why$goalConn$effort\n\nNEXT:\nStart working on this task or mark it complete once done."
         } else {
-            "You have no urgent tasks. Consider reviewing your goals or planning for tomorrow."
+            "WHAT:\nNone\n\nWHY:\nYou have no incomplete or urgent tasks.\n\nNEXT:\nConsider reviewing your goals or creating new tasks."
         }
         
         return AiModelStructuredResponse(
@@ -1021,19 +1082,26 @@ class LocalAiIntentResolver(
     }
 
     private fun handlePredictWorkload(query: String, context: AiContext): AiModelStructuredResponse {
-        val predictiveEngine = NexoraPredictiveEngine()
-        val prediction = predictiveEngine.predictWorkloadOverload(context)
-        
-        val textResponse = if (prediction != null) {
-            "Workload Assessment:\n${prediction.prediction}\n\n${prediction.evidence}"
-        } else {
-            "Your task list is clear right now. No workload pressure detected."
+        val incompleteCount = context.incompleteTasks.size
+        val highPriorityCount = context.incompleteTasks.count { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
+        val carriedCount = context.carriedTasks
+        val state = context.personalContext.workload.state
+
+        val level = when (state) {
+            WorkloadState.VERY_HIGH -> "VERY HIGH"
+            WorkloadState.HIGH -> "HIGH"
+            WorkloadState.LOW, WorkloadState.VERY_LOW -> "LOW"
+            WorkloadState.BALANCED -> "NORMAL"
         }
+
+        val textResponse = "Workload Assessment: $level\n\nWhy:\n• $incompleteCount incomplete tasks\n• $highPriorityCount high-priority items" +
+            (if (carriedCount > 0) "\n• $carriedCount carried-forward tasks" else "") +
+            "\n• Current state: ${context.personalContext.dayState.name.lowercase()}"
 
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.PREDICT_WORKLOAD,
-                title = "Workload Feasibility",
+                title = "Workload Assessment: $level",
                 reason = textResponse
             ),
             textResponse = textResponse,

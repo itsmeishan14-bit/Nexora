@@ -47,7 +47,8 @@ data class AiResponse(
     val relatedGoalId: Long? = null,
     val workflow: AgentWorkflow? = null,
     val decision: AiDecision? = null,
-    val conversationContext: AiConversationContext? = null
+    val conversationContext: AiConversationContext? = null,
+    val dailyPlan: NexoraDailyPlan? = null
 )
 
 enum class AiResponseType {

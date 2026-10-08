@@ -8,7 +8,8 @@ data class AiConversationalState(
     val missingField: String? = null,
     val lastTaskId: Long? = null,
     val lastGoalId: Long? = null,
-    val lastEntityTitle: String? = null
+    val lastEntityTitle: String? = null,
+    val activeClarification: AiClarification? = null
 )
 
 fun AiConversationalState.toConversationContext(): AiConversationContext {
@@ -19,7 +20,8 @@ fun AiConversationalState.toConversationContext(): AiConversationContext {
         candidateIds = this.candidateTaskIds,
         lastTaskId = this.lastTaskId,
         lastGoalId = this.lastGoalId,
-        lastEntityTitle = this.lastEntityTitle
+        lastEntityTitle = this.lastEntityTitle,
+        activeClarification = this.activeClarification
     )
 }
 
@@ -31,7 +33,8 @@ fun AiConversationContext.toAiConversationalState(): AiConversationalState {
         candidateTaskIds = this.candidateIds,
         lastTaskId = this.lastTaskId,
         lastGoalId = this.lastGoalId,
-        lastEntityTitle = this.lastEntityTitle
+        lastEntityTitle = this.lastEntityTitle,
+        activeClarification = this.activeClarification
     )
 }
 

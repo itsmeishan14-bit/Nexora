@@ -503,7 +503,8 @@ class AdvancedLocalLanguagePipeline {
         if (lower.contains(Regex("(?i)\\b(postpone|delay risk|at risk|task at risk|most likely to postpone|delay)\\b")) && lower.contains("task")) {
             return StructuralClassification(AiDecisionType.PREDICT_TASK_RISK, AiConfidence.HIGH)
         }
-        if (lower.contains(Regex("(?i)\\b(taking on too much|schedule realistic|workload risk|overload risk|too much today|unrealistic)\\b"))) {
+        if (lower.contains(Regex("(?i)\\b(taking on too much|schedule realistic|workload risk|overload risk|too much today|unrealistic|check my workload|check workload|my workload|how is my workload|review my workload|what is my workload|workload status)\\b")) ||
+            (lower.contains("workload") && (lower.contains("check") || lower.contains("review") || lower.contains("how") || lower.contains("status") || lower.contains("what is")))) {
             return StructuralClassification(AiDecisionType.PREDICT_WORKLOAD, AiConfidence.HIGH)
         }
         if (lower.contains(Regex("(?i)\\b(productivity trend|completion pace|my pace|accurate|accuracy|calibration|prediction quality)\\b")) ||
@@ -528,8 +529,9 @@ class AdvancedLocalLanguagePipeline {
         // 9. STRUCTURAL CLASS: DIRECTIVE ACTIONS (Goal Decomposition & Mutations)
         // ─────────────────────────────────────────────────────────────
         // Goal Decomposition Directive (Higher priority than generic "list")
-        if ((lower.contains("break down") || lower.contains("decompose") || (lower.contains("plan") && lower.contains("goal"))) && 
-            (lower.contains("goal") || lower.contains("into tasks") || lower.contains("into steps") || lower.contains("sub-tasks") || lower.startsWith("decompose") || lower.startsWith("break down") || lower.startsWith("plan goal") || lower.startsWith("plan my goal"))) {
+        if ((lower.contains("break down") || lower.contains("decompose") || (lower.contains("plan") && lower.contains("goal")) ||
+             lower.contains("create a plan for") || lower.contains("make a plan for") || lower.startsWith("plan for ")) && 
+            (lower.contains("goal") || lower.contains("into tasks") || lower.contains("into steps") || lower.contains("sub-tasks") || lower.startsWith("decompose") || lower.startsWith("break down") || lower.startsWith("plan goal") || lower.startsWith("plan my goal") || lower.contains("plan for") || lower.contains("create a plan for"))) {
             return StructuralClassification(
                 intent = AiDecisionType.DECOMPOSE_GOAL,
                 confidence = AiConfidence.HIGH,
@@ -608,7 +610,8 @@ class AdvancedLocalLanguagePipeline {
             return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
         }
 
-        if (lower.contains(Regex("(?i)\\b(progress|stats|history|falling behind|behind|why am i|how am i doing|why did)\\b"))) {
+        if (lower.contains(Regex("(?i)\\b(progress|stats|history|falling behind|behind|why am i|how am i doing|why did|review my goals|review goals|check my goals|analyze my goals|how are my goals|goal review|review the goals|status of my goals)\\b")) ||
+            (lower.contains("goals") && (lower.contains("review") || lower.contains("analyze") || lower.contains("check")))) {
             return StructuralClassification(AiDecisionType.SHOW_INSIGHT, AiConfidence.HIGH)
         }
 
@@ -808,8 +811,23 @@ class AdvancedLocalLanguagePipeline {
                             t = t.removeRange(catMatch.range)
                         }
                     }
-                    t = t.replace(Regex("(?i)^\\s*(?:update|change|edit|rename|modify|set)\\s+(?:the\\s+)?(?:goal|objective)\\s*"), " ")
-                        .replace(Regex("(?i)\\b(goal|objective|the|my|a|an|category)\\b"), " ")
+                    val dateMatch = Regex("(?i)\\b(?:deadline|target\\s*date|target|due\\s*date|due|date)\\s+(?:to\\s+|is\\s+)?([0-9]{4}-[0-9]{2}-[0-9]{2})").find(t)
+                        ?: Regex("(?i)\\b(?:to\\s+)?([0-9]{4}-[0-9]{2}-[0-9]{2})").find(t)
+                    if (dateMatch != null) {
+                        val date = (dateMatch.groups[1]?.value ?: dateMatch.value).trim()
+                        entities["targetDate"] = date
+                        t = t.removeRange(dateMatch.range)
+                    }
+                    val progressMatch = Regex("(?i)\\bprogress\\s+(?:to\\s+|is\\s+)?(\\d+(?:\\.\\d+)?)\\s*%?").find(t)
+                    if (progressMatch != null) {
+                        val p = progressMatch.groupValues[1].toFloatOrNull()
+                        if (p != null) {
+                            entities["progress"] = if (p > 1.0f) p / 100f else p
+                            t = t.removeRange(progressMatch.range)
+                        }
+                    }
+                    t = t.replace(Regex("(?i)^\\s*(?:update|change|edit|rename|modify|set)\\s+"), " ")
+                        .replace(Regex("(?i)\\b(goal|objective|the|my|a|an|category|deadline|target\\s*date|target|due\\s*date|due|date|progress|to|is)\\b"), " ")
                         .trimEnd('.', '!', '?', ';', ',')
                         .replace(Regex("\\s+"), " ")
                         .trim()
@@ -855,13 +873,19 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.DECOMPOSE_GOAL -> {
-                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan|how to|create a plan for|make a plan for)\\b"), " ")
+                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan for|create a plan for|make a plan for|plan|how to)\\b"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
             AiDecisionType.DELETE_ALL_TASKS, AiDecisionType.COMPLETE_ALL_TASKS -> ""
             else -> {
-                if (text.contains("goal")) {
+                if (text.contains(Regex("(?i)\\b(review my goals|review goals|check my goals|analyze my goals|how are my goals|goal review)\\b"))) {
+                    entities["scope"] = "goal_review"
+                    ""
+                } else if (text.contains("why") && text.contains("behind")) {
+                    entities["query"] = "why_behind"
+                    ""
+                } else if (text.contains("goal")) {
                     text.replace(Regex("(?i)\\b(show|how is|is|on track|status|why is|falling behind|my|the|goal|doing|need|should i|decompose|will i finish)\\b"), " ")
                         .replace(Regex("\\s+"), " ")
                         .trim()
@@ -942,20 +966,82 @@ class AdvancedLocalLanguagePipeline {
         val clarification = convContext.activeClarification ?: return AiLanguageResult(AiDecisionType.NO_ACTION, AiConfidence.LOW)
         val entities = clarification.partialEntities.toMutableMap()
 
+        if (clarification.missingField == "create_and_decompose_goal") {
+            val targetTitle = clarification.partialEntities["title"]?.toString()
+                ?: convContext.lastEntityTitle
+                ?: "New Goal"
+            if (isConfirmation(text)) {
+                entities["title"] = targetTitle
+                entities["createIfMissing"] = true
+                entities["confirmed_create"] = true
+                return AiLanguageResult(
+                    intent = AiDecisionType.DECOMPOSE_GOAL,
+                    confidence = AiConfidence.HIGH,
+                    entities = entities,
+                    requiresMutation = true
+                )
+            } else if (isCancellation(text)) {
+                return AiLanguageResult(
+                    intent = AiDecisionType.CANCEL,
+                    confidence = AiConfidence.HIGH,
+                    isCancellation = true
+                )
+            } else {
+                val cleaned = text.trim()
+                val match = AiEntityResolver.resolveGoal(cleaned, context.goals, convContext)
+                return if (match is ResolutionResult.Success) {
+                    entities["title"] = match.entity.title
+                    entities["goalId"] = match.entity.id
+                    AiLanguageResult(
+                        intent = AiDecisionType.DECOMPOSE_GOAL,
+                        confidence = AiConfidence.HIGH,
+                        entities = entities,
+                        targetGoalId = match.entity.id,
+                        targetGoalTitle = match.entity.title,
+                        requiresMutation = true
+                    )
+                } else {
+                    entities["title"] = cleaned
+                    entities["createIfMissing"] = true
+                    AiLanguageResult(
+                        intent = AiDecisionType.DECOMPOSE_GOAL,
+                        confidence = AiConfidence.HIGH,
+                        entities = entities,
+                        requiresMutation = true
+                    )
+                }
+            }
+        }
+
         when (clarification.missingField) {
             "title" -> {
                 entities["title"] = text
-                val match = AiEntityResolver.resolveTask(text, context.tasks, convContext)
-                if (match is ResolutionResult.Success) {
-                    entities["taskId"] = match.entity.id
-                    return AiLanguageResult(
-                        intent = clarification.intent,
-                        confidence = AiConfidence.HIGH,
-                        entities = entities,
-                        targetTaskId = match.entity.id,
-                        targetTaskTitle = match.entity.title,
-                        requiresMutation = true
-                    )
+                if (clarification.intent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
+                    val match = AiEntityResolver.resolveGoal(text, context.goals, convContext)
+                    if (match is ResolutionResult.Success) {
+                        entities["goalId"] = match.entity.id
+                        return AiLanguageResult(
+                            intent = clarification.intent,
+                            confidence = AiConfidence.HIGH,
+                            entities = entities,
+                            targetGoalId = match.entity.id,
+                            targetGoalTitle = match.entity.title,
+                            requiresMutation = true
+                        )
+                    }
+                } else {
+                    val match = AiEntityResolver.resolveTask(text, context.tasks, convContext)
+                    if (match is ResolutionResult.Success) {
+                        entities["taskId"] = match.entity.id
+                        return AiLanguageResult(
+                            intent = clarification.intent,
+                            confidence = AiConfidence.HIGH,
+                            entities = entities,
+                            targetTaskId = match.entity.id,
+                            targetTaskTitle = match.entity.title,
+                            requiresMutation = true
+                        )
+                    }
                 }
             }
             "taskId" -> {
@@ -982,7 +1068,7 @@ class AdvancedLocalLanguagePipeline {
             }
             "goalId" -> {
                 val goals = context.goals.filter { it.id in clarification.candidates }
-                val match = AiEntityResolver.resolveGoal(text, goals)
+                val match = AiEntityResolver.resolveGoal(text, goals.ifEmpty { context.goals })
                 if (match is ResolutionResult.Success) {
                     entities["goalId"] = match.entity.id
                     return AiLanguageResult(

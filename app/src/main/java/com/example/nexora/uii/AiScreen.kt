@@ -67,6 +67,8 @@ fun AiScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            val isAnyLoading = uiState.isChatLoading || uiState.isLoading
+
             // ── Scrollable content ──────────────────────────────────────
             LazyColumn(
                 modifier = Modifier
@@ -94,7 +96,7 @@ fun AiScreen(
                 item {
                     IntelligenceActionRow(
                         onPlanDay = { viewModel.createDailyPlan() },
-                        onNextTask = { viewModel.analyze() },
+                        onNextTask = { viewModel.recommendNextTask() },
                         onDecompose = onOpenGoalDecomposer,
                         onRules = onOpenAutomations
                     )
@@ -106,6 +108,12 @@ fun AiScreen(
                     AiActionResult(
                         success = it.isCompleteSuccess,
                         message = it.summaryMessage
+                    )
+                } ?: uiState.error?.let {
+                    AiActionResult(
+                        success = false,
+                        message = it,
+                        error = it
                     )
                 }
                 displayResult?.let { result ->
@@ -229,7 +237,7 @@ fun AiScreen(
                 }
 
                 // LOADING INDICATOR
-                if (uiState.isChatLoading) {
+                if (isAnyLoading) {
                     item {
                         Spacer(Modifier.height(4.dp))
                         IntelligenceThinkingIndicator()
@@ -238,7 +246,7 @@ fun AiScreen(
                 }
 
                 // EMPTY STATE
-                if (uiState.chatMessages.isEmpty() && !uiState.isChatLoading &&
+                if (uiState.chatMessages.isEmpty() && !isAnyLoading &&
                     uiState.recommendations.isEmpty() && uiState.proactiveSignals.isEmpty() &&
                     uiState.dailyPlan == null
                 ) {
@@ -253,7 +261,7 @@ fun AiScreen(
             // ── COMPOSER ───────────────────────────────────────────────
             IntelligenceComposer(
                 onSend = { viewModel.sendMessage(it) },
-                enabled = !uiState.isChatLoading
+                enabled = !isAnyLoading
             )
         }
     }

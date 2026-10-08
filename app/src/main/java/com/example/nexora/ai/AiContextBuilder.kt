@@ -81,13 +81,17 @@ open class AiContextBuilder(
             AiRequestType.GENERAL_ANALYSIS,
             AiRequestType.CHAT,
             AiRequestType.PROACTIVE_ANALYSIS,
-            AiRequestType.PRODUCTIVITY_ANALYSIS
+            AiRequestType.PRODUCTIVITY_ANALYSIS,
+            AiRequestType.GOAL_ANALYSIS,
+            AiRequestType.GOAL_DECOMPOSITION
         )
     }
 
     private fun shouldLoadGoals(request: AiRequest?): Boolean {
         if (request == null) return true
         return request.type in listOf(
+            AiRequestType.NEXT_TASK,
+            AiRequestType.DAILY_PLAN,
             AiRequestType.GOAL_ANALYSIS,
             AiRequestType.GOAL_DECOMPOSITION,
             AiRequestType.UPDATE_GOAL,
@@ -101,12 +105,28 @@ open class AiContextBuilder(
 
     private fun shouldLoadHistory(request: AiRequest?): Boolean {
         if (request == null) return true
-        return request.type in listOf(AiRequestType.PRODUCTIVITY_ANALYSIS, AiRequestType.PROACTIVE_ANALYSIS, AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT)
+        return request.type in listOf(
+            AiRequestType.PRODUCTIVITY_ANALYSIS,
+            AiRequestType.PROACTIVE_ANALYSIS,
+            AiRequestType.GENERAL_ANALYSIS,
+            AiRequestType.CHAT,
+            AiRequestType.DAILY_PLAN,
+            AiRequestType.NEXT_TASK,
+            AiRequestType.GOAL_ANALYSIS
+        )
     }
 
     private fun shouldLoadMemory(request: AiRequest?): Boolean {
         if (request == null) return true
-        return request.type in listOf(AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT, AiRequestType.PROACTIVE_ANALYSIS)
+        return request.type in listOf(
+            AiRequestType.GENERAL_ANALYSIS,
+            AiRequestType.CHAT,
+            AiRequestType.PROACTIVE_ANALYSIS,
+            AiRequestType.DAILY_PLAN,
+            AiRequestType.NEXT_TASK,
+            AiRequestType.PRODUCTIVITY_ANALYSIS,
+            AiRequestType.GOAL_ANALYSIS
+        )
     }
 
     private fun shouldLoadAdaptive(request: AiRequest?): Boolean {
@@ -116,13 +136,23 @@ open class AiContextBuilder(
             AiRequestType.NEXT_TASK,
             AiRequestType.GENERAL_ANALYSIS,
             AiRequestType.PROACTIVE_ANALYSIS,
-            AiRequestType.PRODUCTIVITY_ANALYSIS
+            AiRequestType.PRODUCTIVITY_ANALYSIS,
+            AiRequestType.CHAT,
+            AiRequestType.GOAL_ANALYSIS
         )
     }
 
     private fun shouldLoadPersonal(request: AiRequest?): Boolean {
         if (request == null) return true
-        return request.type in listOf(AiRequestType.GENERAL_ANALYSIS, AiRequestType.CHAT, AiRequestType.PROACTIVE_ANALYSIS)
+        return request.type in listOf(
+            AiRequestType.GENERAL_ANALYSIS,
+            AiRequestType.CHAT,
+            AiRequestType.PROACTIVE_ANALYSIS,
+            AiRequestType.DAILY_PLAN,
+            AiRequestType.NEXT_TASK,
+            AiRequestType.PRODUCTIVITY_ANALYSIS,
+            AiRequestType.GOAL_ANALYSIS
+        )
     }
 
     private fun calculateAdaptiveProfile(

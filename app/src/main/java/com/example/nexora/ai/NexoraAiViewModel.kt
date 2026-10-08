@@ -256,11 +256,12 @@ class NexoraAiViewModel(
     }
 
     fun createDailyPlan() {
-        if (_uiState.value.isLoading) return
+        if (_uiState.value.isChatLoading) return
         
         scope.launch {
             _uiState.update {
                 it.copy(
+                    isChatLoading = true,
                     isLoading = true,
                     error = null,
                     dailyPlan = null
@@ -269,12 +270,12 @@ class NexoraAiViewModel(
 
             try {
                 val response = engine.processRequest(AiRequest(AiRequestType.DAILY_PLAN))
-                val plan = engine.createDailyPlan() // Keep using the specialized plan for legacy UI
+                val plan = response.dailyPlan ?: engine.createDailyPlan()
 
                 _uiState.update {
                     it.copy(
                         dailyPlan = plan,
-                        recommendations = emptyList(),
+                        recommendations = if (response.recommendations.isNotEmpty()) response.recommendations else it.recommendations,
                         lastBrainResponse = response,
                         currentWorkflow = response.workflow,
                         proactiveSignals = response.proactiveSignals
@@ -283,21 +284,62 @@ class NexoraAiViewModel(
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
-                        error = e.message ?: "Unable to create your daily plan."
+                        error = e.message ?: "Unable to create your daily plan.",
+                        lastActionResult = AiActionResult(false, e.message ?: "Unable to create your daily plan.", error = e.message)
                     )
                 }
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isLoading = false, isChatLoading = false) }
+            }
+        }
+    }
+
+    fun recommendNextTask() {
+        if (_uiState.value.isChatLoading) return
+        
+        scope.launch {
+            _uiState.update {
+                it.copy(
+                    isChatLoading = true,
+                    isLoading = true,
+                    error = null
+                )
+            }
+
+            try {
+                val response = engine.processRequest(AiRequest(AiRequestType.NEXT_TASK))
+                _uiState.update {
+                    it.copy(
+                        recommendations = response.recommendations,
+                        proposedAction = response.proposedActions.firstOrNull(),
+                        lastBrainResponse = response,
+                        proactiveSignals = response.proactiveSignals,
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: it.conversationalState
+                    )
+                }
+                if (response.proposedActions.isNotEmpty()) {
+                    proposePlan(response.proposedActions)
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        error = e.message ?: "Unable to recommend next task.",
+                        lastActionResult = AiActionResult(false, e.message ?: "Unable to recommend next task.", error = e.message)
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(isLoading = false, isChatLoading = false) }
             }
         }
     }
 
     fun analyzeGoals() {
-        if (_uiState.value.isLoading) return
+        if (_uiState.value.isChatLoading) return
         
         scope.launch {
             _uiState.update {
                 it.copy(
+                    isChatLoading = true,
                     isLoading = true,
                     error = null
                 )
@@ -316,11 +358,12 @@ class NexoraAiViewModel(
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
-                        error = e.message ?: "Unable to analyze your goals."
+                        error = e.message ?: "Unable to analyze your goals.",
+                        lastActionResult = AiActionResult(false, e.message ?: "Unable to analyze your goals.", error = e.message)
                     )
                 }
             } finally {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isLoading = false, isChatLoading = false) }
             }
         }
     }
@@ -392,7 +435,7 @@ class NexoraAiViewModel(
     }
 
     fun sendMessage(text: String) {
-        if (text.isBlank()) return
+        if (text.isBlank() || _uiState.value.isChatLoading) return
 
         val userMessage = NexoraChatMessage(
             text = text,
@@ -435,7 +478,9 @@ class NexoraAiViewModel(
                         lastBrainResponse = response,
                         currentWorkflow = response.workflow,
                         proactiveSignals = response.proactiveSignals,
-                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState()
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
+                        dailyPlan = response.dailyPlan ?: it.dailyPlan,
+                        recommendations = if (response.recommendations.isNotEmpty()) response.recommendations else it.recommendations
                     )
                 }
 
@@ -444,7 +489,8 @@ class NexoraAiViewModel(
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
-                        error = e.message ?: "Nexora Brain is having trouble reasoning."
+                        error = e.message ?: "Nexora Brain is having trouble reasoning.",
+                        lastActionResult = AiActionResult(false, e.message ?: "Nexora Brain error", error = e.message)
                     )
                 }
             } finally {
@@ -771,7 +817,8 @@ class NexoraAiViewModel(
             it.copy(
                 lastActionResult = null,
                 lastPlanResults = emptyList(),
-                lastExecutionRecord = null
+                lastExecutionRecord = null,
+                error = null
             )
         }
     }
