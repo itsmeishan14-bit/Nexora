@@ -146,10 +146,10 @@ class LocalAiIntentResolver(
         val q = query.lowercase().trim()
         val entityQuery = langResult.entities["query"]?.toString()?.lowercase() ?: ""
 
-        if (langResult.entities["type"] == "why_behind" || q.contains("why am i behind") || q.contains("why behind")) {
+        if (langResult.entities["type"] == "why_behind" || langResult.entities["query"] == "why_behind" || q.contains("why am i behind") || q.contains("why behind")) {
             val incompleteCount = context.incompleteTasks.size
             val carriedCount = context.carriedTasks
-            val completedToday = context.completedTasks.size
+            val completedToday = maxOf(context.tasksCompletedToday, context.completedTasks.size)
             val highPriorityCount = context.incompleteTasks.count { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
             val highestPriorityTask = context.incompleteTasks.maxByOrNull { it.priority.ordinal }
             val workloadState = context.personalContext.workload.state
@@ -177,17 +177,64 @@ class LocalAiIntentResolver(
             )
         }
 
-        if (langResult.entities["type"] == "goal_review" || q.contains("review my goals") || q.contains("review goals") || q.contains("analyze my goals")) {
+        if (langResult.entities["type"] == "goal_review" || langResult.entities["scope"] == "goal_review" || q.contains("review my goals") || q.contains("review goals") || q.contains("analyze my goals") || q.contains("check my goals")) {
             val activeGoals = context.activeGoals
             if (activeGoals.isEmpty()) {
-                return notFoundResult("You don't have any active goals configured yet.")
+                return notFoundResult("You don't have any active goals configured yet. Create a goal to start tracking your structured progress!")
             }
+            val totalGoals = activeGoals.size
             val avgProgress = (activeGoals.map { it.progress }.average() * 100).toInt()
-            val text = "Goals Review (${activeGoals.size} active, $avgProgress% average progress):\n" +
-                activeGoals.joinToString("\n") { "• \"${it.title}\": ${(it.progress * 100).toInt()}% progress" }
+
+            val atRiskHealthGoals = context.personalContext.goalHealth
+                .filter { it.state == GoalHealthState.AT_RISK }
+                .mapNotNull { h -> activeGoals.find { it.id == h.goalId } }
+
+            val goalsWithoutTasks = activeGoals.filter { goal ->
+                context.incompleteTasks.none { it.goalTitle == goal.title }
+            }
+
+            val insufficientDataGoals = context.personalContext.goalHealth
+                .filter { it.state == GoalHealthState.INSUFFICIENT_DATA }
+                .mapNotNull { h -> activeGoals.find { it.id == h.goalId } }
+
+            val message = buildString {
+                append("Goals Review ($totalGoals active, $avgProgress% average progress):\n\n")
+                activeGoals.forEach { goal ->
+                    val progressPct = (goal.progress * 100).toInt()
+                    val linkedPending = context.incompleteTasks.count { it.goalTitle == goal.title }
+                    append("• \"${goal.title}\": $progressPct% complete ($linkedPending pending tasks)\n")
+                }
+
+                if (atRiskHealthGoals.isNotEmpty()) {
+                    append("\nGoals at Risk:\n")
+                    atRiskHealthGoals.forEach { goal ->
+                        val health = context.personalContext.goalHealth.find { it.goalId == goal.id }
+                        append("• \"${goal.title}\" is at risk: ${health?.evidence ?: "Stalled progress and inactivity."}\n")
+                    }
+                } else if (insufficientDataGoals.isNotEmpty()) {
+                    append("\nGoal Health Note:\n")
+                    append("• Insufficient activity history to assess health for ${insufficientDataGoals.joinToString { "\"${it.title}\"" }}.\n")
+                }
+
+                if (goalsWithoutTasks.isNotEmpty()) {
+                    append("\nNeeds Actionable Tasks:\n")
+                    goalsWithoutTasks.forEach { goal ->
+                        append("• \"${goal.title}\" has no pending tasks to drive progress.\n")
+                    }
+                }
+
+                val targetGoal = goalsWithoutTasks.firstOrNull() ?: atRiskHealthGoals.firstOrNull() ?: activeGoals.first()
+                append("\nSuggested Next Action:\n")
+                if (goalsWithoutTasks.contains(targetGoal)) {
+                    append("Break down \"${targetGoal.title}\" into sub-tasks because it currently has no pending tasks to move it forward.")
+                } else {
+                    append("Focus on pending tasks for \"${targetGoal.title}\" to maintain forward progress.")
+                }
+            }
+
             return AiModelStructuredResponse(
-                decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Goals Review", reason = text),
-                textResponse = text,
+                decision = AiDecision(type = AiDecisionType.SHOW_INSIGHT, title = "Goals Review", reason = message),
+                textResponse = message,
                 modelName = "local-heuristic"
             )
         }
@@ -324,9 +371,11 @@ class LocalAiIntentResolver(
             if (scope == TemporalScope.YESTERDAY || q.contains("yesterday") || q.contains("accomplish")) {
                 val yesterday = LocalDate.now().minusDays(1)
                 val histRecord = context.history.find { it.date == yesterday.toString() }
-                val completedCount = histRecord?.tasksCompleted ?: 0
-                val focusMins = histRecord?.focusMinutes ?: 0
-                val text = "Yesterday ($yesterday): According to your records, you completed $completedCount tasks with $focusMins focus minutes logged."
+                val text = if (histRecord == null) {
+                    "Yesterday ($yesterday): No historical activity records found for this date."
+                } else {
+                    "Yesterday ($yesterday): According to your records, you completed ${histRecord.tasksCompleted} tasks with ${histRecord.focusMinutes} focus minutes logged."
+                }
                 return AiModelStructuredResponse(
                     decision = AiDecision(
                         type = AiDecisionType.SHOW_INSIGHT,
@@ -1085,6 +1134,16 @@ class LocalAiIntentResolver(
         val incompleteCount = context.incompleteTasks.size
         val highPriorityCount = context.incompleteTasks.count { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
         val carriedCount = context.carriedTasks
+        val tasksWithDuration = context.incompleteTasks.count {
+            val num = Regex("\\d+").find(it.duration.lowercase().trim())?.value?.toIntOrNull() ?: 0
+            num > 0
+        }
+        val tasksWithoutDuration = incompleteCount - tasksWithDuration
+        val totalMinutes = context.incompleteTasks.sumOf {
+            val valStr = it.duration.lowercase().trim()
+            val num = Regex("\\d+").find(valStr)?.value?.toIntOrNull() ?: 0
+            if (valStr.contains("hour") || valStr.contains("hr")) num * 60 else num
+        }
         val state = context.personalContext.workload.state
 
         val level = when (state) {
@@ -1094,9 +1153,27 @@ class LocalAiIntentResolver(
             WorkloadState.BALANCED -> "NORMAL"
         }
 
+        val hasHistory = context.history.isNotEmpty()
+        val baseline = context.adaptiveProfile.preferredDailyWorkload
+
+        val effortNote = if (totalMinutes > 0) {
+            "\n• Approximately $totalMinutes minutes of estimated effort across $tasksWithDuration tasks" +
+                (if (tasksWithoutDuration > 0) " ($tasksWithoutDuration tasks without duration estimates)" else "")
+        } else if (incompleteCount > 0) {
+            "\n• Estimated effort: Not specified (incomplete tasks have no duration estimates)"
+        } else ""
+
+        val baselineNote = if (hasHistory) {
+            "\n• Baseline capacity: $baseline tasks/day based on completion history"
+        } else {
+            "\n• Baseline capacity: $baseline tasks/day (standard default, no historical activity recorded yet)"
+        }
+
         val textResponse = "Workload Assessment: $level\n\nWhy:\n• $incompleteCount incomplete tasks\n• $highPriorityCount high-priority items" +
             (if (carriedCount > 0) "\n• $carriedCount carried-forward tasks" else "") +
-            "\n• Current state: ${context.personalContext.dayState.name.lowercase()}"
+            effortNote +
+            baselineNote +
+            "\n• Current state: ${context.personalContext.dayState.name.lowercase().replace('_', ' ')}"
 
         return AiModelStructuredResponse(
             decision = AiDecision(

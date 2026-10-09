@@ -43,7 +43,8 @@ class NexoraAiBrain(
         
         val context = getContext(request)
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
-        val convContext = request.conversationContext ?: AiConversationContext()
+        val rawConvContext = request.conversationContext ?: AiConversationContext()
+        val convContext = if (rawConvContext.isExpired()) AiConversationContext() else rawConvContext
 
         val response = if (request.type == AiRequestType.CHAT) {
             val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
@@ -150,13 +151,19 @@ class NexoraAiBrain(
     private suspend fun getContext(request: AiRequest): AiContext {
         val now = System.currentTimeMillis()
         
-        // Cache bypass for writes or explicit refreshes
+        // Always build fresh context for writes, conversational queries, and analytical requests
+        // so that factual responses are always grounded in real-time database state
         val isWrite = request.type in listOf(
             AiRequestType.CREATE_TASK, AiRequestType.UPDATE_TASK, AiRequestType.COMPLETE_TASK,
             AiRequestType.UPDATE_GOAL, AiRequestType.DELETE_TASK, AiRequestType.DELETE_GOAL
         )
+        val isFreshQuery = request.type in listOf(
+            AiRequestType.CHAT, AiRequestType.NEXT_TASK, AiRequestType.DAILY_PLAN,
+            AiRequestType.GOAL_ANALYSIS, AiRequestType.PRODUCTIVITY_ANALYSIS, AiRequestType.PROACTIVE_ANALYSIS,
+            AiRequestType.GOAL_DECOMPOSITION
+        )
         
-        if (!isWrite && lastContext != null && now - lastContextBuiltAt < contextCacheDuration) {
+        if (!isWrite && !isFreshQuery && lastContext != null && now - lastContextBuiltAt < contextCacheDuration) {
             return lastContext!!
         }
         
@@ -302,8 +309,23 @@ class NexoraAiBrain(
         }
 
         // 3. Confirmation Flow
-        if (langResult.isConfirmation && (convContext.pendingPlan.isNotEmpty() || convContext.pendingAction != null)) {
+        if (langResult.isConfirmation) {
             val planToConfirm = if (convContext.pendingPlan.isNotEmpty()) convContext.pendingPlan else listOfNotNull(convContext.pendingAction)
+            if (planToConfirm.isEmpty()) {
+                val msg = "There are no pending actions or plans awaiting confirmation."
+                return AiResponse(
+                    responseType = AiResponseType.NO_ACTION,
+                    title = "No Pending Actions",
+                    message = msg,
+                    confidence = AiConfidence.HIGH,
+                    decision = AiDecision(
+                        type = AiDecisionType.NO_ACTION,
+                        title = "No Pending Actions",
+                        reason = msg
+                    ),
+                    conversationContext = convContext
+                )
+            }
             val authorizedPlan = mutableListOf<AiAction>()
             var rejectionReason: String? = null
             for (action in planToConfirm) {
@@ -1114,13 +1136,8 @@ class NexoraAiBrain(
                 val incompleteLinked = context.incompleteTasks.filter { it.goalTitle == matchedGoal.title }
                 val targetTask = incompleteLinked.maxByOrNull { it.priority.ordinal } ?: incompleteLinked.firstOrNull()
                 if (targetTask != null) {
-                    val action = AiAction(
-                        type = AiActionType.COMPLETE_TASK,
-                        title = "Complete Task",
-                        description = "Work on \"${targetTask.title}\" for ${matchedGoal.title}",
-                        taskId = targetTask.id
-                    )
-                    val text = "WHAT:\n${targetTask.title}\n\nWHY:\nIt is your highest-priority incomplete task for your \"${matchedGoal.title}\" goal.\n\nNEXT:\nStart working on this task or mark it complete once done."
+                    val effort = if (targetTask.duration.isNotBlank()) " (Estimated effort: ${targetTask.duration})" else ""
+                    val text = "WHAT:\n${targetTask.title}\n\nWHY:\nIt is your highest-priority incomplete task for your \"${matchedGoal.title}\" goal$effort.\n\nNEXT:\nStart working on \"${targetTask.title}\" or mark it complete once finished."
                     return AiResponse(
                         responseType = AiResponseType.RECOMMENDATION,
                         title = "Next Task for ${matchedGoal.title}",
@@ -1128,19 +1145,20 @@ class NexoraAiBrain(
                         confidence = AiConfidence.HIGH,
                         relatedTaskId = targetTask.id,
                         relatedGoalId = matchedGoal.id,
-                        proposedActions = listOf(action),
                         decision = AiDecision(
                             type = AiDecisionType.START_TASK,
                             title = "Next Task",
                             reason = text,
                             taskId = targetTask.id,
-                            goalId = matchedGoal.id
+                            goalId = matchedGoal.id,
+                            taskTitle = targetTask.title
                         ),
                         conversationContext = convContext.copy(
                             lastIntent = AiDecisionType.START_TASK,
                             lastTaskId = targetTask.id,
                             lastGoalId = matchedGoal.id,
-                            lastEntityTitle = targetTask.title
+                            lastEntityTitle = targetTask.title,
+                            pendingAction = null
                         )
                     )
                 }
@@ -1152,12 +1170,15 @@ class NexoraAiBrain(
                     type = AiDecisionType.START_TASK,
                     title = nextResp.title,
                     reason = nextResp.message,
-                    taskId = nextResp.relatedTaskId
+                    taskId = nextResp.relatedTaskId,
+                    taskTitle = nextResp.decision?.taskTitle ?: nextResp.title.removePrefix("Recommended Task: ")
                 ),
                 conversationContext = convContext.copy(
                     lastIntent = AiDecisionType.START_TASK,
                     lastTaskId = nextResp.relatedTaskId,
-                    lastEntityTitle = nextResp.title.removePrefix("Recommended Task: ")
+                    lastGoalId = nextResp.relatedGoalId ?: convContext.lastGoalId,
+                    lastEntityTitle = nextResp.title.removePrefix("Recommended Task: "),
+                    pendingAction = null
                 )
             )
         }
@@ -1305,15 +1326,18 @@ class NexoraAiBrain(
 
         // Entity status inquiries ("Show my Kotlin goal", "How is it doing?", "Show my Java task")
         // Behind schedule & goal review insights
-        if (langResult.entities["type"] == "why_behind" || lower == "why am i behind" || lower.startsWith("why am i behind") || lower.contains("why behind")) {
+        if (langResult.entities["type"] == "why_behind" || langResult.entities["query"] == "why_behind" ||
+            lower == "why am i behind" || lower.startsWith("why am i behind") || lower.contains("why am i falling behind") || lower.contains("why behind")) {
             return handleBehindDiagnosis(context)
         }
 
-        if (langResult.entities["type"] == "goal_review" || lower == "review my goals" || lower.startsWith("review my goals") || lower.contains("review goals") || lower.contains("analyze my goals")) {
+        if (langResult.entities["type"] == "goal_review" || langResult.entities["scope"] == "goal_review" ||
+            lower == "review my goals" || lower.startsWith("review my goals") || lower.contains("review goals") || lower.contains("analyze my goals") || lower.contains("check my goals")) {
             return handleGoalAnalysis(context)
         }
 
-        if (lower.contains("check my workload") || lower.contains("check workload") || lower.contains("my workload") || lower.contains("how is my workload")) {
+        if (langResult.intent == AiDecisionType.PREDICT_WORKLOAD ||
+            lower.contains("check my workload") || lower.contains("check workload") || lower.contains("my workload") || lower.contains("how is my workload")) {
             return handleWorkloadAssessment(context)
         }
 
@@ -1491,13 +1515,22 @@ class NexoraAiBrain(
             val task = context.tasks.find { it.id == nextTaskRec.relatedTaskId }
             val taskTitle = task?.title ?: nextTaskRec.title.removePrefix("Priority: ")
             val linkedGoal = task?.goalTitle?.let { gt -> context.goals.find { it.title == gt } }
-            val whyReasons = nextTaskRec.evidence.map { it.evidence }
-            val whyText = if (whyReasons.isNotEmpty()) {
-                whyReasons.joinToString("; ")
-            } else {
-                nextTaskRec.message
+            val whyText = buildString {
+                val factors = nextTaskRec.evidence.map { it.evidence }.filter { it.isNotBlank() }
+                if (factors.isNotEmpty()) {
+                    append(factors.joinToString("; "))
+                } else {
+                    append(nextTaskRec.message)
+                }
+                if (linkedGoal != null) {
+                    append(". Directly advances your active goal \"${linkedGoal.title}\"")
+                }
+                if (task != null && task.duration.isNotBlank()) {
+                    append(". Estimated effort: ${task.duration}")
+                }
             }
-            val formattedMessage = "WHAT:\n$taskTitle\n\nWHY:\n$whyText\n\nNEXT:\nStart working on this task or mark it complete once done."
+
+            val formattedMessage = "WHAT:\n$taskTitle\n\nWHY:\n$whyText\n\nNEXT:\nStart working on \"$taskTitle\" or mark it complete once finished."
 
             val suggested = nextTaskRec.suggestedAction ?: AiAction(
                 type = AiActionType.COMPLETE_TASK,
@@ -1506,6 +1539,7 @@ class NexoraAiBrain(
                 taskId = nextTaskRec.relatedTaskId,
                 reason = whyText
             )
+
             AiResponse(
                 responseType = AiResponseType.RECOMMENDATION,
                 title = "Recommended Task: $taskTitle",
@@ -1521,7 +1555,8 @@ class NexoraAiBrain(
                     title = "Recommended Task",
                     reason = formattedMessage,
                     taskId = nextTaskRec.relatedTaskId,
-                    goalId = linkedGoal?.id
+                    goalId = linkedGoal?.id,
+                    taskTitle = taskTitle
                 ),
                 conversationContext = AiConversationContext(
                     lastIntent = AiDecisionType.START_TASK,
@@ -1607,28 +1642,36 @@ class NexoraAiBrain(
         val totalGoals = activeGoals.size
         val avgProgress = (activeGoals.map { it.progress }.average() * 100).toInt()
 
+        // Only goals that have genuine evidence of being at risk (not just lowest progress)
         val atRiskHealthGoals = context.personalContext.goalHealth
             .filter { it.state == GoalHealthState.AT_RISK }
             .mapNotNull { h -> activeGoals.find { it.id == h.goalId } }
-        val behindGoals = if (atRiskHealthGoals.isNotEmpty()) atRiskHealthGoals else listOfNotNull(activeGoals.minByOrNull { it.progress })
 
         val goalsWithoutTasks = activeGoals.filter { goal ->
             context.incompleteTasks.none { it.goalTitle == goal.title }
         }
 
+        val insufficientDataGoals = context.personalContext.goalHealth
+            .filter { it.state == GoalHealthState.INSUFFICIENT_DATA }
+            .mapNotNull { h -> activeGoals.find { it.id == h.goalId } }
+
         val message = buildString {
             append("Goals Review ($totalGoals active, $avgProgress% average progress):\n\n")
             activeGoals.forEach { goal ->
                 val progressPct = (goal.progress * 100).toInt()
-                val linkedTasks = context.incompleteTasks.count { it.goalTitle == goal.title }
-                append("• \"${goal.title}\": $progressPct% complete ($linkedTasks pending tasks)\n")
+                val linkedPending = context.incompleteTasks.count { it.goalTitle == goal.title }
+                append("• \"${goal.title}\": $progressPct% complete ($linkedPending pending tasks)\n")
             }
 
-            if (behindGoals.isNotEmpty()) {
-                append("\nFalling Behind:\n")
-                behindGoals.forEach { goal ->
-                    append("• \"${goal.title}\" is lagging with ${(goal.progress * 100).toInt()}% progress.\n")
+            if (atRiskHealthGoals.isNotEmpty()) {
+                append("\nGoals at Risk:\n")
+                atRiskHealthGoals.forEach { goal ->
+                    val health = context.personalContext.goalHealth.find { it.goalId == goal.id }
+                    append("• \"${goal.title}\" is at risk: ${health?.evidence ?: "Stalled progress and inactivity."}\n")
                 }
+            } else if (insufficientDataGoals.isNotEmpty()) {
+                append("\nGoal Health Note:\n")
+                append("• Insufficient activity history to assess health for ${insufficientDataGoals.joinToString { "\"${it.title}\"" }}.\n")
             }
 
             if (goalsWithoutTasks.isNotEmpty()) {
@@ -1638,16 +1681,16 @@ class NexoraAiBrain(
                 }
             }
 
-            val targetGoal = goalsWithoutTasks.firstOrNull() ?: behindGoals.firstOrNull() ?: activeGoals.first()
+            val targetGoal = goalsWithoutTasks.firstOrNull() ?: atRiskHealthGoals.firstOrNull() ?: activeGoals.first()
             append("\nSuggested Next Action:\n")
             if (goalsWithoutTasks.contains(targetGoal)) {
-                append("Break down \"${targetGoal.title}\" into sub-tasks to start moving it forward.")
+                append("Break down \"${targetGoal.title}\" into sub-tasks because it currently has no pending tasks to move it forward.")
             } else {
-                append("Focus on pending tasks for \"${targetGoal.title}\" to build momentum.")
+                append("Focus on pending tasks for \"${targetGoal.title}\" to maintain forward progress.")
             }
         }
 
-        val targetGoal = goalsWithoutTasks.firstOrNull() ?: behindGoals.firstOrNull() ?: activeGoals.first()
+        val targetGoal = goalsWithoutTasks.firstOrNull() ?: atRiskHealthGoals.firstOrNull() ?: activeGoals.first()
         val proposedAction = if (goalsWithoutTasks.contains(targetGoal)) {
             AiAction(
                 type = AiActionType.DECOMPOSE_GOAL,
@@ -1657,17 +1700,13 @@ class NexoraAiBrain(
                 requiresConfirmation = true
             )
         } else {
-            val nextTask = context.incompleteTasks.find { it.goalTitle == targetGoal.title }
-            nextTask?.let {
-                AiAction(
-                    type = AiActionType.COMPLETE_TASK,
-                    title = "Work on \"${it.title}\"",
-                    description = "Advance goal ${targetGoal.title}",
-                    taskId = it.id
-                )
-            }
+            AiAction(
+                type = AiActionType.OPEN_GOAL,
+                title = "View Goal",
+                description = "Inspect progress for ${targetGoal.title}",
+                goalId = targetGoal.id
+            )
         }
-
         val plannerRecs = planner.analyzeGoals(context)
 
         return AiResponse(
@@ -1677,7 +1716,7 @@ class NexoraAiBrain(
             confidence = AiConfidence.HIGH,
             relatedGoalId = targetGoal.id,
             recommendations = plannerRecs,
-            proposedActions = listOfNotNull(proposedAction),
+            proposedActions = listOf(proposedAction),
             decision = AiDecision(
                 type = AiDecisionType.SHOW_INSIGHT,
                 title = "Goals Review",
@@ -1687,8 +1726,7 @@ class NexoraAiBrain(
             conversationContext = AiConversationContext(
                 lastIntent = AiDecisionType.SHOW_INSIGHT,
                 lastGoalId = targetGoal.id,
-                lastEntityTitle = targetGoal.title,
-                pendingAction = proposedAction
+                lastEntityTitle = targetGoal.title
             )
         )
     }
@@ -1696,7 +1734,7 @@ class NexoraAiBrain(
     private fun handleBehindDiagnosis(context: AiContext): AiResponse {
         val incompleteCount = context.incompleteTasks.size
         val carriedCount = context.carriedTasks
-        val completedToday = context.completedTasks.size
+        val completedToday = maxOf(context.tasksCompletedToday, context.completedTasks.size)
         val highPriorityTasks = context.incompleteTasks.filter { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
         val highPriorityCount = highPriorityTasks.size
         val highestPriorityTask = context.incompleteTasks.maxByOrNull { it.priority.ordinal }
@@ -1730,16 +1768,7 @@ class NexoraAiBrain(
             "Next:\nReview your backlog and schedule your top priority items."
         }
 
-        val fullMessage = "$diagnosis\n\n$evidence\n\n$nextStep"
-
-        val action = highestPriorityTask?.let {
-            AiAction(
-                type = AiActionType.COMPLETE_TASK,
-                title = "Focus on ${it.title}",
-                description = "Work on highest-priority task to recover schedule momentum",
-                taskId = it.id
-            )
-        }
+        val fullMessage = "Behind Schedule Analysis:\n$diagnosis\n\n$evidence\n\n$nextStep"
 
         return AiResponse(
             responseType = AiResponseType.INFORMATION,
@@ -1747,7 +1776,6 @@ class NexoraAiBrain(
             message = fullMessage,
             confidence = AiConfidence.HIGH,
             relatedTaskId = highestPriorityTask?.id,
-            proposedActions = listOfNotNull(action),
             decision = AiDecision(
                 type = AiDecisionType.SHOW_INSIGHT,
                 title = "Behind Schedule Diagnosis",
@@ -1756,7 +1784,8 @@ class NexoraAiBrain(
             ),
             conversationContext = AiConversationContext(
                 lastIntent = AiDecisionType.SHOW_INSIGHT,
-                lastTaskId = highestPriorityTask?.id
+                lastTaskId = highestPriorityTask?.id,
+                lastEntityTitle = highestPriorityTask?.title
             )
         )
     }
@@ -1765,6 +1794,8 @@ class NexoraAiBrain(
         val incompleteCount = context.incompleteTasks.size
         val highPriorityCount = context.incompleteTasks.count { it.priority == TaskPriority.HIGH || it.priority == TaskPriority.URGENT }
         val carriedCount = context.carriedTasks
+        val tasksWithDuration = context.incompleteTasks.count { extractDurationMinutes(it.duration) > 0 }
+        val tasksWithoutDuration = incompleteCount - tasksWithDuration
         val totalMinutes = context.incompleteTasks.sumOf { extractDurationMinutes(it.duration) }
         val state = context.personalContext.workload.state
 
@@ -1775,6 +1806,9 @@ class NexoraAiBrain(
             WorkloadState.BALANCED -> "NORMAL"
         }
 
+        val hasHistory = context.history.isNotEmpty()
+        val baseline = context.adaptiveProfile.preferredDailyWorkload
+
         val whyExplanation = buildString {
             append("Workload Level: $level\n\n")
             append("Why:\n")
@@ -1784,7 +1818,18 @@ class NexoraAiBrain(
                 append("• $carriedCount carried-forward from previous days\n")
             }
             if (totalMinutes > 0) {
-                append("• Approximately $totalMinutes minutes of scheduled work\n")
+                append("• Approximately $totalMinutes minutes of estimated effort across $tasksWithDuration tasks")
+                if (tasksWithoutDuration > 0) {
+                    append(" ($tasksWithoutDuration tasks have no duration specified)")
+                }
+                append("\n")
+            } else if (incompleteCount > 0) {
+                append("• Estimated effort: Not specified (incomplete tasks have no duration estimates)\n")
+            }
+            if (hasHistory) {
+                append("• Baseline capacity: $baseline tasks/day based on completion history\n")
+            } else {
+                append("• Baseline capacity: $baseline tasks/day (standard default, no historical activity recorded yet)\n")
             }
             append("• Current day state: ${context.personalContext.dayState.name.lowercase().replace('_', ' ')}\n\n")
             when (level) {
@@ -1991,11 +2036,26 @@ class NexoraAiBrain(
         val category = goal?.category ?: "Personal"
         
         val actions = if (structuredResult.actions.any { it.type == AiActionType.CREATE_TASK }) {
-            structuredResult.actions.filter { it.type == AiActionType.CREATE_TASK }.map { action ->
+            val taskActions = structuredResult.actions.filter { it.type == AiActionType.CREATE_TASK }.map { action ->
                 val params = action.parameters.toMutableMap()
                 params["goalTitle"] = targetTitle
                 params["category"] = category
                 action.copy(parameters = params, goalId = goal?.id, requiresConfirmation = true)
+            }
+            if (goal == null) {
+                val createGoalAction = AiAction(
+                    type = AiActionType.CREATE_GOAL,
+                    title = "Create Goal: $targetTitle",
+                    description = "Goal created for decomposition",
+                    parameters = mapOf(
+                        "title" to targetTitle,
+                        "category" to category
+                    ),
+                    requiresConfirmation = true
+                )
+                listOf(createGoalAction) + taskActions
+            } else {
+                taskActions
             }
         } else {
             val result = aiService.decomposeGoal(targetTitle, "", category)
@@ -2049,11 +2109,13 @@ class NexoraAiBrain(
             conversationContext = request.conversationContext?.copy(
                 lastIntent = AiDecisionType.DECOMPOSE_GOAL,
                 lastGoalId = goal?.id,
+                activeClarification = null,
                 pendingAction = primaryAction,
                 pendingPlan = actions
             ) ?: AiConversationContext(
                 lastIntent = AiDecisionType.DECOMPOSE_GOAL,
                 lastGoalId = goal?.id,
+                activeClarification = null,
                 pendingAction = primaryAction,
                 pendingPlan = actions
             )

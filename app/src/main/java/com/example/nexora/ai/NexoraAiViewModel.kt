@@ -454,13 +454,7 @@ class NexoraAiViewModel(
 
         scope.launch {
             try {
-                // 1. Handle follow-up if we have pending candidates
-                if (currentState.candidateTaskIds.isNotEmpty()) {
-                    handleAmbiguityFollowUp(text, currentState)
-                    return@launch
-                }
-
-                // 2. AI Brain Reasoned Request
+                // 1. AI Brain Reasoned Request
                 val response = engine.processRequest(AiRequest(
                     type = AiRequestType.CHAT, 
                     userMessage = text,
@@ -599,7 +593,20 @@ class NexoraAiViewModel(
             AiResponseType.NO_ACTION, AiResponseType.INFORMATION -> {
                 _uiState.update {
                     it.copy(
-                        conversationalState = AiConversationalState(),
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
+                        proposedAction = it.proposedAction,
+                        proposedPlan = it.proposedPlan
+                    )
+                }
+            }
+            AiResponseType.RECOMMENDATION, AiResponseType.PLAN -> {
+                _uiState.update {
+                    it.copy(
+                        conversationalState = response.conversationContext?.toAiConversationalState()
+                            ?: it.conversationalState.copy(
+                                lastTaskId = response.relatedTaskId,
+                                lastGoalId = response.relatedGoalId
+                            ),
                         proposedAction = it.proposedAction,
                         proposedPlan = it.proposedPlan
                     )
@@ -626,59 +633,6 @@ class NexoraAiViewModel(
                             proposedPlan = it.proposedPlan
                         )
                     }
-                }
-            }
-        }
-    }
-
-    private suspend fun handleAmbiguityFollowUp(text: String, state: AiConversationalState) {
-        val context = engine.getContext()
-        val candidates = context.tasks.filter { it.id in state.candidateTaskIds }
-        
-        val match = AiEntityResolver.resolveTask(text, candidates)
-        
-        when (match) {
-            is ResolutionResult.Success -> {
-                val response = engine.processRequest(AiRequest(AiRequestType.CHAT, userMessage = "Task ID ${match.entity.id} ${text}"))
-                
-                val aiMessage = NexoraChatMessage(
-                    text = "I've resolved the task to \"${match.entity.title}\". " + response.message,
-                    isFromUser = false
-                )
-
-                _uiState.update {
-                    it.copy(
-                        chatMessages = it.chatMessages + aiMessage,
-                        lastBrainResponse = response,
-                        currentWorkflow = response.workflow,
-                        proactiveSignals = response.proactiveSignals
-                    )
-                }
-                
-                processBrainResponse(response)
-            }
-            is ResolutionResult.Ambiguous -> {
-                val aiMessage = NexoraChatMessage(
-                    text = "I still found multiple matches among those candidates. Could you be more specific?",
-                    isFromUser = false
-                )
-                _uiState.update {
-                    it.copy(
-                        chatMessages = it.chatMessages + aiMessage,
-                        conversationalState = state.copy(candidateTaskIds = match.candidates.map { it.id })
-                    )
-                }
-            }
-            is ResolutionResult.NotFound -> {
-                val aiMessage = NexoraChatMessage(
-                    text = "I couldn't match that to any of the candidate tasks.",
-                    isFromUser = false
-                )
-                _uiState.update {
-                    it.copy(
-                        chatMessages = it.chatMessages + aiMessage,
-                        conversationalState = AiConversationalState()
-                    )
                 }
             }
         }

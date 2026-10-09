@@ -73,10 +73,10 @@ class AiPersonalContextBuilder {
         val plannedToday = todayProgress?.tasksPlanned ?: 0
         
         val state = when {
-            plannedToday > baseline * 1.8 || (taskCount > baseline * 2 && totalMinutes > 480) -> WorkloadState.VERY_HIGH
-            plannedToday > baseline * 1.3 || taskCount > baseline * 1.5 -> WorkloadState.HIGH
-            plannedToday < baseline * 0.5 && taskCount < baseline * 0.5 -> WorkloadState.LOW
-            plannedToday == 0 && taskCount == 0 -> WorkloadState.VERY_LOW
+            plannedToday > baseline * 1.8 || (taskCount > baseline * 2 && totalMinutes > 480) || totalMinutes > 600 -> WorkloadState.VERY_HIGH
+            plannedToday > baseline * 1.3 || (taskCount > baseline * 1.5 && (totalMinutes == 0 || totalMinutes > 180)) || totalMinutes > 360 -> WorkloadState.HIGH
+            taskCount == 0 && plannedToday == 0 -> WorkloadState.VERY_LOW
+            plannedToday < baseline * 0.5 && taskCount < baseline * 0.5 && totalMinutes < 180 -> WorkloadState.LOW
             else -> WorkloadState.BALANCED
         }
 
