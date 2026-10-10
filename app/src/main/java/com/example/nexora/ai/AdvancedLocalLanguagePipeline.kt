@@ -27,15 +27,23 @@ class AdvancedLocalLanguagePipeline {
         val normalized = normalize(message)
         if (normalized.isBlank()) return AiLanguageResult(intent = AiDecisionType.NO_ACTION, confidence = AiConfidence.LOW)
 
-        // 2. Handle Active Clarification Follow-ups
-        if (effectiveConvContext.activeClarification != null && !isNewDirective(normalized, effectiveConvContext.activeClarification)) {
+        // 2. Cancellation Check (cancels active proposal, clarification, or standalone cancel)
+        val isCancel = isCancellation(normalized)
+        if (isCancel) {
+            return AiLanguageResult(
+                intent = AiDecisionType.CANCEL,
+                confidence = AiConfidence.HIGH,
+                isCancellation = true
+            )
+        }
+
+        // 3. Handle Active Clarification Follow-ups
+        if (effectiveConvContext.activeClarification != null && !isNewDirective(normalized, effectiveConvContext.activeClarification, referenceDate)) {
             return handleClarificationFollowUp(normalized, effectiveConvContext, context)
         }
 
-        // 3. Check for Confirmation / Cancellation
+        // 4. Check for Confirmation
         val isConfirm = isConfirmation(normalized)
-        val isCancel = isCancellation(normalized)
-
         if (effectiveConvContext.pendingAction != null || effectiveConvContext.pendingPlan.isNotEmpty()) {
             if (isConfirm) {
                 val action = effectiveConvContext.pendingAction ?: effectiveConvContext.pendingPlan.first()
@@ -48,41 +56,30 @@ class AdvancedLocalLanguagePipeline {
                     targetTaskId = action.taskId,
                     targetGoalId = action.goalId
                 )
-            } else if (isCancel) {
-                return AiLanguageResult(
-                    intent = AiDecisionType.CANCEL,
-                    confidence = AiConfidence.HIGH,
-                    isCancellation = true
-                )
             }
-        } else if (isConfirm && (convContext.isExpired() || normalized in listOf("yes", "y", "confirm", "proceed", "do it", "sure", "ok", "okay"))) {
+        } else if (isConfirm) {
             return AiLanguageResult(
                 intent = AiDecisionType.NO_ACTION,
                 confidence = AiConfidence.HIGH,
                 isConfirmation = true
             )
-        } else if (isCancel && normalized in listOf("no", "cancel", "stop", "never mind", "forget it")) {
-            return AiLanguageResult(
-                intent = AiDecisionType.CANCEL,
-                confidence = AiConfidence.HIGH,
-                isCancellation = true
-            )
         }
 
-        // 4. Structural Semantic Classification
-        val temporalRange = resolveTemporalRange(normalized, referenceDate)
-        val structuralResult = classifyIntent(normalized, message, context, effectiveConvContext, temporalRange)
+        // 5. Structural Semantic Classification (handle reset prefix e.g. "actually, plan my day", "forget that; show my goals")
+        val directiveText = stripResetPrefix(normalized)
+        val temporalRange = resolveTemporalRange(directiveText, referenceDate)
+        val structuralResult = classifyIntent(directiveText, message, context, effectiveConvContext, temporalRange)
 
-        // 5. Entity & Parameter Extraction
-        val entities = extractEntities(normalized, structuralResult.intent, message).toMutableMap()
+        // 6. Entity & Parameter Extraction
+        val entities = extractEntities(directiveText, structuralResult.intent, message).toMutableMap()
         temporalRange?.let {
             entities["temporalScope"] = it.scope.name
             entities["startDate"] = it.startDate.toString()
             entities["endDate"] = it.endDate.toString()
         }
 
-        // 6. Contextual Reference Resolution ("it", "the previous task", "that goal")
-        val resolvedEntities = resolveContextualReferences(entities, effectiveConvContext, context, normalized).toMutableMap()
+        // 7. Contextual Reference Resolution ("it", "the previous task", "that goal")
+        val resolvedEntities = resolveContextualReferences(entities, effectiveConvContext, context, directiveText).toMutableMap()
 
         // 7. Entity Grounding & Ambiguity Verification
         var finalIntent = structuralResult.intent
@@ -962,33 +959,115 @@ class AdvancedLocalLanguagePipeline {
     }
 
     private fun isConfirmation(text: String): Boolean {
-        return text.contains(Regex("(?i)\\byes\\b|\\bconfirm\\b|\\bdo it\\b|\\bdo that\\b|\\bcontinue\\b|\\bproceed\\b|\\bokay\\b|\\bok\\b|\\bgo ahead\\b|\\bdelete them\\b|\\bdelete everything\\b"))
+        val clean = text.trim().lowercase().removeSuffix(".").removeSuffix("!").trim()
+        if (clean.isEmpty()) return false
+        val affirmativePattern = Regex(
+            "^(yes|y|yep|yeah|confirm|confirmed|proceed|do it|do that|continue|okay|ok|sure|go ahead|approved|please do|delete them|delete everything)" +
+            "(\\s+(please|thanks|thank you|do it|go ahead|confirm|proceed))?$"
+        )
+        if (affirmativePattern.matches(clean)) return true
+        val compoundAffirmative = Regex(
+            "^(yes|sure|okay|ok|yep|yeah)[,\\s]+(do it|do that|go ahead|confirm|proceed|please|delete them|delete everything)$"
+        )
+        return compoundAffirmative.matches(clean)
     }
 
     private fun isCancellation(text: String): Boolean {
-        return text.contains(Regex("(?i)\\bno\\b|\\bcancel\\b|\\bstop\\b|\\bnever mind\\b|\\bforget it\\b|\\bdon't\\b"))
+        val clean = text.trim().lowercase().removeSuffix(".").removeSuffix("!").trim()
+        if (clean.isEmpty()) return false
+        val cancellationPattern = Regex(
+            "^(no|cancel|stop|never mind|nevermind|forget it|forget that|don't|abort|dismiss|negative)" +
+            "(\\s+(please|thanks|thank you|do not|don't))?$"
+        )
+        if (cancellationPattern.matches(clean)) return true
+        val compoundCancellation = Regex(
+            "^(no|cancel)[,\\s]+(stop|never mind|forget it|forget that|don't|please)$"
+        )
+        return compoundCancellation.matches(clean)
     }
 
-    private fun isNewDirective(text: String, activeClarification: AiClarification? = null): Boolean {
+    private fun stripResetPrefix(text: String): String {
+        val clean = text.trim()
+        val prefixRegex = Regex("^(forget that|never mind|nevermind|actually|instead)\\b[,;: ]*\\s*", RegexOption.IGNORE_CASE)
+        val match = prefixRegex.find(clean)
+        return if (match != null && match.range.last < clean.length - 1) {
+            clean.substring(match.range.last + 1).trim()
+        } else {
+            clean
+        }
+    }
+
+    private fun parseOrdinalIndex(text: String): Int {
+        val clean = text.trim()
+        return when {
+            clean.matches(Regex("(?i)^\\s*(the\\s+)?(first|1st|1)\\s*(one|task|goal|item)?\\s*$")) -> 0
+            clean.matches(Regex("(?i)^\\s*(the\\s+)?(second|2nd|2)\\s*(one|task|goal|item)?\\s*$")) -> 1
+            clean.matches(Regex("(?i)^\\s*(the\\s+)?(third|3rd|3)\\s*(one|task|goal|item)?\\s*$")) -> 2
+            clean.matches(Regex("(?i)^\\s*(the\\s+)?(fourth|4th|4)\\s*(one|task|goal|item)?\\s*$")) -> 3
+            clean.matches(Regex("(?i)^\\s*(the\\s+)?(fifth|5th|5)\\s*(one|task|goal|item)?\\s*$")) -> 4
+            else -> -1
+        }
+    }
+
+    private fun isNewDirective(
+        text: String,
+        activeClarification: AiClarification? = null,
+        referenceDate: LocalDate = LocalDate.now()
+    ): Boolean {
         val lower = text.lowercase().trim()
-        if (activeClarification != null) {
-            if (activeClarification.missingField == "create_and_decompose_goal") {
-                if (lower.matches(Regex("(?i)^\\s*(create|make|build)?\\s*(a\\s+)?(new\\s+one|new|one|it)\\s*$")) ||
-                    lower.matches(Regex("(?i)^\\s*(create|yes|sure|yep|ok|okay)\\s*(it|one|new\\s+one)?\\s*$"))) {
-                    return false
-                }
-            }
-            if (activeClarification.missingField in listOf("taskId", "goalId", "title")) {
-                if (lower.matches(Regex("(?i)^\\s*(the\\s+)?(first|1st|1|second|2nd|2|third|3rd|3)\\s*(one|task|goal)?\\s*$"))) {
-                    return false
-                }
+        val command = stripResetPrefix(lower)
+
+        if (command != lower && command.isNotBlank() && !isCancellation(command) && !isConfirmation(command)) {
+            return true
+        }
+
+        if (isCancellation(lower) || isConfirmation(lower)) {
+            return false
+        }
+
+        if (resolveTemporalRange(command, referenceDate) != null) {
+            return true
+        }
+
+        if (activeClarification != null && activeClarification.missingField == "create_and_decompose_goal") {
+            if (command.matches(Regex("^(create|make|build)?\\s*(a\\s+)?(new\\s+one|new|one|it)$")) ||
+                command.matches(Regex("^(create|yes|sure|yep|ok|okay)\\s*(it|one|new\\s+one)?$"))) {
+                return false
             }
         }
-        return lower.startsWith("create task") || lower.startsWith("create goal") || lower.startsWith("add task") ||
-            lower.startsWith("add goal") || lower.startsWith("delete all") || lower.startsWith("complete all") ||
-            lower.startsWith("plan my day") || lower.startsWith("show my") || lower.startsWith("what is ") ||
-            lower.startsWith("what should i focus on") || lower.startsWith("what should i work on") ||
-            lower.startsWith("why am i behind") || lower.startsWith("check my workload") || lower.startsWith("review my goals")
+
+        if (activeClarification != null && activeClarification.missingField in listOf("taskId", "goalId", "title", "goalTitle")) {
+            if (parseOrdinalIndex(command) != -1) {
+                return false
+            }
+        }
+
+        val recognizedPrefixes = listOf(
+            "plan my day", "plan today", "daily plan", "schedule my day", "plan the day",
+            "show my", "show goals", "show tasks", "list my", "list goals", "list tasks", "my goals", "my tasks",
+            "review my", "review goals", "check my", "check workload",
+            "what should i", "what to focus", "what's next", "what is next", "recommend next",
+            "why am i", "diagnose",
+            "create task", "add task", "new task", "make task",
+            "create goal", "add goal", "new goal", "make goal",
+            "delete task", "remove task", "delete goal", "remove goal",
+            "complete task", "finish task", "mark task",
+            "delete all", "complete all",
+            "decompose goal", "break down goal", "break down my goal", "plan goal",
+            "what is ", "what are ", "how do i ", "how to ", "how can i ", "explain ", "why should i "
+        )
+
+        if (recognizedPrefixes.any { command.startsWith(it) }) {
+            return true
+        }
+
+        if (command.startsWith("what ") || command.startsWith("how ") || command.startsWith("why ") ||
+            command.startsWith("where ") || command.startsWith("when ") || command.startsWith("can you ") ||
+            command.startsWith("could you ")) {
+            return true
+        }
+
+        return false
     }
 
     private fun handleClarificationFollowUp(
@@ -1039,25 +1118,37 @@ class AdvancedLocalLanguagePipeline {
                         requiresMutation = true
                     )
                 } else {
-                    entities["title"] = targetTitle
-                    entities["createIfMissing"] = true
-                    entities["confirmed_create"] = true
                     AiLanguageResult(
-                        intent = AiDecisionType.DECOMPOSE_GOAL,
-                        confidence = AiConfidence.HIGH,
-                        entities = entities,
-                        targetGoalTitle = targetTitle,
-                        requiresMutation = true
+                        intent = AiDecisionType.CLARIFY,
+                        confidence = AiConfidence.LOW,
+                        clarificationNeeded = clarification.copy(question = "I couldn't find goal \"$cleaned\". Would you like to create it, or choose an existing goal?"),
+                        requiresClarification = true
                     )
                 }
             }
         }
 
         when (clarification.missingField) {
-            "title" -> {
-                entities["title"] = text
-                if (clarification.intent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
-                    val match = AiEntityResolver.resolveGoal(text, context.goals, convContext)
+            "title", "goalTitle" -> {
+                entities["title"] = text.trim()
+                if (clarification.intent == AiDecisionType.CREATE_TASK) {
+                    return AiLanguageResult(
+                        intent = AiDecisionType.CREATE_TASK,
+                        confidence = AiConfidence.HIGH,
+                        entities = entities,
+                        targetTaskTitle = text.trim(),
+                        requiresMutation = true
+                    )
+                } else if (clarification.intent == AiDecisionType.CREATE_GOAL) {
+                    return AiLanguageResult(
+                        intent = AiDecisionType.CREATE_GOAL,
+                        confidence = AiConfidence.HIGH,
+                        entities = entities,
+                        targetGoalTitle = text.trim(),
+                        requiresMutation = true
+                    )
+                } else if (clarification.intent in listOf(AiDecisionType.DELETE_GOAL, AiDecisionType.DECOMPOSE_GOAL, AiDecisionType.UPDATE_GOAL)) {
+                    val match = AiEntityResolver.resolveGoal(text.trim(), context.goals, convContext)
                     if (match is ResolutionResult.Success) {
                         entities["goalId"] = match.entity.id
                         return AiLanguageResult(
@@ -1068,9 +1159,24 @@ class AdvancedLocalLanguagePipeline {
                             targetGoalTitle = match.entity.title,
                             requiresMutation = true
                         )
+                    } else if (clarification.intent == AiDecisionType.DECOMPOSE_GOAL) {
+                        return AiLanguageResult(
+                            intent = AiDecisionType.DECOMPOSE_GOAL,
+                            confidence = AiConfidence.HIGH,
+                            entities = entities,
+                            targetGoalTitle = text.trim(),
+                            requiresMutation = true
+                        )
+                    } else {
+                        return AiLanguageResult(
+                            intent = AiDecisionType.CLARIFY,
+                            confidence = AiConfidence.LOW,
+                            clarificationNeeded = clarification.copy(question = "I'm sorry, I couldn't find the goal \"${text.trim()}\". Which goal did you mean?"),
+                            requiresClarification = true
+                        )
                     }
                 } else {
-                    val match = AiEntityResolver.resolveTask(text, context.tasks, convContext)
+                    val match = AiEntityResolver.resolveTask(text.trim(), context.tasks, convContext)
                     if (match is ResolutionResult.Success) {
                         entities["taskId"] = match.entity.id
                         return AiLanguageResult(
@@ -1081,21 +1187,24 @@ class AdvancedLocalLanguagePipeline {
                             targetTaskTitle = match.entity.title,
                             requiresMutation = true
                         )
+                    } else {
+                        return AiLanguageResult(
+                            intent = AiDecisionType.CLARIFY,
+                            confidence = AiConfidence.LOW,
+                            clarificationNeeded = clarification.copy(question = "I'm sorry, I couldn't find the task \"${text.trim()}\". Which task did you mean?"),
+                            requiresClarification = true
+                        )
                     }
                 }
             }
             "taskId" -> {
                 val tasks = context.tasks.filter { it.id in clarification.candidates }
-                val ordinalIndex = when {
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(first|1st|1)\\s*(one|task)?\\s*$")) -> 0
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(second|2nd|2)\\s*(one|task)?\\s*$")) -> 1
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(third|3rd|3)\\s*(one|task)?\\s*$")) -> 2
-                    else -> -1
-                }
-                val match = if (ordinalIndex in tasks.indices) {
-                    ResolutionResult.Success(tasks[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
+                val targetTasks = tasks.ifEmpty { context.tasks }
+                val ordinalIndex = parseOrdinalIndex(text)
+                val match = if (ordinalIndex in targetTasks.indices) {
+                    ResolutionResult.Success(targetTasks[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
                 } else {
-                    AiEntityResolver.resolveTask(text, tasks.ifEmpty { context.tasks })
+                    AiEntityResolver.resolveTask(text.trim(), targetTasks)
                 }
                 if (match is ResolutionResult.Success) {
                     entities["taskId"] = match.entity.id
@@ -1118,16 +1227,12 @@ class AdvancedLocalLanguagePipeline {
             }
             "goalId" -> {
                 val goals = context.goals.filter { it.id in clarification.candidates }
-                val ordinalIndex = when {
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(first|1st|1)\\s*(one|goal)?\\s*$")) -> 0
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(second|2nd|2)\\s*(one|goal)?\\s*$")) -> 1
-                    text.matches(Regex("(?i)^\\s*(the\\s+)?(third|3rd|3)\\s*(one|goal)?\\s*$")) -> 2
-                    else -> -1
-                }
-                val match = if (ordinalIndex in goals.indices) {
-                    ResolutionResult.Success(goals[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
+                val targetGoals = goals.ifEmpty { context.goals }
+                val ordinalIndex = parseOrdinalIndex(text)
+                val match = if (ordinalIndex in targetGoals.indices) {
+                    ResolutionResult.Success(targetGoals[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
                 } else {
-                    AiEntityResolver.resolveGoal(text, goals.ifEmpty { context.goals })
+                    AiEntityResolver.resolveGoal(text.trim(), targetGoals)
                 }
                 if (match is ResolutionResult.Success) {
                     entities["goalId"] = match.entity.id
@@ -1138,6 +1243,28 @@ class AdvancedLocalLanguagePipeline {
                         targetGoalId = match.entity.id,
                         targetGoalTitle = match.entity.title,
                         requiresMutation = true
+                    )
+                } else {
+                    if (clarification.intent == AiDecisionType.DECOMPOSE_GOAL &&
+                        (text.matches(Regex("(?i)^\\s*(create|make)?\\s*(a\\s+)?(new\\s+one|new|one)\\s*$")) ||
+                         text.contains("new", ignoreCase = true))) {
+                        val targetTitle = convContext.lastEntityTitle ?: "New Goal"
+                        entities["title"] = targetTitle
+                        entities["createIfMissing"] = true
+                        entities["confirmed_create"] = true
+                        return AiLanguageResult(
+                            intent = AiDecisionType.DECOMPOSE_GOAL,
+                            confidence = AiConfidence.HIGH,
+                            entities = entities,
+                            targetGoalTitle = targetTitle,
+                            requiresMutation = true
+                        )
+                    }
+                    return AiLanguageResult(
+                        intent = AiDecisionType.CLARIFY,
+                        confidence = AiConfidence.LOW,
+                        clarificationNeeded = clarification.copy(question = "I'm sorry, I still couldn't identify which goal you meant. Which one was it?"),
+                        requiresClarification = true
                     )
                 }
             }
@@ -1153,7 +1280,7 @@ class AdvancedLocalLanguagePipeline {
 
     private fun normalize(text: String): String {
         return text.lowercase()
-            .replace(Regex("[?!.,]"), " ")
+            .replace(Regex("[?!.,;:]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
     }

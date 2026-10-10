@@ -132,11 +132,14 @@ fun AiScreen(
                     }
                 }
 
-                // PROPOSED ACTION
-                uiState.proposedAction?.let { action ->
+                // PROPOSED ACTION / PLAN
+                val proposedPlan = uiState.proposedPlan
+                val proposedAction = uiState.proposedAction ?: proposedPlan.firstOrNull()
+                proposedAction?.let { action ->
                     item {
                         ProposedActionCard(
                             action = action,
+                            plan = proposedPlan,
                             onConfirm = { viewModel.confirmAction() },
                             onDismiss = { viewModel.dismissAction() }
                         )

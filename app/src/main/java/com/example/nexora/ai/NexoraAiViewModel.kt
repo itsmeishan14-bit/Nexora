@@ -518,6 +518,7 @@ class NexoraAiViewModel(
             val actions = response.proposedActions
             _uiState.update {
                 it.copy(
+                    isLoading = true,
                     conversationalState = AiConversationalState(),
                     proposedAction = null,
                     proposedPlan = emptyList()
@@ -579,23 +580,32 @@ class NexoraAiViewModel(
                             )
                         }
                     } finally {
+                        _uiState.update { it.copy(isLoading = false) }
                         isActionExecuting.set(false)
                     }
                 }
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
             }
             return
         }
         
         when (response.responseType) {
             AiResponseType.CLARIFICATION_NEEDED -> {
-                // Ambiguous request; no mutation or action proposed
+                _uiState.update {
+                    it.copy(
+                        conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
+                        proposedAction = null,
+                        proposedPlan = emptyList()
+                    )
+                }
             }
             AiResponseType.NO_ACTION, AiResponseType.INFORMATION -> {
                 _uiState.update {
                     it.copy(
                         conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
-                        proposedAction = it.proposedAction,
-                        proposedPlan = it.proposedPlan
+                        proposedAction = null,
+                        proposedPlan = emptyList()
                     )
                 }
             }
@@ -607,8 +617,8 @@ class NexoraAiViewModel(
                                 lastTaskId = response.relatedTaskId,
                                 lastGoalId = response.relatedGoalId
                             ),
-                        proposedAction = it.proposedAction,
-                        proposedPlan = it.proposedPlan
+                        proposedAction = null,
+                        proposedPlan = emptyList()
                     )
                 }
             }
@@ -629,8 +639,8 @@ class NexoraAiViewModel(
                     _uiState.update {
                         it.copy(
                             conversationalState = response.conversationContext?.toAiConversationalState() ?: AiConversationalState(),
-                            proposedAction = it.proposedAction,
-                            proposedPlan = it.proposedPlan
+                            proposedAction = null,
+                            proposedPlan = emptyList()
                         )
                     }
                 }
@@ -678,6 +688,10 @@ class NexoraAiViewModel(
                     isLoading = true,
                     proposedAction = null,
                     proposedPlan = emptyList(),
+                    conversationalState = it.conversationalState.copy(
+                        pendingAction = null,
+                        pendingPlan = emptyList()
+                    ),
                     error = null
                 )
             }
@@ -752,6 +766,10 @@ class NexoraAiViewModel(
                     it.copy(
                         proposedAction = null,
                         proposedPlan = emptyList(),
+                        conversationalState = it.conversationalState.copy(
+                            pendingAction = null,
+                            pendingPlan = emptyList()
+                        ),
                         lastExecutionRecord = record
                     )
                 }
@@ -760,7 +778,11 @@ class NexoraAiViewModel(
             _uiState.update {
                 it.copy(
                     proposedAction = null,
-                    proposedPlan = emptyList()
+                    proposedPlan = emptyList(),
+                    conversationalState = it.conversationalState.copy(
+                        pendingAction = null,
+                        pendingPlan = emptyList()
+                    )
                 )
             }
         }

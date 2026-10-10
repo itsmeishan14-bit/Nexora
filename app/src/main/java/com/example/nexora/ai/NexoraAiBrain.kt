@@ -44,7 +44,14 @@ class NexoraAiBrain(
         val context = getContext(request)
         val relevantMemory = memoryRetriever.retrieveRelevantMemory(request)
         val rawConvContext = request.conversationContext ?: AiConversationContext()
-        val convContext = if (rawConvContext.isExpired()) AiConversationContext() else rawConvContext
+        val convContext = if (rawConvContext.isExpired()) {
+            val stalePlan = if (rawConvContext.pendingPlan.isNotEmpty()) rawConvContext.pendingPlan else listOfNotNull(rawConvContext.pendingAction)
+            stalePlan.forEach {
+                NexoraSecurity.cancelProposal(it.id)
+                NexoraSecurity.revokeAuthorization(it.id)
+            }
+            AiConversationContext()
+        } else rawConvContext
 
         val response = if (request.type == AiRequestType.CHAT) {
             val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
@@ -208,10 +215,31 @@ class NexoraAiBrain(
         langResult: AiLanguageResult,
         context: AiContext,
         relevantMemory: List<AiMemoryItem>,
-        convContext: AiConversationContext
+        rawConvContext: AiConversationContext
     ): AiResponse {
         val rawMessage = request.userMessage ?: ""
         val lower = rawMessage.lowercase().trim()
+
+        val isConfirmation = langResult.isConfirmation
+        val isCancellation = langResult.isCancellation || langResult.intent == AiDecisionType.CANCEL
+        val isConfirmationOrCancellation = isConfirmation || isCancellation
+        val isClarificationFlow = langResult.requiresClarification || langResult.intent == AiDecisionType.CLARIFY || langResult.intent == AiDecisionType.AMBIGUOUS
+
+        // Invalidate stale pending proposals if this is not a confirmation or cancellation
+        if (!isConfirmationOrCancellation && (rawConvContext.pendingPlan.isNotEmpty() || rawConvContext.pendingAction != null)) {
+            val stalePlan = if (rawConvContext.pendingPlan.isNotEmpty()) rawConvContext.pendingPlan else listOfNotNull(rawConvContext.pendingAction)
+            stalePlan.forEach {
+                NexoraSecurity.cancelProposal(it.id)
+                NexoraSecurity.revokeAuthorization(it.id)
+            }
+        }
+
+        val convContext = rawConvContext.copy(
+            pendingAction = if (isConfirmationOrCancellation) rawConvContext.pendingAction else null,
+            pendingPlan = if (isConfirmationOrCancellation) rawConvContext.pendingPlan else emptyList(),
+            activeClarification = if (isClarificationFlow) rawConvContext.activeClarification else null,
+            candidateIds = if (isClarificationFlow) rawConvContext.candidateIds else emptyList()
+        )
 
         // 1. Clarification & Ambiguity Gate
         if (langResult.requiresClarification || langResult.intent == AiDecisionType.CLARIFY || langResult.intent == AiDecisionType.AMBIGUOUS) {
@@ -229,13 +257,15 @@ class NexoraAiBrain(
                 conversationContext = convContext.copy(
                     lastIntent = langResult.intent,
                     activeClarification = langResult.clarificationNeeded,
-                    candidateIds = langResult.clarificationNeeded?.candidates ?: emptyList()
+                    candidateIds = langResult.clarificationNeeded?.candidates ?: emptyList(),
+                    pendingAction = null,
+                    pendingPlan = emptyList()
                 )
             )
         }
 
         // 2. Cancellation
-        if (langResult.isCancellation || langResult.intent == AiDecisionType.CANCEL) {
+        if (isCancellation) {
             val planToCancel = if (convContext.pendingPlan.isNotEmpty()) convContext.pendingPlan else listOfNotNull(convContext.pendingAction)
             planToCancel.forEach {
                 NexoraSecurity.cancelProposal(it.id)
@@ -309,7 +339,7 @@ class NexoraAiBrain(
         }
 
         // 3. Confirmation Flow
-        if (langResult.isConfirmation) {
+        if (isConfirmation) {
             val planToConfirm = if (convContext.pendingPlan.isNotEmpty()) convContext.pendingPlan else listOfNotNull(convContext.pendingAction)
             if (planToConfirm.isEmpty()) {
                 val msg = "There are no pending actions or plans awaiting confirmation."
@@ -323,7 +353,7 @@ class NexoraAiBrain(
                         title = "No Pending Actions",
                         reason = msg
                     ),
-                    conversationContext = convContext
+                    conversationContext = convContext.copy(pendingAction = null, pendingPlan = emptyList())
                 )
             }
             val authorizedPlan = mutableListOf<AiAction>()

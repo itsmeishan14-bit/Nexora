@@ -207,13 +207,15 @@ class NexoraAiEngine(
             val actionTitleKey = (action.parameters["title"] as? String ?: action.title).trim().lowercase()
 
             if (action.type == AiActionType.CREATE_GOAL) {
-                if (result.success) {
+                val goalExists = repository.observeGoalsOnce().any { it.title.trim().equals(actionTitleKey, ignoreCase = true) }
+                if (result.success || goalExists) {
                     createdGoalTitles.add(actionTitleKey)
                 } else {
                     failedGoalTitles.add(actionTitleKey)
                 }
             } else if (action.type == AiActionType.CREATE_TASK) {
-                if (result.success) {
+                val taskExists = repository.observeTasksOnce().any { it.title.trim().equals(actionTitleKey, ignoreCase = true) }
+                if (result.success || taskExists) {
                     createdTaskTitles.add(actionTitleKey)
                 } else {
                     failedTaskTitles.add(actionTitleKey)

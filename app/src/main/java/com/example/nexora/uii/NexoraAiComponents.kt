@@ -152,9 +152,11 @@ fun AiSurface(
 @Composable
 fun ProposedActionCard(
     action: AiAction,
+    plan: List<AiAction> = emptyList(),
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val isMultiAction = plan.size > 1
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = NexoraShapes.extraLarge,
@@ -171,7 +173,7 @@ fun ProposedActionCard(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "NEXORA INTELLIGENCE",
+                    text = if (isMultiAction) "NEXORA MULTI-ACTION PLAN (${plan.size} ACTIONS)" else "NEXORA INTELLIGENCE",
                     style = MaterialTheme.typography.labelSmall,
                     color = Clay60,
                     letterSpacing = 1.sp
@@ -180,32 +182,63 @@ fun ProposedActionCard(
             
             Spacer(modifier = Modifier.height(18.dp))
             
-            Text(
-                text = action.title,
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(6.dp))
-            
-            Text(
-                text = action.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.65f),
-                lineHeight = 22.sp
-            )
+            if (isMultiAction) {
+                Text(
+                    text = "Proposed Execution Plan",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                plan.forEachIndexed { index, planItem ->
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text(
+                            text = "${index + 1}. ${planItem.title}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        if (planItem.description.isNotBlank() && planItem.description != planItem.title) {
+                            Text(
+                                text = planItem.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.65f),
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    text = action.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
+                )
+                
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                Text(
+                    text = action.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.65f),
+                    lineHeight = 22.sp
+                )
+            }
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            val confirmLabel = when (action.type) {
-                AiActionType.CREATE_TASK -> "Create Task"
-                AiActionType.COMPLETE_TASK -> "Complete Task"
-                AiActionType.DELETE_TASK -> "Delete Task"
-                AiActionType.UPDATE_TASK -> "Update Task"
-                AiActionType.CREATE_GOAL -> "Create Goal"
-                AiActionType.UPDATE_GOAL -> "Update Goal"
-                AiActionType.DELETE_GOAL -> "Delete Goal"
-                else -> "Confirm Action"
+            val confirmLabel = if (isMultiAction) {
+                "Confirm Plan (${plan.size} Actions)"
+            } else {
+                when (action.type) {
+                    AiActionType.CREATE_TASK -> "Create Task"
+                    AiActionType.COMPLETE_TASK -> "Complete Task"
+                    AiActionType.DELETE_TASK -> "Delete Task"
+                    AiActionType.UPDATE_TASK -> "Update Task"
+                    AiActionType.CREATE_GOAL -> "Create Goal"
+                    AiActionType.UPDATE_GOAL -> "Update Goal"
+                    AiActionType.DELETE_GOAL -> "Delete Goal"
+                    else -> "Confirm Action"
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

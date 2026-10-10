@@ -421,11 +421,15 @@ open class AiActionExecutor(
         val priorityStr = action.parameters["priority"] as? String ?: "MEDIUM"
         val goalIdParam = (action.parameters["goalId"] as? Number)?.toLong() ?: action.goalId
         val goalTitleParam = action.parameters["goalTitle"] as? String
-        val resolvedGoalTitle = if (goalIdParam != null && goalIdParam > 0) {
-            repository.getGoalById(goalIdParam)?.title ?: goalTitleParam
+        val resolvedGoal = if (goalIdParam != null && goalIdParam > 0) {
+            repository.getGoalById(goalIdParam)
+        } else if (!goalTitleParam.isNullOrBlank()) {
+            repository.observeGoalsOnce().find { it.title.equals(goalTitleParam.trim(), ignoreCase = true) }
         } else {
-            goalTitleParam
+            null
         }
+        val resolvedGoalTitle = resolvedGoal?.title ?: goalTitleParam
+        val resolvedGoalId = resolvedGoal?.id ?: (if (goalIdParam != null && goalIdParam > 0) goalIdParam else null)
 
         val priority = parsePriority(priorityStr)
             ?: return AiActionResult(false, "Invalid priority \"$priorityStr\". Expected LOW, MEDIUM, HIGH, or URGENT.", error = "Invalid priority")
@@ -450,7 +454,8 @@ open class AiActionExecutor(
         return AiActionResult(
             success = true,
             message = "Task created: ${created.title}",
-            affectedTaskId = created.id
+            affectedTaskId = created.id,
+            affectedGoalId = resolvedGoalId
         )
     }
 
