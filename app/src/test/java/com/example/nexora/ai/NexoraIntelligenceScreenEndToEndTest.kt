@@ -388,4 +388,149 @@ class NexoraIntelligenceScreenEndToEndTest {
         val createdTasks = repository.observeTasksOnce().filter { it.goalTitle == createdGoal?.title }
         assertTrue("Subtasks linked to goal must be created", createdTasks.isNotEmpty())
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 22. DEMO COMMANDS & EXACT WORKFLOW SUITE
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `22 - Create a task to study Java creates and persists in repository`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Create a task to study Java.")
+        delay(300)
+
+        val stateAfterProposal = viewModel.uiState.value
+        val action = stateAfterProposal.proposedAction
+        assertNotNull("Should propose CREATE_TASK", action)
+        assertEquals(AiActionType.CREATE_TASK, action!!.type)
+        assertTrue("Title should contain Study Java", action.parameters["title"]?.toString()?.contains("Study Java", ignoreCase = true) == true)
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val stateAfterConfirm = viewModel.uiState.value
+        assertTrue("Action execution should succeed", stateAfterConfirm.lastActionResult?.success == true)
+        val persisted = repository.observeTasksOnce().find { it.title.contains("Java", ignoreCase = true) }
+        assertNotNull("Task must be persisted in repository", persisted)
+        assertEquals(false, persisted!!.completed)
+    }
+
+    @Test
+    fun `23 - Create a high-priority DBMS assignment creates and persists with high priority`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Create a high-priority DBMS assignment.")
+        delay(300)
+
+        val stateAfterProposal = viewModel.uiState.value
+        val action = stateAfterProposal.proposedAction
+        assertNotNull("Should propose CREATE_TASK", action)
+        assertEquals(AiActionType.CREATE_TASK, action!!.type)
+        assertEquals("HIGH", action.parameters["priority"])
+        assertTrue("Title should contain DBMS", action.parameters["title"]?.toString()?.contains("DBMS", ignoreCase = true) == true)
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val persisted = repository.observeTasksOnce().find { it.title.contains("DBMS", ignoreCase = true) }
+        assertNotNull("Task must be persisted in repository", persisted)
+        assertEquals(TaskPriority.HIGH, persisted!!.priority)
+    }
+
+    @Test
+    fun `24 - Mark my Java task as complete marks task complete in repository`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 301L, title = "Study Java", category = "Study", duration = "45m", completed = false))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Mark my Java task as complete.")
+        delay(300)
+
+        val action = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose COMPLETE_TASK", action)
+        assertEquals(task.id, action!!.taskId)
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val updated = repository.getTaskById(task.id)
+        assertNotNull(updated)
+        assertTrue("Task must be marked complete in database", updated!!.completed)
+        assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
+    }
+
+    @Test
+    fun `25 - Update my DBMS task clarifies update fields and executes update on confirmation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 302L, title = "DBMS assignment", category = "Study", duration = "30m", priority = TaskPriority.LOW))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Step 1: User says "Update my DBMS task."
+        viewModel.sendMessage("Update my DBMS task.")
+        delay(300)
+
+        val stateAfterFirst = viewModel.uiState.value
+        val botMsg1 = stateAfterFirst.chatMessages.lastOrNull { !it.isFromUser }?.text ?: ""
+        assertTrue("Bot must ask what to update", botMsg1.contains("What would you like to update", ignoreCase = true))
+
+        // Step 2: User provides update fields: "high priority"
+        viewModel.sendMessage("high priority")
+        delay(350)
+
+        val stateAfterClarification = viewModel.uiState.value
+        val action = stateAfterClarification.proposedAction
+        assertNotNull("Should now propose UPDATE_TASK with high priority", action)
+        assertEquals(task.id, action!!.taskId)
+        assertEquals("HIGH", action.parameters["priority"])
+
+        // Step 3: User confirms
+        viewModel.confirmAction()
+        delay(350)
+
+        val updated = repository.getTaskById(task.id)
+        assertNotNull(updated)
+        assertEquals("Priority must be updated to HIGH in repository", TaskPriority.HIGH, updated!!.priority)
+        assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
+    }
+
+    @Test
+    fun `26 - Delete my Java task proposes deletion and removes from repository on confirmation`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 303L, title = "Study Java", category = "Study", duration = "45m", completed = false))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Delete my Java task.")
+        delay(300)
+
+        val action = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose DELETE_TASK", action)
+        assertEquals(task.id, action!!.taskId)
+        assertTrue("Deletion must require confirmation", action.requiresConfirmation)
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val deleted = repository.getTaskById(task.id)
+        assertNull("Task must be deleted from repository", deleted)
+        assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
+    }
+
+    @Test
+    fun `27 - Break down my goal to learn Java decomposes existing goal and persists linked subtasks`() = runBlocking {
+        val goal = repository.addGoal(NexoraGoal(id = 401L, title = "Learn Java", category = "Study", targetDate = "2026-12-31", progress = 0.0f))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Break down my goal to learn Java.")
+        delay(350)
+
+        val proposedPlan = viewModel.uiState.value.proposedPlan
+        assertTrue("Should propose actionable subtasks", proposedPlan.isNotEmpty())
+        assertTrue("All subtasks must require confirmation", proposedPlan.all { it.requiresConfirmation })
+        assertTrue("Subtasks should link to Learn Java goal", proposedPlan.all { it.parameters["goalTitle"] == goal.title })
+
+        viewModel.confirmAction()
+        delay(400)
+
+        val tasksInDb = repository.observeTasksOnce().filter { it.goalTitle == goal.title }
+        assertTrue("Subtasks must be created in repository", tasksInDb.isNotEmpty())
+        assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
+    }
 }
+

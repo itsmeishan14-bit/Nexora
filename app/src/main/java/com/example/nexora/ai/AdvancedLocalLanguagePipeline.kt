@@ -304,6 +304,13 @@ class AdvancedLocalLanguagePipeline {
                 },
                 intent = originalIntent,
                 missingField = "update_fields",
+                candidates = listOfNotNull(targetTaskId ?: targetGoalId),
+                partialEntities = buildMap {
+                    targetTaskId?.let { put("taskId", it) }
+                    targetGoalId?.let { put("goalId", it) }
+                    targetTaskTitle?.let { put("title", it) }
+                    targetGoalTitle?.let { put("title", it) }
+                },
                 originalQuery = message
             )
         }
@@ -557,7 +564,7 @@ class AdvancedLocalLanguagePipeline {
         // ─────────────────────────────────────────────────────────────
 
         // Task Creation Directive
-        if (lower.contains(Regex("(?i)\\b(create|add|new|remind me to)\\b")) && lower.contains(Regex("(?i)\\b(task|todo)\\b"))) {
+        if (lower.contains(Regex("(?i)\\b(create|add|new|remind me to)\\b")) && lower.contains(Regex("(?i)\\b(task|todo|assignment|item|job)\\b"))) {
             return StructuralClassification(
                 intent = AiDecisionType.CREATE_TASK,
                 confidence = AiConfidence.HIGH,
@@ -769,10 +776,10 @@ class AdvancedLocalLanguagePipeline {
 
         // Extract Priority
         when {
-            text.contains(Regex("(?i)\\b(urgent|critical|immediately)\\b|\\bpriority\\s*(?:to|is|=)?\\s*urgent\\b")) -> entities["priority"] = "URGENT"
-            text.contains(Regex("(?i)\\b(high\\s+priority|important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*high\\b")) -> entities["priority"] = "HIGH"
-            text.contains(Regex("(?i)\\b(low\\s+priority|not\\s+important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*low\\b")) -> entities["priority"] = "LOW"
-            text.contains(Regex("(?i)\\bmedium\\s+priority\\b|\\bpriority\\s*(?:to|is|=)?\\s*medium\\b")) -> entities["priority"] = "MEDIUM"
+            text.contains(Regex("(?i)\\b(urgent|critical|immediately)\\b|\\b(?:urgent[- ]priority|priority\\s*(?:to|is|=)?\\s*urgent)\\b")) -> entities["priority"] = "URGENT"
+            text.contains(Regex("(?i)\\b(high[- ]priority|important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*high\\b")) -> entities["priority"] = "HIGH"
+            text.contains(Regex("(?i)\\b(low[- ]priority|not\\s+important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*low\\b")) -> entities["priority"] = "LOW"
+            text.contains(Regex("(?i)\\bmedium[- ]priority\\b|\\bpriority\\s*(?:to|is|=)?\\s*medium\\b")) -> entities["priority"] = "MEDIUM"
         }
 
         // Extract Target Entity Title
@@ -784,13 +791,13 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.CREATE_TASK -> {
-                val explicitMatch = Regex("(?i)(?:called|named|title)\\s+[\"']?([^\"']+)[\"']?").find(text)
+                val explicitMatch = Regex("(?i)(?:called|named|title)\\s+[\"']?([^\"']+)[\"']?").find(rawText)
                 if (explicitMatch != null) {
                     explicitMatch.groupValues[1].trim()
                 } else {
                     var t = text
-                    t = t.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(high|urgent|low|medium)?\\s*(priority)?\\s*(task|todo)?\\s*(called|named|to|for)?\\s*"), "")
-                    t = t.replace(Regex("(?i)\\s+(priority|high|urgent|low|medium)\\b"), "")
+                    t = t.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(high|urgent|low|medium)?\\s*[-]?\\s*(priority)?\\s*(task|todo|assignment|item)?\\s*(called|named|to|for)?\\s*"), "")
+                    t = t.replace(Regex("(?i)\\s+[-]?\\s*(priority|high|urgent|low|medium)\\b"), "")
                         .replace(Regex("(?i)\\s+for\\s+\\d+\\s*(minute|min|hour|hr)s?\\b.*"), "")
                         .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), "")
                         .replace(Regex("\\s+"), " ")
@@ -874,7 +881,7 @@ class AdvancedLocalLanguagePipeline {
                 }
             }
             AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK -> {
-                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|as|delete|remove|destroy|the|my|a|an|task)\\b"), " ")
+                text.replace(Regex("(?i)\\b(complete|finish|done|checked off|mark|as|delete|remove|destroy|the|my|a|an|task|assignment)\\b"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
@@ -885,6 +892,7 @@ class AdvancedLocalLanguagePipeline {
             }
             AiDecisionType.DECOMPOSE_GOAL -> {
                 text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan for|create a plan for|make a plan for|plan|how to)\\b"), " ")
+                    .replace(Regex("(?i)^\\s*to\\s+"), " ")
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
@@ -1264,6 +1272,48 @@ class AdvancedLocalLanguagePipeline {
                         intent = AiDecisionType.CLARIFY,
                         confidence = AiConfidence.LOW,
                         clarificationNeeded = clarification.copy(question = "I'm sorry, I still couldn't identify which goal you meant. Which one was it?"),
+                        requiresClarification = true
+                    )
+                }
+            }
+            "update_fields" -> {
+                val targetTaskId = (entities["taskId"] as? Number)?.toLong()
+                    ?: clarification.candidates.firstOrNull()
+                    ?: convContext.lastTaskId
+                val targetGoalId = (entities["goalId"] as? Number)?.toLong()
+                    ?: convContext.lastGoalId
+                val targetTask = targetTaskId?.let { id -> context.tasks.find { it.id == id } }
+                val targetGoal = targetGoalId?.let { id -> context.goals.find { it.id == id } }
+
+                val updateEntities = extractEntities(text, clarification.intent, text)
+                entities.putAll(updateEntities)
+                if (targetTaskId != null) entities["taskId"] = targetTaskId
+                if (targetGoalId != null) entities["goalId"] = targetGoalId
+
+                val hasAnyField = entities.containsKey("priority") ||
+                    entities.containsKey("duration") ||
+                    entities.containsKey("newTitle") ||
+                    entities.containsKey("category") ||
+                    entities.containsKey("targetDate")
+
+                if (hasAnyField && (targetTaskId != null || targetGoalId != null)) {
+                    return AiLanguageResult(
+                        intent = clarification.intent,
+                        confidence = AiConfidence.HIGH,
+                        entities = entities,
+                        targetTaskId = targetTaskId,
+                        targetTaskTitle = targetTask?.title,
+                        targetGoalId = targetGoalId,
+                        targetGoalTitle = targetGoal?.title,
+                        requiresMutation = true
+                    )
+                } else {
+                    return AiLanguageResult(
+                        intent = AiDecisionType.CLARIFY,
+                        confidence = AiConfidence.LOW,
+                        clarificationNeeded = clarification.copy(
+                            question = "What would you like to update? You can specify a new title, priority, duration, or category."
+                        ),
                         requiresClarification = true
                     )
                 }

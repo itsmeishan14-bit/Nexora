@@ -804,6 +804,8 @@ class NexoraAiBrain(
                             question = "What would you like to update about \"${task.title}\"?",
                             intent = AiDecisionType.UPDATE_TASK,
                             missingField = "update_fields",
+                            candidates = listOf(task.id),
+                            partialEntities = mapOf("taskId" to task.id, "title" to task.title),
                             originalQuery = rawMessage
                         )
                         return AiResponse(
@@ -950,6 +952,8 @@ class NexoraAiBrain(
                             question = "What would you like to update about \"${goal.title}\"?",
                             intent = AiDecisionType.UPDATE_GOAL,
                             missingField = "update_fields",
+                            candidates = listOf(goal.id),
+                            partialEntities = mapOf("goalId" to goal.id, "title" to goal.title),
                             originalQuery = rawMessage
                         )
                         return AiResponse(
