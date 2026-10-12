@@ -60,7 +60,12 @@ fun AiScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { IntelligenceHeader(onOpenEvaluation = onOpenEvaluation) }
+        topBar = {
+            IntelligenceHeader(
+                isCloudActive = uiState.isCloudActive,
+                onOpenEvaluation = onOpenEvaluation
+            )
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -275,7 +280,10 @@ fun AiScreen(
 // ─────────────────────────────────────────────
 
 @Composable
-private fun IntelligenceHeader(onOpenEvaluation: () -> Unit) {
+private fun IntelligenceHeader(
+    isCloudActive: Boolean = false,
+    onOpenEvaluation: () -> Unit
+) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(0.5.dp, NexoraBorder),
@@ -296,12 +304,23 @@ private fun IntelligenceHeader(onOpenEvaluation: () -> Unit) {
                     ),
                     color = Green10
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "On-device AI · Private by design",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Green40
-                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(
+                                color = if (isCloudActive) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                shape = CircleShape
+                            )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isCloudActive) "Gemini Cloud AI · Online" else "On-device AI · Offline mode",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Green40
+                    )
+                }
             }
             IconButton(onClick = onOpenEvaluation) {
                 Icon(

@@ -25,6 +25,14 @@ class AiProviderManager(
         useCloudIfAvailable = enabled
     }
 
+    suspend fun isCloudActive(): Boolean {
+        return useCloudIfAvailable && cloudProvider != null && cloudProvider.isAvailable()
+    }
+
+    fun getCloudProvider(): AiModelProvider? = cloudProvider
+
+    fun getLocalProvider(): LocalAiProvider = localProvider
+
     /**
      * Generates a conversational response with automatic local fallback.
      */
@@ -37,7 +45,14 @@ class AiProviderManager(
             NexoraLogger.d("AI", "Calling provider: ${provider.providerName}")
             provider.generateResponse(prompt, context)
         } catch (e: Exception) {
-            NexoraLogger.w("AI", "Provider ${provider.providerName} failed: ${e.message}")
+            when (e) {
+                is GeminiQuotaExceededException ->
+                    NexoraLogger.i("AI", "Gemini free quota limit reached. Falling back to local AI.")
+                is GeminiAuthException ->
+                    NexoraLogger.w("AI", "Gemini authentication failed. Falling back to local AI.")
+                else ->
+                    NexoraLogger.w("AI", "Provider ${provider.providerName} failed: ${e.message}. Falling back to local AI.")
+            }
             try {
                 localProvider.generateResponse(prompt, context)
             } catch (fallbackError: Exception) {
@@ -60,7 +75,14 @@ class AiProviderManager(
             val response = provider.generateStructuredResponse(prompt, context, conversationContext)
             validateResponse(response, context)
         } catch (e: Exception) {
-            NexoraLogger.w("AI", "Structured provider ${provider.providerName} failed: ${e.message}")
+            when (e) {
+                is GeminiQuotaExceededException ->
+                    NexoraLogger.i("AI", "Gemini free quota limit reached for structured request. Falling back to local AI.")
+                is GeminiAuthException ->
+                    NexoraLogger.w("AI", "Gemini authentication failed for structured request. Falling back to local AI.")
+                else ->
+                    NexoraLogger.w("AI", "Structured provider ${provider.providerName} failed: ${e.message}. Falling back to local AI.")
+            }
             try {
                 val fallbackResponse = localProvider.generateStructuredResponse(prompt, context, conversationContext)
                 validateResponse(fallbackResponse, context)

@@ -44,6 +44,10 @@ class NexoraAiEngine(
 
     fun getBrain(): NexoraAiBrain = brain
 
+    fun getProviderManager(): AiProviderManager = providerManager
+
+    suspend fun isCloudActive(): Boolean = providerManager.isCloudActive()
+
     /**
      * Unified entry point for all AI requests.
      */

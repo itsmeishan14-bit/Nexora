@@ -44,11 +44,9 @@ class MainActivity : ComponentActivity() {
                     val localIntentResolver = LocalAiIntentResolver(automationSystem = automationSystem)
                     val localProvider = LocalAiProvider(intentResolver = localIntentResolver)
                     
-                    // Cloud provider configuration (Optional, can be loaded from secure storage)
-                    val cloudConfig = CloudAiConfig(
-                        isConfigured = false // Set to true and provide apiKey/endpoint for LLM support
-                    )
-                    val cloudProvider = CloudAiProvider(cloudConfig)
+                    // Cloud provider configuration (Loaded securely from local.properties / BuildConfig / env)
+                    val cloudConfig = CloudAiConfig.loadFromEnvironment(context.applicationContext)
+                    val cloudProvider = CloudAiProvider(cloudConfig, context.applicationContext)
                     
                     val providerManager = AiProviderManager(
                         localProvider = localProvider,

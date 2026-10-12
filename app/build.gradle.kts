@@ -13,6 +13,15 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+val geminiApiKey = (localProperties.getProperty("GEMINI_API_KEY")
+    ?: System.getenv("GEMINI_API_KEY")
+    ?: "").replace("\"", "\\\"")
+
 android {
     namespace = "com.example.nexora"
 
@@ -28,6 +37,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     signingConfigs {
@@ -58,6 +69,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -93,6 +105,7 @@ dependencies {
 
     // Unit tests
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
 
     // Android tests
     androidTestImplementation(platform(libs.androidx.compose.bom))

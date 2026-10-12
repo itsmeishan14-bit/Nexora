@@ -38,7 +38,8 @@ data class NexoraAiUiState(
     val proactiveSignals: List<AiProactiveSignal> = emptyList(),
     val automationRules: List<AiAutomationRule> = emptyList(),
     val personalContext: AiPersonalContext? = null,
-    val homeProposedAction: AiAction? = null
+    val homeProposedAction: AiAction? = null,
+    val isCloudActive: Boolean = false
 )
 
 class NexoraAiViewModel(
@@ -61,6 +62,7 @@ class NexoraAiViewModel(
         analyze()
         loadAutomationRules()
         loadInitialHomeState()
+        refreshCloudStatus()
         scope.launch {
             engine.observeAutomationRules().collect { rules ->
                 _uiState.update { it.copy(automationRules = rules) }
@@ -70,6 +72,15 @@ class NexoraAiViewModel(
             engine.observeRecentExecutionRecords().collect { history ->
                 _uiState.update { it.copy(executionHistory = history) }
             }
+        }
+    }
+
+    fun refreshCloudStatus() {
+        scope.launch {
+            try {
+                val active = engine.isCloudActive()
+                _uiState.update { it.copy(isCloudActive = active) }
+            } catch (_: Exception) {}
         }
     }
 
@@ -489,6 +500,7 @@ class NexoraAiViewModel(
                 }
             } finally {
                 _uiState.update { it.copy(isChatLoading = false) }
+                refreshCloudStatus()
             }
         }
     }
