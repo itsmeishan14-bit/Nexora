@@ -33,6 +33,8 @@ class AiProviderManager(
 
     fun getLocalProvider(): LocalAiProvider = localProvider
 
+    fun getLastDiagnostic(): CloudAiDiagnostic? = (cloudProvider as? CloudAiProvider)?.lastDiagnostic
+
     /**
      * Generates a conversational response with automatic local fallback.
      */
@@ -50,6 +52,16 @@ class AiProviderManager(
                     NexoraLogger.i("AI", "Gemini free quota limit reached. Falling back to local AI.")
                 is GeminiAuthException ->
                     NexoraLogger.w("AI", "Gemini authentication failed. Falling back to local AI.")
+                is GeminiModelUnavailableException ->
+                    NexoraLogger.w("AI", "Gemini model unavailable. Falling back to local AI: ${e.message}")
+                is GeminiServerException ->
+                    NexoraLogger.w("AI", "Gemini server busy. Falling back to local AI: ${e.message}")
+                is GeminiNetworkException ->
+                    NexoraLogger.w("AI", "Gemini network unreachable. Falling back to local AI: ${e.message}")
+                is GeminiParsingException ->
+                    NexoraLogger.w("AI", "Gemini response parsing failed. Falling back to local AI: ${e.message}")
+                is GeminiConfigException ->
+                    NexoraLogger.w("AI", "Gemini configuration missing. Falling back to local AI: ${e.message}")
                 else ->
                     NexoraLogger.w("AI", "Provider ${provider.providerName} failed: ${e.message}. Falling back to local AI.")
             }
@@ -80,6 +92,16 @@ class AiProviderManager(
                     NexoraLogger.i("AI", "Gemini free quota limit reached for structured request. Falling back to local AI.")
                 is GeminiAuthException ->
                     NexoraLogger.w("AI", "Gemini authentication failed for structured request. Falling back to local AI.")
+                is GeminiModelUnavailableException ->
+                    NexoraLogger.w("AI", "Gemini model unavailable for structured request. Falling back to local AI: ${e.message}")
+                is GeminiServerException ->
+                    NexoraLogger.w("AI", "Gemini server busy for structured request. Falling back to local AI: ${e.message}")
+                is GeminiNetworkException ->
+                    NexoraLogger.w("AI", "Gemini network unreachable for structured request. Falling back to local AI: ${e.message}")
+                is GeminiParsingException ->
+                    NexoraLogger.w("AI", "Gemini response parsing failed for structured request. Falling back to local AI: ${e.message}")
+                is GeminiConfigException ->
+                    NexoraLogger.w("AI", "Gemini configuration missing for structured request. Falling back to local AI: ${e.message}")
                 else ->
                     NexoraLogger.w("AI", "Structured provider ${provider.providerName} failed: ${e.message}. Falling back to local AI.")
             }

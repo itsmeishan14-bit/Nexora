@@ -53,7 +53,7 @@ Nexora is a premium, high-end personal operating system designed to elevate your
 ## 🤖 Gemini Cloud AI & Offline Fallback
 
 Nexora features a dual-engine AI architecture:
-- **Cloud Intelligence (Online)**: Powered by Google's official Gemini Developer API using the free-tier eligible `gemini-1.5-flash` model for rich conversational intelligence, open-ended discussions, and task breakdown.
+- **Cloud Intelligence (Online)**: Powered by Google's official Gemini Developer API using the free-tier eligible `gemini-3.8-flash` model for rich conversational intelligence, open-ended discussions, and task breakdown.
 - **On-Device Intelligence (Offline)**: Nexora's built-in local heuristic engine (`LocalAiProvider`), running completely on-device with zero dependencies on external servers or Ollama.
 
 ### 🔑 Setting up Free Gemini Cloud AI (Local Development)
@@ -61,7 +61,7 @@ Nexora features a dual-engine AI architecture:
 1. **Get a Free API Key**:
    - Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
    - Sign in with your Google Account and click **Create API Key**.
-   - Gemini 1.5 Flash provides a generous free tier (15 requests/min, 1,500 requests/day, 1M tokens/min) with no credit card required.
+   - Gemini 3.8 Flash provides a generous free tier with no credit card required.
 
 2. **Configure in `local.properties`**:
    Add your key to `local.properties` in the project root (this file is excluded from git):

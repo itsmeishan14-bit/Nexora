@@ -37,7 +37,7 @@ class GeminiCloudAiIntegrationTest {
     ): Pair<HttpURLConnection, ByteArrayOutputStream> {
         val capturedOutputStream = ByteArrayOutputStream()
 
-        val mockConnection = object : HttpURLConnection(URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent")) {
+        val mockConnection = object : HttpURLConnection(URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")) {
             override fun connect() {
                 if (throwOnConnect != null) throw throwOnConnect
             }
@@ -93,7 +93,7 @@ class GeminiCloudAiIntegrationTest {
 
         val config = CloudAiConfig(
             apiKey = "test-free-api-key",
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.8-flash",
             isConfigured = true
         )
         val cloudProvider = CloudAiProvider(
@@ -152,14 +152,14 @@ class GeminiCloudAiIntegrationTest {
 
         val config = CloudAiConfig(
             apiKey = "test-free-api-key",
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.8-flash",
             isConfigured = true
         )
         val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
 
         val response = cloudProvider.generateResponse("What is Nexora?", AiContext())
         assertEquals("Nexora helps you optimize focus, manage tasks, and track high-impact goals.", response.text)
-        assertEquals("gemini-1.5-flash", response.modelName)
+        assertEquals("gemini-3.8-flash", response.modelName)
     }
 
     @Test
@@ -173,6 +173,8 @@ class GeminiCloudAiIntegrationTest {
 
         assertFalse("Cloud provider should be unavailable without key", cloudProvider.isAvailable())
         assertFalse("Manager should report cloud inactive", manager.isCloudActive())
+        assertEquals(CloudAiDiagnosticCode.MISSING_KEY, cloudProvider.lastDiagnostic.code)
+        assertFalse(cloudProvider.lastDiagnostic.hasKey)
 
         val active = manager.getActiveProvider()
         assertEquals("Nexora Local AI", active.providerName)
@@ -190,14 +192,12 @@ class GeminiCloudAiIntegrationTest {
             apiKey = "test-free-key",
             isConfigured = true
         )
-        // Pass a dummy mock context or rely on NetworkUtils
         val cloudProvider = CloudAiProvider(
             config = config,
-            context = null // context null with NetworkUtils override
+            context = null
         )
         val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
 
-        // When network is forced offline via NetworkUtils
         NetworkUtils.setNetworkAvailableForTesting(false)
         assertFalse(NetworkUtils.isNetworkAvailable(null))
 
@@ -230,7 +230,7 @@ class GeminiCloudAiIntegrationTest {
 
         val config = CloudAiConfig(
             apiKey = "test-free-api-key",
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.8-flash",
             isConfigured = true
         )
         val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
@@ -247,6 +247,94 @@ class GeminiCloudAiIntegrationTest {
         // Verify that cloud provider entered cooldown and is no longer available
         assertFalse("Cloud provider should be in cooldown after 429", cloudProvider.isAvailable())
         assertFalse("Manager reports cloud inactive during quota cooldown", manager.isCloudActive())
+        assertEquals(CloudAiDiagnosticCode.QUOTA_EXCEEDED, cloudProvider.lastDiagnostic.code)
+    }
+
+    @Test
+    fun `test http 404 model unavailable produces diagnostic and falls back to local AI`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 404,
+            errorBody = """{"error": {"code": 404, "message": "models/gemini-1.5-flash is not found for API version v1beta"}}"""
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-1.5-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateResponse("Hello Nexora", AiContext())
+
+        assertEquals("nexora-local-v1", response.modelName)
+        assertNotNull(response.text)
+        assertEquals(CloudAiDiagnosticCode.MODEL_UNAVAILABLE, cloudProvider.lastDiagnostic.code)
+        assertEquals(404, cloudProvider.lastDiagnostic.httpCode)
+    }
+
+    @Test
+    fun `test http 401 auth error produces diagnostic and falls back to local AI`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 401,
+            errorBody = """{"error": {"code": 401, "message": "API key not valid."}}"""
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "invalid-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateStructuredResponse("Explain my day", AiContext())
+        assertTrue("Local AI should fulfill request on auth fallback", response.modelName.contains("local"))
+        assertEquals(CloudAiDiagnosticCode.AUTH_ERROR, cloudProvider.lastDiagnostic.code)
+        assertEquals(401, cloudProvider.lastDiagnostic.httpCode)
+    }
+
+    @Test
+    fun `test http 503 high demand produces server busy diagnostic and falls back to local AI`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 503,
+            errorBody = """{"error": {"code": 503, "message": "This model is currently experiencing high demand."}}"""
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateResponse("Summarize tasks", AiContext())
+
+        assertEquals("nexora-local-v1", response.modelName)
+        assertEquals(CloudAiDiagnosticCode.SERVER_BUSY, cloudProvider.lastDiagnostic.code)
+        assertEquals(503, cloudProvider.lastDiagnostic.httpCode)
+    }
+
+    @Test
+    fun `test malformed json response produces parsing error diagnostic`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = HttpURLConnection.HTTP_OK,
+            responseBody = """{"candidates": []}"""
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateResponse("Hello", AiContext())
+
+        assertEquals("nexora-local-v1", response.modelName)
+        assertEquals(CloudAiDiagnosticCode.PARSING_ERROR, cloudProvider.lastDiagnostic.code)
     }
 
     @Test
@@ -258,7 +346,7 @@ class GeminiCloudAiIntegrationTest {
 
         val config = CloudAiConfig(
             apiKey = "test-free-api-key",
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.8-flash",
             isConfigured = true
         )
         val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
@@ -267,6 +355,7 @@ class GeminiCloudAiIntegrationTest {
         val response = manager.generateResponse("Plan my day", AiContext())
         assertEquals("nexora-local-v1", response.modelName)
         assertNotNull(response.text)
+        assertEquals(CloudAiDiagnosticCode.NETWORK_ERROR, cloudProvider.lastDiagnostic.code)
     }
 
     @Test
@@ -278,14 +367,14 @@ class GeminiCloudAiIntegrationTest {
             override suspend fun isAvailable(): Boolean = !simulateNetworkFailure
             override suspend fun generateResponse(prompt: String, context: AiContext): AiModelResponse {
                 if (simulateNetworkFailure) throw IOException("Network unreachable")
-                return AiModelResponse(text = "Cloud is back online!", modelName = "gemini-1.5-flash")
+                return AiModelResponse(text = "Cloud is back online!", modelName = "gemini-3.8-flash")
             }
             override suspend fun generateStructuredResponse(prompt: String, context: AiContext, conversationContext: AiConversationContext?): AiModelStructuredResponse {
                 if (simulateNetworkFailure) throw IOException("Network unreachable")
                 return AiModelStructuredResponse(
                     decision = AiDecision(type = AiDecisionType.GENERAL_CONVERSATION, title = "Cloud Online", reason = "Online"),
                     textResponse = "Cloud is back online!",
-                    modelName = "gemini-1.5-flash"
+                    modelName = "gemini-3.8-flash"
                 )
             }
         }
@@ -301,7 +390,7 @@ class GeminiCloudAiIntegrationTest {
         simulateNetworkFailure = false
         assertTrue(manager.isCloudActive())
         val onlineResp = manager.generateResponse("Hello again", AiContext())
-        assertEquals("gemini-1.5-flash", onlineResp.modelName)
+        assertEquals("gemini-3.8-flash", onlineResp.modelName)
         assertEquals("Cloud is back online!", onlineResp.text)
     }
 
@@ -311,7 +400,7 @@ class GeminiCloudAiIntegrationTest {
         val provider = CloudAiProvider(config)
 
         val convContext = AiConversationContext()
-            .appendMessage(false, "Initial welcome message") // model turn first
+            .appendMessage(false, "Initial welcome message")
             .appendMessage(true, "My name is Alice")
             .appendMessage(false, "Nice to meet you Alice")
             .appendMessage(true, "I want to finish a report")
@@ -319,14 +408,45 @@ class GeminiCloudAiIntegrationTest {
         val contents = provider.buildContentsPayload("Can you help me break it down?", convContext)
 
         assertTrue(contents.length() >= 2)
-        // First entry must be user role
         val firstTurn = contents.getJSONObject(0)
         assertEquals("user", firstTurn.getString("role"))
 
-        // Last entry must be user role containing the prompt
         val lastTurn = contents.getJSONObject(contents.length() - 1)
         assertEquals("user", lastTurn.getString("role"))
         val lastText = lastTurn.getJSONArray("parts").getJSONObject(0).getString("text")
         assertTrue(lastText.contains("Can you help me break it down?"))
+    }
+
+    @Test
+    fun `test default model configuration is gemini 3 8 flash`() {
+        assertEquals("gemini-3.8-flash", CloudAiConfig.DEFAULT_MODEL)
+        val config = CloudAiConfig()
+        assertEquals("gemini-3.8-flash", config.modelName)
+    }
+
+    @Test
+    fun `test safe diagnostics never expose api key value`() {
+        val secretKey = "AQ.SuperSecretKey1234567890"
+        val config = CloudAiConfig(apiKey = secretKey, isConfigured = true)
+        val provider = CloudAiProvider(config)
+
+        val diag = provider.lastDiagnostic
+        assertTrue("Diagnostic must indicate key is present", diag.hasKey)
+        assertFalse("Diagnostic summary must NOT contain secret key", diag.summary.contains(secretKey))
+        assertFalse("Diagnostic summary must NOT contain secret key prefix", diag.summary.contains("SuperSecret"))
+        assertEquals(CloudAiDiagnosticCode.CONFIGURED, diag.code)
+    }
+
+    @Test
+    fun `test provider selection chooses cloud when configured and local when not`() = runBlocking {
+        val configuredCloud = CloudAiProvider(CloudAiConfig(apiKey = "valid-key", isConfigured = true))
+        val managerWithCloud = AiProviderManager(localProvider = localProvider, cloudProvider = configuredCloud)
+        assertTrue(managerWithCloud.isCloudActive())
+        assertEquals("Nexora Gemini Cloud AI", managerWithCloud.getActiveProvider().providerName)
+
+        val unconfiguredCloud = CloudAiProvider(CloudAiConfig(apiKey = null, isConfigured = false))
+        val managerWithoutCloud = AiProviderManager(localProvider = localProvider, cloudProvider = unconfiguredCloud)
+        assertFalse(managerWithoutCloud.isCloudActive())
+        assertEquals("Nexora Local AI", managerWithoutCloud.getActiveProvider().providerName)
     }
 }

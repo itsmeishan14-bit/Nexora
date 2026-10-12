@@ -39,7 +39,8 @@ data class NexoraAiUiState(
     val automationRules: List<AiAutomationRule> = emptyList(),
     val personalContext: AiPersonalContext? = null,
     val homeProposedAction: AiAction? = null,
-    val isCloudActive: Boolean = false
+    val isCloudActive: Boolean = false,
+    val cloudDiagnostic: CloudAiDiagnostic? = null
 )
 
 class NexoraAiViewModel(
@@ -79,7 +80,8 @@ class NexoraAiViewModel(
         scope.launch {
             try {
                 val active = engine.isCloudActive()
-                _uiState.update { it.copy(isCloudActive = active) }
+                val diagnostic = engine.getCloudDiagnostic()
+                _uiState.update { it.copy(isCloudActive = active, cloudDiagnostic = diagnostic) }
             } catch (_: Exception) {}
         }
     }

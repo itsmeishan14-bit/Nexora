@@ -10,3 +10,11 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# Keep BuildConfig fields accessible for runtime configuration
+-keep class com.example.nexora.BuildConfig { *; }
+
+# Keep Cloud AI models and diagnostic types
+-keep class com.example.nexora.ai.CloudAiDiagnostic { *; }
+-keep class com.example.nexora.ai.CloudAiDiagnosticCode { *; }
+-keep class com.example.nexora.ai.CloudAiConfig { *; }

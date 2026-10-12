@@ -48,6 +48,8 @@ class NexoraAiEngine(
 
     suspend fun isCloudActive(): Boolean = providerManager.isCloudActive()
 
+    fun getCloudDiagnostic(): CloudAiDiagnostic? = providerManager.getLastDiagnostic()
+
     /**
      * Unified entry point for all AI requests.
      */

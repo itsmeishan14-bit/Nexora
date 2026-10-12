@@ -63,6 +63,7 @@ fun AiScreen(
         topBar = {
             IntelligenceHeader(
                 isCloudActive = uiState.isCloudActive,
+                cloudDiagnostic = uiState.cloudDiagnostic,
                 onOpenEvaluation = onOpenEvaluation
             )
         }
@@ -282,6 +283,7 @@ fun AiScreen(
 @Composable
 private fun IntelligenceHeader(
     isCloudActive: Boolean = false,
+    cloudDiagnostic: com.example.nexora.ai.CloudAiDiagnostic? = null,
     onOpenEvaluation: () -> Unit
 ) {
     Surface(
@@ -306,17 +308,37 @@ private fun IntelligenceHeader(
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val statusColor = when {
+                        isCloudActive -> Color(0xFF10B981)
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.QUOTA_EXCEEDED -> Color(0xFFF59E0B)
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> Color(0xFFF59E0B)
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> Color(0xFFEF4444)
+                        else -> Color(0xFF94A3B8)
+                    }
+
+                    val statusText = when {
+                        isCloudActive -> "Gemini Cloud AI · Online (${cloudDiagnostic?.model ?: "gemini-3.8-flash"})"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MISSING_KEY -> "On-device AI · No API key"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR -> "On-device AI · Invalid API key"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> "On-device AI · Model unavailable"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.QUOTA_EXCEEDED -> "On-device AI · Quota reached (HTTP 429)"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> "On-device AI · High demand (HTTP 503)"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.NETWORK_ERROR -> "On-device AI · Network error"
+                        else -> "On-device AI · Offline mode"
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(7.dp)
                             .background(
-                                color = if (isCloudActive) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                color = statusColor,
                                 shape = CircleShape
                             )
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (isCloudActive) "Gemini Cloud AI · Online" else "On-device AI · Offline mode",
+                        text = statusText,
                         style = MaterialTheme.typography.bodySmall,
                         color = Green40
                     )

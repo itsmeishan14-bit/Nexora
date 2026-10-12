@@ -24,12 +24,64 @@ class GeminiQuotaExceededException(message: String) : Exception(message)
 class GeminiAuthException(message: String) : Exception(message)
 
 /**
+ * Thrown when the requested Gemini model is not found or unsupported (HTTP 404).
+ */
+class GeminiModelUnavailableException(message: String) : Exception(message)
+
+/**
+ * Thrown when Gemini service experiences high demand or temporary server errors (HTTP 500, 503).
+ */
+class GeminiServerException(message: String) : Exception(message)
+
+/**
+ * Thrown when network connectivity to the Gemini API fails.
+ */
+class GeminiNetworkException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Thrown when Gemini response parsing fails.
+ */
+class GeminiParsingException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Thrown when Gemini API key configuration is missing.
+ */
+class GeminiConfigException(message: String) : Exception(message)
+
+/**
+ * Categorized status codes for non-sensitive diagnostics.
+ */
+enum class CloudAiDiagnosticCode {
+    CONFIGURED,
+    MISSING_KEY,
+    AUTH_ERROR,
+    MODEL_UNAVAILABLE,
+    QUOTA_EXCEEDED,
+    SERVER_BUSY,
+    NETWORK_ERROR,
+    PARSING_ERROR,
+    SUCCESS
+}
+
+/**
+ * Non-sensitive diagnostic record. Never contains the actual API key or user content.
+ */
+data class CloudAiDiagnostic(
+    val code: CloudAiDiagnosticCode,
+    val hasKey: Boolean,
+    val model: String,
+    val summary: String,
+    val httpCode: Int? = null,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
  * Robust Cloud-based AI provider integrating the official Google Gemini Developer API.
- * Uses official Gemini REST generateContent endpoint, free-tier eligible model (gemini-1.5-flash),
+ * Uses official Gemini REST generateContent endpoint, free-tier eligible model (gemini-3.8-flash),
  * and transparent local fallback on network failure, timeouts, or exhausted quota.
  *
  * ZERO-COST & SECURITY GUARANTEE:
- * - API keys are never hardcoded.
+ * - API keys are never hardcoded or logged.
  * - Loaded securely from local.properties / BuildConfig / SharedPreferences / environment.
  * - HTTP 429 quota exhaustion immediately triggers local fallback; no paid billing is ever used.
  */
@@ -43,6 +95,24 @@ class CloudAiProvider(
 
     @Volatile
     private var quotaCooldownUntil: Long = 0L
+
+    @Volatile
+    var lastDiagnostic: CloudAiDiagnostic = if (config.isConfigured && !config.apiKey.isNullOrBlank()) {
+        CloudAiDiagnostic(
+            code = CloudAiDiagnosticCode.CONFIGURED,
+            hasKey = true,
+            model = config.modelName ?: CloudAiConfig.DEFAULT_MODEL,
+            summary = "Gemini key configured (${config.apiKey.length} chars). Ready."
+        )
+    } else {
+        CloudAiDiagnostic(
+            code = CloudAiDiagnosticCode.MISSING_KEY,
+            hasKey = false,
+            model = config.modelName ?: CloudAiConfig.DEFAULT_MODEL,
+            summary = "Gemini API key is not configured in local.properties or environment."
+        )
+    }
+        private set
 
     companion object {
         private const val QUOTA_COOLDOWN_MS = 60_000L // 1 minute backoff for 429 rate limit
@@ -97,10 +167,30 @@ class CloudAiProvider(
         conversationContext: AiConversationContext?
     ): String {
         val apiKey = config.apiKey?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("Gemini API key is missing or not configured")
+        if (apiKey == null) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.MISSING_KEY,
+                hasKey = false,
+                model = config.modelName ?: CloudAiConfig.DEFAULT_MODEL,
+                summary = "Gemini API key is missing or not configured"
+            )
+            lastDiagnostic = diag
+            NexoraLogger.w("GEMINI", "Cloud AI request aborted: ${diag.summary}")
+            throw GeminiConfigException(diag.summary)
+        }
 
         if (System.currentTimeMillis() < quotaCooldownUntil) {
-            throw GeminiQuotaExceededException("Gemini quota cooling down until $quotaCooldownUntil")
+            val remainingSec = (quotaCooldownUntil - System.currentTimeMillis()) / 1000
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.QUOTA_EXCEEDED,
+                hasKey = true,
+                model = config.modelName ?: CloudAiConfig.DEFAULT_MODEL,
+                summary = "Gemini quota cooling down for ${remainingSec}s after HTTP 429",
+                httpCode = 429
+            )
+            lastDiagnostic = diag
+            NexoraLogger.i("GEMINI", diag.summary)
+            throw GeminiQuotaExceededException(diag.summary)
         }
 
         val effectiveModel = config.modelName ?: CloudAiConfig.DEFAULT_MODEL
@@ -144,47 +234,151 @@ class CloudAiProvider(
             })
         }
 
-        val url = URL(endpointUrl)
-        val connection = connectionFactory?.invoke(url) ?: (url.openConnection() as HttpURLConnection)
+        val maxAttempts = if (connectionFactory != null) 1 else 2
+        var currentAttempt = 0
 
-        try {
-            connection.requestMethod = "POST"
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.setRequestProperty("x-goog-api-key", apiKey)
-            connection.doOutput = true
-            connection.connectTimeout = config.connectTimeoutMs
-            connection.readTimeout = config.readTimeoutMs
+        while (currentAttempt < maxAttempts) {
+            currentAttempt++
+            val url = URL(endpointUrl)
+            val connection = connectionFactory?.invoke(url) ?: (url.openConnection() as HttpURLConnection)
 
-            connection.outputStream.use { os ->
-                val input = requestBody.toString().toByteArray(Charsets.UTF_8)
-                os.write(input, 0, input.size)
+            try {
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("x-goog-api-key", apiKey)
+                connection.doOutput = true
+                connection.connectTimeout = config.connectTimeoutMs
+                connection.readTimeout = config.readTimeoutMs
+
+                connection.outputStream.use { os ->
+                    val input = requestBody.toString().toByteArray(Charsets.UTF_8)
+                    os.write(input, 0, input.size)
+                }
+
+                val responseCode = connection.responseCode
+
+                if (responseCode == 429) {
+                    quotaCooldownUntil = System.currentTimeMillis() + QUOTA_COOLDOWN_MS
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.QUOTA_EXCEEDED,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini free-tier quota exhausted (HTTP 429)",
+                        httpCode = 429
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiQuotaExceededException(diag.summary)
+                }
+
+                if (responseCode == 401 || responseCode == 403) {
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.AUTH_ERROR,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini authorization failed ($responseCode). Check API key.",
+                        httpCode = responseCode
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiAuthException(diag.summary)
+                }
+
+                if (responseCode == 404) {
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.MODEL_UNAVAILABLE,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini model '$effectiveModel' not found (HTTP 404)",
+                        httpCode = 404
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiModelUnavailableException(diag.summary)
+                }
+
+                if (responseCode == 503) {
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    if (currentAttempt < maxAttempts) {
+                        NexoraLogger.i("GEMINI", "Gemini 503 high demand received, retrying in 1500ms (attempt $currentAttempt/$maxAttempts)...")
+                        try { Thread.sleep(1500) } catch (_: InterruptedException) {}
+                        continue
+                    }
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.SERVER_BUSY,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini service temporarily experiencing high demand (HTTP 503)",
+                        httpCode = 503
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiServerException(diag.summary)
+                }
+
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.SERVER_BUSY,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini API call failed with code $responseCode",
+                        httpCode = responseCode
+                    )
+                    lastDiagnostic = diag
+                    throw Exception("Gemini API call failed with code $responseCode: $errBody")
+                }
+
+                val responseBody = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
+                val parsedText = try {
+                    parseGeminiResponse(responseBody)
+                } catch (e: Exception) {
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.PARSING_ERROR,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Failed to parse Gemini response: ${e.message}",
+                        httpCode = HttpURLConnection.HTTP_OK
+                    )
+                    lastDiagnostic = diag
+                    throw GeminiParsingException(diag.summary, e)
+                }
+
+                lastDiagnostic = CloudAiDiagnostic(
+                    code = CloudAiDiagnosticCode.SUCCESS,
+                    hasKey = true,
+                    model = effectiveModel,
+                    summary = "Gemini request succeeded (model: $effectiveModel)",
+                    httpCode = HttpURLConnection.HTTP_OK
+                )
+                return parsedText
+            } catch (e: Exception) {
+                if (e is GeminiQuotaExceededException || e is GeminiAuthException ||
+                    e is GeminiModelUnavailableException || e is GeminiServerException ||
+                    e is GeminiParsingException || e is GeminiConfigException) {
+                    throw e
+                }
+                if (e is java.io.IOException) {
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.NETWORK_ERROR,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Network error connecting to Gemini: ${e.javaClass.simpleName}: ${e.message}"
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", diag.summary)
+                    throw GeminiNetworkException(diag.summary, e)
+                }
+                throw e
+            } finally {
+                connection.disconnect()
             }
-
-            val responseCode = connection.responseCode
-
-            if (responseCode == 429) {
-                quotaCooldownUntil = System.currentTimeMillis() + QUOTA_COOLDOWN_MS
-                val errBody = readStreamQuietly(connection.errorStream)
-                NexoraLogger.w("GEMINI", "Gemini free-tier quota exhausted (HTTP 429): $errBody")
-                throw GeminiQuotaExceededException("Gemini free-tier quota limit reached (HTTP 429). Falling back to local AI.")
-            }
-
-            if (responseCode == 401 || responseCode == 403) {
-                val errBody = readStreamQuietly(connection.errorStream)
-                NexoraLogger.w("GEMINI", "Gemini authorization failed ($responseCode): $errBody")
-                throw GeminiAuthException("Gemini API key rejected ($responseCode). Check your key.")
-            }
-
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                val errBody = readStreamQuietly(connection.errorStream)
-                throw Exception("Gemini API call failed with code $responseCode: $errBody")
-            }
-
-            val responseBody = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
-            return parseGeminiResponse(responseBody)
-        } finally {
-            connection.disconnect()
         }
+
+        throw GeminiServerException("Gemini API call failed after $maxAttempts attempts")
     }
 
     /**
@@ -384,7 +578,7 @@ data class CloudAiConfig(
     val readTimeoutMs: Int = 25000
 ) {
     companion object {
-        const val DEFAULT_MODEL = "gemini-1.5-flash"
+        const val DEFAULT_MODEL = "gemini-3.8-flash"
         const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
         /**
