@@ -22,8 +22,8 @@ object AiEntityResolver {
         val cleanQuery = normalize(query)
         val rawCleanQuery = normalizeRaw(query)
 
-        // 1. Contextual Pronouns & References ("it", "that", "that task", "the previous task", "previous task", "that one", "the task we discussed")
-        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that task|the task|this task|the previous task|previous task|that one|this one|the task we discussed|last task)\\s*$"))
+        // 1. Contextual Pronouns & References ("it", "that", "that task", "the previous task", "the previous one", "the task I just created")
+        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that task|the task|this task|the previous task|previous task|that one|this one|the task we discussed|last task|the previous one|previous one|the task i just created|the task i created|task i just created|the one i just created|recently created task|the task just created)\\s*$"))
         if (isContextualRef) {
             val lastId = convContext?.lastTaskId
             if (lastId != null) {
@@ -36,6 +36,31 @@ object AiEntityResolver {
                 if (matched != null) return ResolutionResult.Success(matched, EntityResolutionStatus.EXACT_MATCH)
             }
             return ResolutionResult.NotFound()
+        }
+
+        // Ordinal task reference ("the second task", "the 2nd task", "the first task")
+        val ordinalMatch = Regex("(?i)^\\s*(the\\s+)?(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th)\\s*(task|one)?\\s*$").find(query)
+        if (ordinalMatch != null) {
+            val ordinalIndex = when (ordinalMatch.groupValues[2].lowercase()) {
+                "first", "1st" -> 0
+                "second", "2nd" -> 1
+                "third", "3rd" -> 2
+                "fourth", "4th" -> 3
+                "fifth", "5th" -> 4
+                else -> -1
+            }
+            if (ordinalIndex >= 0) {
+                if (convContext?.candidateIds?.isNotEmpty() == true) {
+                    val candidateTasks = tasks.filter { it.id in convContext.candidateIds }
+                    if (ordinalIndex in candidateTasks.indices) {
+                        return ResolutionResult.Success(candidateTasks[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
+                    }
+                }
+                val targetList = if (tasks.any { !it.completed }) tasks.filter { !it.completed } else tasks
+                if (ordinalIndex in targetList.indices) {
+                    return ResolutionResult.Success(targetList[ordinalIndex], EntityResolutionStatus.EXACT_MATCH)
+                }
+            }
         }
 
         // 2. Goal-linked task references ("the Java task", "the task linked to my Java goal", "the task linked to Java")
@@ -123,11 +148,11 @@ object AiEntityResolver {
         goals: List<NexoraGoal>,
         convContext: AiConversationContext? = null
     ): ResolutionResult<NexoraGoal> {
-        val cleanQuery = normalize(query)
-        val rawCleanQuery = normalizeRaw(query)
+        val cleanQuery = normalize(query).replace(Regex("(?i)^\\s*(of|to|for)\\s+"), "").trim()
+        val rawCleanQuery = normalizeRaw(query).replace(Regex("(?i)^\\s*(of|to|for)\\s+"), "").trim()
 
-        // Contextual Pronouns ("that goal", "it", "that one", "the goal we discussed")
-        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that goal|that one|the goal|the goal we discussed|this goal|this one)\\s*$"))
+        // Contextual Pronouns ("that goal", "it", "that one", "the goal we discussed", "the previous goal", "the previous one")
+        val isContextualRef = query.matches(Regex("(?i)^\\s*(it|that|that goal|that one|the goal|the goal we discussed|this goal|this one|the previous goal|previous goal|the previous one|the goal i just created|the goal i created)\\s*$"))
         if (isContextualRef) {
             val lastId = convContext?.lastGoalId
             if (lastId != null) {
@@ -149,7 +174,8 @@ object AiEntityResolver {
             val rawNormalizedTitle = normalizeRaw(goal.title)
             val score = maxOf(
                 scoreMatch(cleanQuery, normalizedTitle),
-                scoreMatch(rawCleanQuery, rawNormalizedTitle)
+                scoreMatch(rawCleanQuery, rawNormalizedTitle),
+                scoreMatch(cleanQuery.replace("learning", "learn"), normalizedTitle.replace("learning", "learn"))
             )
             goal to score
         }
@@ -176,7 +202,7 @@ object AiEntityResolver {
      */
     private fun normalize(text: String): String {
         return text.lowercase()
-            .replace(Regex("(?i)\\b(the|my|a|an|task|goal|called|as|complete|mark|delete|update|change|to|for|with)\\b"), " ")
+            .replace(Regex("(?i)\\b(the|my|a|an|task|goal|called|as|complete|mark|delete|update|change|to|for|with|of)\\b"), " ")
             .replace(Regex("[^a-z0-9\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()

@@ -2,7 +2,7 @@ package com.example.nexora.ai
 
 object AiPromptBuilder {
 
-    fun buildContextPrompt(context: AiContext): String {
+    fun buildContextPrompt(context: AiContext, conversationContext: AiConversationContext? = null): String {
 
         val tasksSection = if (context.tasks.isEmpty()) {
             "No tasks currently exist."
@@ -32,16 +32,26 @@ object AiPromptBuilder {
             }
         }
 
+        val conversationSection = if (conversationContext != null && conversationContext.recentMessages.isNotEmpty()) {
+            conversationContext.recentHistoryAsText(5)
+        } else {
+            "No prior conversation history."
+        }
+
         return """
             You are Nexora's personal intelligence engine.
 
             Your job is to help the user make better decisions
-            about their goals, tasks, time, and productivity.
+            about their goals, tasks, time, and productivity, and converse
+            naturally when asked questions.
 
             IMPORTANT PRINCIPLES:
             - Respond directly and appropriately to the user's specific message.
             - If the user greets you (e.g. 'hello', 'hi'), respond with a friendly greeting and ask how you can help. Do NOT provide unsolicited task recommendations unless requested.
             - If the user thanks you, respond politely.
+            - For general conversation, questions about yourself (Nexora), your strengths, capabilities, or limitations, provide a clear, helpful, and honest answer.
+            - Be transparent about capabilities: Nexora operates locally to manage tasks, goals, daily plans, productivity insights, and automations with explicit authorization. Nexora does not browse the live web or access unauthorized files.
+            - If conversation history is provided, maintain context and resolve follow-up references naturally.
             - Prioritize meaningful progress over simply doing more tasks.
             - Consider goals when evaluating tasks.
             - Avoid unrealistic schedules.
@@ -58,6 +68,9 @@ object AiPromptBuilder {
             - CREATE_GOAL: title, category, targetDate
             - RESCHEDULE_TASK: taskId, newDate
             - DECOMPOSE_GOAL: goalTitle
+
+            RECENT CONVERSATION HISTORY:
+            $conversationSection
 
             CURRENT NEXORA STATE
 
@@ -88,9 +101,10 @@ object AiPromptBuilder {
 
             Analyze the current state of Nexora and determine
             what would provide the greatest useful improvement
-            for the user.
+            for the user, or answer conversational inquiries directly.
 
             Possible decisions include:
+            - Answer the user's conversational query or general question.
             - What task should be done next?
             - Which goal needs attention?
             - What should today's plan look like?

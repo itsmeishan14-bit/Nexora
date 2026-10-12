@@ -39,7 +39,13 @@ data class AiConversationContext(
     val pendingAction: AiAction? = null,
     val pendingPlan: List<AiAction> = emptyList(),
     val candidateIds: List<Long> = emptyList(),
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    /**
+     * Bounded recent conversation history (max 10 turns = 20 messages).
+     * Each entry is a pair: true = user message, false = assistant message.
+     * Used to resolve follow-ups like "give me an example", "tell me more", "what about the second one".
+     */
+    val recentMessages: List<Pair<Boolean, String>> = emptyList()
 ) {
     /**
      * Context expires after 5 minutes of inactivity.
@@ -47,7 +53,37 @@ data class AiConversationContext(
     fun isExpired(): Boolean {
         return System.currentTimeMillis() - timestamp > 5 * 60 * 1000
     }
+
+    /**
+     * Returns the last assistant response in recent history, if any.
+     */
+    fun lastAssistantMessage(): String? = recentMessages.lastOrNull { !it.first }?.second
+
+    /**
+     * Returns the last user message in recent history, if any.
+     */
+    fun lastUserMessage(): String? = recentMessages.lastOrNull { it.first }?.second
+
+    /**
+     * Returns up to N recent turns as a formatted string for context injection.
+     */
+    fun recentHistoryAsText(maxTurns: Int = 5): String {
+        val relevant = recentMessages.takeLast(maxTurns * 2)
+        return relevant.joinToString("\n") { (isUser, text) ->
+            if (isUser) "User: $text" else "Assistant: $text"
+        }
+    }
+
+    /**
+     * Appends a new message, keeping history bounded to the last 10 turns (20 messages).
+     */
+    fun appendMessage(isFromUser: Boolean, text: String): AiConversationContext {
+        val maxMessages = 20
+        val updated = (recentMessages + (isFromUser to text)).takeLast(maxMessages)
+        return copy(recentMessages = updated, timestamp = System.currentTimeMillis())
+    }
 }
+
 
 /**
  * Represents a state where the AI needs more information from the user.

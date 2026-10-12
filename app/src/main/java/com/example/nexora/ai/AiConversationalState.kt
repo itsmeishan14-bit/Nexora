@@ -9,7 +9,9 @@ data class AiConversationalState(
     val lastTaskId: Long? = null,
     val lastGoalId: Long? = null,
     val lastEntityTitle: String? = null,
-    val activeClarification: AiClarification? = null
+    val activeClarification: AiClarification? = null,
+    /** Bounded recent conversation history preserved across turns (max 20 messages). */
+    val recentMessages: List<Pair<Boolean, String>> = emptyList()
 )
 
 fun AiConversationalState.toConversationContext(): AiConversationContext {
@@ -21,7 +23,8 @@ fun AiConversationalState.toConversationContext(): AiConversationContext {
         lastTaskId = this.lastTaskId,
         lastGoalId = this.lastGoalId,
         lastEntityTitle = this.lastEntityTitle,
-        activeClarification = this.activeClarification
+        activeClarification = this.activeClarification,
+        recentMessages = this.recentMessages
     )
 }
 
@@ -34,7 +37,7 @@ fun AiConversationContext.toAiConversationalState(): AiConversationalState {
         lastTaskId = this.lastTaskId,
         lastGoalId = this.lastGoalId,
         lastEntityTitle = this.lastEntityTitle,
-        activeClarification = this.activeClarification
+        activeClarification = this.activeClarification,
+        recentMessages = this.recentMessages
     )
 }
-

@@ -55,7 +55,7 @@ class LocalAiProvider(
             AiDecision(
                 type = AiDecisionType.NO_ACTION,
                 title = "No immediate actions",
-                reason = "Nexora local analysis didn't identify urgent changes."
+                reason = result.textResponse ?: "Nexora local analysis didn't identify urgent changes."
             )
         }
 

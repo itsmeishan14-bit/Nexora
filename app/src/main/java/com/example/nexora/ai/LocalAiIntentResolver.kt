@@ -57,7 +57,7 @@ class LocalAiIntentResolver(
                 AiDecisionType.DELETE_AUTOMATION -> handleDeleteAutomation(query)
                 AiDecisionType.CREATE_AUTOMATION -> handleCreateAutomation(query)
                 AiDecisionType.GREETING -> handleGreeting(query)
-                AiDecisionType.GENERAL_CONVERSATION -> handleGeneralConversation(query)
+                AiDecisionType.GENERAL_CONVERSATION -> handleGeneralConversation(query, context)
                 AiDecisionType.THANKS -> handleThanks()
                 AiDecisionType.GOODBYE -> handleGoodbye()
                 AiDecisionType.PREDICT_GOAL -> handlePredictGoal(query, context)
@@ -138,7 +138,8 @@ class LocalAiIntentResolver(
             lastEntityTitle = response.decision.taskTitle ?: langResult.entities["title"]?.toString() ?: conversationContext.lastEntityTitle,
             activeClarification = langResult.clarificationNeeded,
             pendingAction = response.actions.firstOrNull()?.takeIf { it.requiresConfirmation },
-            candidateIds = response.candidateTaskIds.takeIf { it.isNotEmpty() } ?: conversationContext.candidateIds
+            candidateIds = response.candidateTaskIds.takeIf { it.isNotEmpty() } ?: conversationContext.candidateIds,
+            recentMessages = conversationContext.recentMessages
         )
     }
 
@@ -1037,19 +1038,40 @@ class LocalAiIntentResolver(
         )
     }
 
-    private fun handleGeneralConversation(query: String): AiModelStructuredResponse {
+    private fun handleGeneralConversation(query: String, context: AiContext): AiModelStructuredResponse {
         val q = query.lowercase()
-        val textResponse = if (q.contains("how are you")) {
-            "I'm running smoothly and ready to assist! How can I help you with your tasks or goals today?"
-        } else {
-            "I'm Nexora, an AI-first Personal Operating System. I can help you manage tasks and goals, plan your day, analyze your productivity patterns, automate workflows, and execute actions on your behalf when you approve them."
+        val textResponse = when {
+            q.contains("how are you") || q.contains("how're you") -> {
+                "I'm running smoothly and ready to assist! How can I help you with your tasks or goals today?"
+            }
+            q.contains("strength") || q.contains("what are you good at") -> {
+                "My core strengths include:\n" +
+                "• **Intelligent Task & Goal Management**: Structuring and prioritizing your workload, tracking goal progress, and breaking complex objectives into actionable steps.\n" +
+                "• **Personal Productivity Analytics**: Identifying bottlenecks, completion momentum, and carry-over trends across your schedule.\n" +
+                "• **Safe Workflow Automation**: Executing predefined rules and productivity triggers with your explicit authorization.\n" +
+                "• **Transparency & Control**: Every data mutation requires your confirmation, and all actions are recorded in an audit trail.\n" +
+                "• **Local-First Reliability**: Core decision-making and heuristics run completely on-device, with optional cloud language model integration."
+            }
+            q.contains("limitation") || q.contains("weakness") || q.contains("what can't you do") || q.contains("what cannot you do") -> {
+                "My limitations include:\n" +
+                "• I do not browse the external web or access live internet resources.\n" +
+                "• I operate strictly within your Nexora workspace and cannot read private files or external personal data.\n" +
+                "• I will never modify your tasks or goals without explicit authorization.\n" +
+                "• In local-only mode without a configured cloud language model, open-domain conversation is grounded in my built-in personal OS capabilities."
+            }
+            q.contains("who are you") || q.contains("tell me about yourself") || q.contains("what is nexora") -> {
+                "I'm Nexora, an AI-first Personal Operating System. I combine local intelligent planning, goal decomposition, productivity analytics, and safe workflow automation to help you stay focused and accomplish what matters."
+            }
+            else -> {
+                "I'm Nexora, an AI-first Personal Operating System. I can help you manage tasks and goals, plan your day, analyze your productivity patterns, automate workflows, and execute actions on your behalf when you approve them."
+            }
         }
 
         return AiModelStructuredResponse(
             decision = AiDecision(
                 type = AiDecisionType.GENERAL_CONVERSATION,
                 title = "Nexora Capabilities",
-                reason = "Explained assistant capabilities."
+                reason = "Explained assistant capabilities and strengths."
             ),
             textResponse = textResponse,
             modelName = "local-heuristic"
@@ -1270,7 +1292,16 @@ class LocalAiIntentResolver(
     }
 
     private fun noAction(query: String, context: AiContext, planner: AiPlanner): AiModelStructuredResponse {
-        val textResponse = "I'm here to assist. Try asking me 'What should I do next?', 'Plan my day', or ask me to create or manage a task or goal."
+        val recommendations = planner.analyze(context)
+        val bestRec = recommendations.firstOrNull()
+        val textResponse = buildString {
+            append("I'm operating in local offline mode without an external language model configured. While I can't answer broad open-ended questions outside my built-in personal intelligence, I'm ready to assist you in managing tasks and goals, planning your day, or analyzing your productivity.")
+            if (bestRec != null) {
+                append("\n\nRight now, I recommend: ${bestRec.title} — ${bestRec.message}")
+            } else if (context.tasks.isNotEmpty()) {
+                append("\n\nYou currently have ${context.tasks.size} task(s) in your workspace. Would you like me to help plan your day or find your next priority?")
+            }
+        }
 
         return AiModelStructuredResponse(
             decision = AiDecision(

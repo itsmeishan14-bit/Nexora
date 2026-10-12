@@ -225,6 +225,57 @@ class NexoraAiBrain(
         val isConfirmationOrCancellation = isConfirmation || isCancellation
         val isClarificationFlow = langResult.requiresClarification || langResult.intent == AiDecisionType.CLARIFY || langResult.intent == AiDecisionType.AMBIGUOUS
 
+        val isUpdatingPendingTask = !isConfirmationOrCancellation &&
+            rawConvContext.pendingAction != null &&
+            rawConvContext.pendingAction.type == AiActionType.CREATE_TASK &&
+            langResult.intent == AiDecisionType.UPDATE_TASK
+
+        if (isUpdatingPendingTask) {
+            val currentAction = rawConvContext.pendingAction!!
+            NexoraSecurity.cancelProposal(currentAction.id)
+            NexoraSecurity.revokeAuthorization(currentAction.id)
+
+            val currentParams = currentAction.parameters.toMutableMap()
+            val newTitle = langResult.entities["newTitle"]?.toString()
+            val newPriority = langResult.entities["priority"]?.toString()
+            val newDuration = langResult.entities["duration"]?.toString()
+            val newCategory = langResult.entities["category"]?.toString()
+
+            if (newTitle != null && newTitle.isNotBlank() && !newTitle.equals("it", ignoreCase = true) && !newTitle.equals("that", ignoreCase = true)) {
+                currentParams["title"] = newTitle
+            }
+            if (newPriority != null) currentParams["priority"] = newPriority
+            if (newDuration != null) currentParams["duration"] = newDuration
+            if (newCategory != null && newCategory.isNotBlank()) currentParams["category"] = newCategory
+
+            val updatedTitle = currentParams["title"]?.toString() ?: currentAction.title.removePrefix("Create Task: ")
+            val updatedDuration = currentParams["duration"]?.toString() ?: "30 minutes"
+            val updatedPriority = currentParams["priority"]?.toString() ?: "MEDIUM"
+
+            val updatedAction = AiAction(
+                type = AiActionType.CREATE_TASK,
+                title = "Create Task: $updatedTitle",
+                description = "Create task \"$updatedTitle\" ($updatedDuration, priority: $updatedPriority)",
+                parameters = currentParams,
+                requiresConfirmation = true
+            )
+            val text = "I've updated the proposal for \"$updatedTitle\" ($updatedDuration, priority: $updatedPriority). Should I proceed?"
+            return AiResponse(
+                responseType = AiResponseType.ACTION_PROPOSAL,
+                title = "Task Proposal",
+                message = text,
+                confidence = AiConfidence.HIGH,
+                proposedActions = listOf(updatedAction),
+                decision = AiDecision(type = AiDecisionType.CREATE_TASK, title = "Create Task", reason = text, taskTitle = updatedTitle),
+                conversationContext = rawConvContext.copy(
+                    lastIntent = AiDecisionType.CREATE_TASK,
+                    lastEntityTitle = updatedTitle,
+                    pendingAction = updatedAction,
+                    pendingPlan = emptyList()
+                )
+            )
+        }
+
         // Invalidate stale pending proposals if this is not a confirmation or cancellation
         if (!isConfirmationOrCancellation && (rawConvContext.pendingPlan.isNotEmpty() || rawConvContext.pendingAction != null)) {
             val stalePlan = if (rawConvContext.pendingPlan.isNotEmpty()) rawConvContext.pendingPlan else listOfNotNull(rawConvContext.pendingAction)
@@ -459,7 +510,14 @@ class NexoraAiBrain(
         }
 
         // 4. Conceptual Explanations (NEVER Mutate!)
-        if (langResult.intent == AiDecisionType.EXPLANATION) {
+        val isProductivityConcept = lower.contains("goal decomposition") || lower.contains("decompose") ||
+            lower.contains("task prioritization") || lower.contains("prioritize") ||
+            lower.contains("time blocking") ||
+            lower.contains("task deletion") || lower.contains("delete a task") || lower.contains("how do i delete") ||
+            lower.contains("goal deletion") || lower.contains("delete a goal") ||
+            lower.contains("carry forward")
+
+        if (langResult.intent == AiDecisionType.EXPLANATION && isProductivityConcept) {
             val text = when {
                 lower.contains("goal decomposition") || lower.contains("decompose") ->
                     "Goal decomposition is the process of breaking down high-level, complex objectives into smaller, manageable, and actionable milestones and sub-tasks. This eliminates ambiguity, reduces procrastination, and makes progress measurable."
@@ -476,31 +534,33 @@ class NexoraAiBrain(
                 else ->
                     "In Nexora, productivity intelligence combines task management, goal decomposition, and predictive analysis to help you execute your most important work consistently."
             }
+            val updatedConv = convContext.appendMessage(true, rawMessage).appendMessage(false, text).copy(lastIntent = AiDecisionType.EXPLANATION)
             return AiResponse(
                 responseType = AiResponseType.INFORMATION,
                 title = "Nexora Conceptual Explanation",
                 message = text,
                 confidence = AiConfidence.HIGH,
                 decision = AiDecision(type = AiDecisionType.EXPLANATION, title = "Conceptual Explanation", reason = text),
-                conversationContext = convContext.copy(lastIntent = AiDecisionType.EXPLANATION)
+                conversationContext = updatedConv
             )
         }
 
-        // 5. Conversational Social Intents
-        if (langResult.intent in listOf(AiDecisionType.GREETING, AiDecisionType.THANKS, AiDecisionType.GOODBYE, AiDecisionType.GENERAL_CONVERSATION)) {
+        // 5. Conversational Social Intents (Greeting, Thanks, Goodbye)
+        if (langResult.intent in listOf(AiDecisionType.GREETING, AiDecisionType.THANKS, AiDecisionType.GOODBYE)) {
             val text = when (langResult.intent) {
                 AiDecisionType.GREETING -> "Hello! I'm Nexora, your Personal Intelligence Assistant. How can I help with your goals and tasks today?"
                 AiDecisionType.THANKS -> "You're very welcome! Let me know whenever you'd like to plan, organize, or review your progress."
                 AiDecisionType.GOODBYE -> "Goodbye! Stay focused, and I'll be here whenever you're ready to get back to work."
-                else -> "I am Nexora, an AI assistant designed to manage your workload, break down goals into actionable steps, predict delays, and protect your focus."
+                else -> "Hi! How can I assist you today?"
             }
+            val updatedConv = convContext.appendMessage(true, rawMessage).appendMessage(false, text).copy(lastIntent = langResult.intent)
             return AiResponse(
                 responseType = AiResponseType.INFORMATION,
                 title = "Nexora Assistant",
                 message = text,
                 confidence = AiConfidence.HIGH,
                 decision = AiDecision(type = langResult.intent, title = "Assistant", reason = text),
-                conversationContext = convContext.copy(lastIntent = langResult.intent)
+                conversationContext = updatedConv
             )
         }
 
@@ -669,6 +729,7 @@ class NexoraAiBrain(
                     val title = langResult.entities["title"]?.toString()?.ifBlank { "New Task" } ?: "New Task"
                     val duration = langResult.entities["duration"]?.toString() ?: "30 minutes"
                     val priority = langResult.entities["priority"]?.toString() ?: "MEDIUM"
+                    val targetDate = langResult.entities["targetDate"]?.toString() ?: ""
 
                     val duplicate = context.tasks.find { it.title.equals(title, ignoreCase = true) && !it.completed }
                     if (duplicate != null) {
@@ -682,7 +743,12 @@ class NexoraAiBrain(
                         )
                     }
 
-                    val params = mapOf("title" to title, "duration" to duration, "priority" to priority)
+                    val params = buildMap {
+                        put("title", title)
+                        put("duration", duration)
+                        put("priority", priority)
+                        if (targetDate.isNotBlank()) put("targetDate", targetDate)
+                    }
                     val action = AiAction(
                         type = AiActionType.CREATE_TASK,
                         title = "Create Task: $title",
@@ -1157,6 +1223,25 @@ class NexoraAiBrain(
         }
 
         // Planning & Recommendations
+        if (langResult.intent == AiDecisionType.RESCHEDULE_TASK) {
+            val incompleteCount = context.incompleteTasks.size
+            val msg = if (incompleteCount == 0) {
+                "You have 0 unfinished tasks. You are all caught up!"
+            } else {
+                val carriedList = context.incompleteTasks.take(3).map { "\"${it.title}\"" }.joinToString(", ")
+                val moreCount = if (incompleteCount > 3) " and ${incompleteCount - 3} more" else ""
+                "In Nexora, your $incompleteCount unfinished tasks ($carriedList$moreCount) automatically carry forward to tomorrow's daily plan. You can plan tomorrow's schedule or adjust their priorities at any time."
+            }
+            return AiResponse(
+                responseType = AiResponseType.INFORMATION,
+                title = "Reschedule Tasks",
+                message = msg,
+                confidence = AiConfidence.HIGH,
+                decision = AiDecision(type = AiDecisionType.RESCHEDULE_TASK, title = "Reschedule Tasks", reason = msg),
+                conversationContext = convContext.copy(lastIntent = AiDecisionType.RESCHEDULE_TASK)
+            )
+        }
+
         if (langResult.intent == AiDecisionType.DAILY_PLAN) {
             return handleDailyPlan(context, relevantMemory)
         }
@@ -1426,10 +1511,15 @@ class NexoraAiBrain(
         }
 
         // 12. Fallback to General Analysis & Provider with Grounding
-        return handleChat(request, context, relevantMemory)
+        return handleChat(request, context, relevantMemory, rawConvContext)
     }
 
-    private suspend fun handleChat(request: AiRequest, context: AiContext, relevantMemory: List<AiMemoryItem>): AiResponse {
+    private suspend fun handleChat(
+        request: AiRequest,
+        context: AiContext,
+        relevantMemory: List<AiMemoryItem>,
+        convContext: AiConversationContext = request.conversationContext ?: AiConversationContext()
+    ): AiResponse {
         val message = request.userMessage ?: return AiResponse(AiResponseType.NO_ACTION, "Empty Message", "I didn't receive a message to process.")
         
         // 1. Check if user is asking specifically about memory/productivity patterns
@@ -1471,6 +1561,11 @@ class NexoraAiBrain(
                 }
             }
 
+            val updatedConv = convContext
+                .appendMessage(true, message)
+                .appendMessage(false, statusSummary)
+                .copy(lastIntent = AiDecisionType.SHOW_INSIGHT)
+
             return AiResponse(
                 responseType = AiResponseType.INFORMATION,
                 title = "Nexora Context Analysis",
@@ -1480,29 +1575,41 @@ class NexoraAiBrain(
                     type = AiDecisionType.SHOW_INSIGHT,
                     title = "Nexora Context Analysis",
                     reason = statusSummary
-                )
+                ),
+                conversationContext = updatedConv
             )
         }
 
         // 2. Resolve using Provider Manager (Cloud with Local Fallback)
-        val prompt = AiPromptBuilder.buildContextPrompt(context) + "\n\nUser Message: $message"
-        val structuredResult = providerManager.generateStructuredResponse(prompt, context, request.conversationContext)
+        val prompt = AiPromptBuilder.buildContextPrompt(context, convContext) + "\n\nUser Message: $message"
+        val structuredResult = providerManager.generateStructuredResponse(prompt, context, convContext)
         
         // 3. Grounding & Factual Verification
         val groundedResponse = groundResponse(structuredResult, context)
 
         // 4. Map Structured Response to Unified Response
+        val responseText = groundedResponse.textResponse ?: groundedResponse.decision.reason
+        val baseConv = groundedResponse.conversationContext ?: convContext
+        val finalConv = baseConv
+            .appendMessage(true, message)
+            .appendMessage(false, responseText)
+            .copy(
+                lastIntent = groundedResponse.decision.type,
+                lastTaskId = groundedResponse.decision.taskId ?: baseConv.lastTaskId,
+                lastGoalId = groundedResponse.decision.goalId ?: baseConv.lastGoalId
+            )
+
         val response = AiResponse(
             responseType = mapDecisionToResponseType(groundedResponse.decision.type),
             title = groundedResponse.decision.title,
-            message = groundedResponse.textResponse ?: groundedResponse.decision.reason,
+            message = responseText,
             confidence = mapPriorityToConfidence(groundedResponse.decision.priority),
             recommendations = emptyList(), 
             proposedActions = groundedResponse.actions,
             relatedTaskId = groundedResponse.decision.taskId,
             relatedGoalId = groundedResponse.decision.goalId,
             decision = groundedResponse.decision,
-            conversationContext = groundedResponse.conversationContext
+            conversationContext = finalConv
         )
         
         return response
@@ -1595,6 +1702,44 @@ class NexoraAiBrain(
                 conversationContext = AiConversationContext(
                     lastIntent = AiDecisionType.START_TASK,
                     lastTaskId = nextTaskRec.relatedTaskId,
+                    lastGoalId = linkedGoal?.id,
+                    lastEntityTitle = taskTitle
+                )
+            )
+        } else if (context.incompleteTasks.isNotEmpty()) {
+            val task = context.incompleteTasks.maxByOrNull { it.priority.ordinal } ?: context.incompleteTasks.first()
+            val taskTitle = task.title
+            val linkedGoal = task.goalTitle?.let { gt -> context.goals.find { it.title == gt } }
+            val effort = if (task.duration.isNotBlank()) " Estimated effort: ${task.duration}." else ""
+            val goalPart = if (linkedGoal != null) " Directly advances your active goal \"${linkedGoal.title}\"." else ""
+            val whyText = "\"$taskTitle\" is prioritized based on ${task.priority.name.lowercase()} priority.$effort$goalPart"
+            val formattedMessage = "WHAT:\n$taskTitle\n\nWHY:\n$whyText\n\nNEXT:\nStart working on \"$taskTitle\" or mark it complete once finished."
+            val suggested = AiAction(
+                type = AiActionType.COMPLETE_TASK,
+                title = "Complete Task",
+                description = "Mark \"$taskTitle\" as finished?",
+                taskId = task.id,
+                reason = whyText
+            )
+            AiResponse(
+                responseType = AiResponseType.RECOMMENDATION,
+                title = "Recommended Task: $taskTitle",
+                message = formattedMessage,
+                confidence = AiConfidence.HIGH,
+                relatedTaskId = task.id,
+                relatedGoalId = linkedGoal?.id,
+                proposedActions = listOf(suggested),
+                decision = AiDecision(
+                    type = AiDecisionType.START_TASK,
+                    title = "Recommended Task",
+                    reason = formattedMessage,
+                    taskId = task.id,
+                    goalId = linkedGoal?.id,
+                    taskTitle = taskTitle
+                ),
+                conversationContext = AiConversationContext(
+                    lastIntent = AiDecisionType.START_TASK,
+                    lastTaskId = task.id,
                     lastGoalId = linkedGoal?.id,
                     lastEntityTitle = taskTitle
                 )

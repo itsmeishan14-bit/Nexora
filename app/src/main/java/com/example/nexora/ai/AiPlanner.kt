@@ -168,6 +168,10 @@ class AiPlanner {
         
         var baseCapacity = if (profile.sampleCount >= 3) profile.preferredDailyWorkload else 5
         if (tooAmbitiousCount >= 2) baseCapacity = Math.max(2, baseCapacity - 1)
+        val workloadMemory = context.memory.items.find { it.category == AiMemoryCategory.WORKLOAD_PATTERN && it.title == "Workload Capacity" }
+        if (workloadMemory != null) {
+            baseCapacity = Math.min(baseCapacity, 4)
+        }
         
         // Adjust for current workload and predictive overload risks
         val workloadPrediction = personal.predictions.find { it.type == PredictionType.WORKLOAD_OVERLOAD_RISK }
@@ -355,8 +359,12 @@ class AiPlanner {
 
     private fun parseTargetDateDaysRemaining(targetDate: String): Long? {
         return try {
-            val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
-            val date = LocalDate.parse(targetDate, formatter)
+            val date = try {
+                LocalDate.parse(targetDate.trim())
+            } catch (_: Exception) {
+                val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy")
+                LocalDate.parse(targetDate.trim(), formatter)
+            }
             val today = LocalDate.now()
             ChronoUnit.DAYS.between(today, date)
         } catch (e: Exception) {

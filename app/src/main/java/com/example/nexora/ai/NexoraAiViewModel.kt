@@ -558,6 +558,10 @@ class NexoraAiViewModel(
                                 lastActionResult = summaryResult,
                                 lastPlanResults = results,
                                 lastExecutionRecord = record,
+                                conversationalState = it.conversationalState.copy(
+                                    lastTaskId = summaryResult.affectedTaskId ?: it.conversationalState.lastTaskId,
+                                    lastGoalId = summaryResult.affectedGoalId ?: it.conversationalState.lastGoalId
+                                ),
                                 error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                             )
                         }
@@ -610,16 +614,32 @@ class NexoraAiViewModel(
                 }
             }
             AiResponseType.RECOMMENDATION, AiResponseType.PLAN -> {
-                _uiState.update {
-                    it.copy(
-                        conversationalState = response.conversationContext?.toAiConversationalState()
-                            ?: it.conversationalState.copy(
-                                lastTaskId = response.relatedTaskId,
-                                lastGoalId = response.relatedGoalId
-                            ),
-                        proposedAction = null,
-                        proposedPlan = emptyList()
+                val currentConv = _uiState.value.conversationalState
+                val nextConvState = response.conversationContext?.toAiConversationalState()
+                    ?: currentConv.copy(
+                        lastTaskId = response.relatedTaskId ?: currentConv.lastTaskId,
+                        lastGoalId = response.relatedGoalId ?: currentConv.lastGoalId
                     )
+                if (response.proposedActions.isNotEmpty()) {
+                    proposePlan(response.proposedActions)
+                    _uiState.update {
+                        it.copy(
+                            conversationalState = nextConvState.copy(
+                                pendingAction = response.proposedActions.first(),
+                                pendingPlan = response.proposedActions,
+                                lastTaskId = response.relatedTaskId ?: nextConvState.lastTaskId,
+                                lastGoalId = response.relatedGoalId ?: nextConvState.lastGoalId
+                            )
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            conversationalState = nextConvState,
+                            proposedAction = null,
+                            proposedPlan = emptyList()
+                        )
+                    }
                 }
             }
             else -> {
@@ -728,6 +748,10 @@ class NexoraAiViewModel(
                         lastPlanResults = results,
                         lastExecutionRecord = record,
                         currentWorkflow = null,
+                        conversationalState = it.conversationalState.copy(
+                            lastTaskId = summaryResult.affectedTaskId ?: it.conversationalState.lastTaskId,
+                            lastGoalId = summaryResult.affectedGoalId ?: it.conversationalState.lastGoalId
+                        ),
                         error = if (!summaryResult.success) (summaryResult.error ?: summaryResult.message) else null
                     )
                 }

@@ -532,5 +532,326 @@ class NexoraIntelligenceScreenEndToEndTest {
         assertTrue("Subtasks must be created in repository", tasksInDb.isNotEmpty())
         assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 28. REMIND ME TO STUDY JAVA TOMORROW
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `28 - Remind me to study Java tomorrow extracts clean title, relative date, and persists on confirmation`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Remind me to study Java tomorrow.")
+        delay(300)
+
+        val action = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose CREATE_TASK", action)
+        assertEquals(AiActionType.CREATE_TASK, action!!.type)
+        val title = action.parameters["title"]?.toString() ?: ""
+        assertTrue("Title should contain Study Java", title.contains("Study Java", ignoreCase = true))
+        assertFalse("Title should not contain tomorrow", title.contains("tomorrow", ignoreCase = true))
+        assertNotNull("Should extract targetDate", action.parameters["targetDate"])
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val persisted = repository.observeTasksOnce().find { it.title.contains("Java", ignoreCase = true) }
+        assertNotNull("Task must be persisted in repository", persisted)
+        assertFalse("Persisted task should not be completed", persisted!!.completed)
+        assertTrue("UI result must report success", viewModel.uiState.value.lastActionResult?.success == true)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 29. I HAVE A DBMS ASSIGNMENT DUE FRIDAY
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `29 - I have a DBMS assignment due Friday extracts clean title and normalized date`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("I have a DBMS assignment due Friday.")
+        delay(300)
+
+        val action = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose CREATE_TASK", action)
+        assertEquals(AiActionType.CREATE_TASK, action!!.type)
+        val title = action.parameters["title"]?.toString() ?: ""
+        assertTrue("Title should contain DBMS", title.contains("DBMS", ignoreCase = true))
+        assertFalse("Title should not contain due Friday", title.contains("due", ignoreCase = true))
+        assertNotNull("Should extract targetDate for Friday", action.parameters["targetDate"])
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val persisted = repository.observeTasksOnce().find { it.title.contains("DBMS", ignoreCase = true) }
+        assertNotNull("Task must be persisted in repository", persisted)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 30. MULTI-TURN CORRECTION OF PENDING PROPOSAL
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `30 - Actually make it 30 minutes instead and make it high priority updates pending proposal before confirmation`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Step 1: Initial creation request
+        viewModel.sendMessage("Create task Study Java for 1 hour")
+        delay(300)
+
+        val action1 = viewModel.uiState.value.proposedAction
+        assertNotNull("First proposal should be created", action1)
+        assertEquals("1 hour", action1!!.parameters["duration"])
+
+        // Step 2: Correction: "Actually, make it 30 minutes instead."
+        viewModel.sendMessage("Actually, make it 30 minutes instead.")
+        delay(300)
+
+        val action2 = viewModel.uiState.value.proposedAction
+        assertNotNull("Should update pending proposal", action2)
+        assertEquals("30 minutes", action2!!.parameters["duration"])
+
+        // Step 3: Second correction: "Make that task high priority."
+        viewModel.sendMessage("Make that task high priority.")
+        delay(300)
+
+        val action3 = viewModel.uiState.value.proposedAction
+        assertNotNull("Should update priority to HIGH", action3)
+        assertEquals("HIGH", action3!!.parameters["priority"])
+        assertEquals("30 minutes", action3!!.parameters["duration"])
+
+        // Step 4: Confirm
+        viewModel.confirmAction()
+        delay(350)
+
+        val persisted = repository.observeTasksOnce().find { it.title.contains("Java", ignoreCase = true) }
+        assertNotNull("Task must be persisted in repository", persisted)
+        assertEquals("30 minutes", persisted!!.duration)
+        assertEquals(TaskPriority.HIGH, persisted.priority)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 31. CONVERSATIONAL FOLLOW-UP ON CREATED TASK
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `31 - Update duration and remove the task I just created using conversational context`() = runBlocking {
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // 1. Create task
+        viewModel.sendMessage("Create task Study Java")
+        delay(300)
+        viewModel.confirmAction()
+        delay(350)
+
+        val created = repository.observeTasksOnce().find { it.title.contains("Java", ignoreCase = true) }
+        assertNotNull("Task should exist in DB", created)
+
+        // 2. "Change its duration to one hour."
+        viewModel.sendMessage("Change its duration to one hour.")
+        delay(300)
+        val updateAction = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose UPDATE_TASK", updateAction)
+        assertEquals(created!!.id, updateAction!!.taskId)
+        assertEquals("1 hour", updateAction.parameters["duration"])
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val updated = repository.getTaskById(created.id)
+        assertNotNull(updated)
+        assertEquals("1 hour", updated!!.duration)
+
+        // 3. "Remove the task I just created."
+        viewModel.sendMessage("Remove the task I just created.")
+        delay(300)
+        val deleteAction = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose DELETE_TASK for created task", deleteAction)
+        assertEquals(created.id, deleteAction!!.taskId)
+
+        viewModel.confirmAction()
+        delay(350)
+
+        val deleted = repository.getTaskById(created.id)
+        assertNull("Task must be deleted from repository", deleted)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 32. BREAK DOWN GOAL OF LEARNING JAVA
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `32 - Break down my goal of learning Java stems and matches Learn Java goal`() = runBlocking {
+        val goal = repository.addGoal(NexoraGoal(id = 501L, title = "Learn Java", category = "Study", targetDate = "2026-12-31", progress = 0.1f))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Break down my goal of learning Java.")
+        delay(350)
+
+        val proposedPlan = viewModel.uiState.value.proposedPlan
+        assertTrue("Should decompose goal into subtasks", proposedPlan.isNotEmpty())
+        assertTrue("Subtasks should link to Learn Java goal", proposedPlan.all { it.parameters["goalTitle"] == goal.title })
+
+        viewModel.confirmAction()
+        delay(400)
+
+        val tasksInDb = repository.observeTasksOnce().filter { it.goalTitle == goal.title }
+        assertTrue("Subtasks must be persisted in repository", tasksInDb.isNotEmpty())
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 33. HELP ME PRIORITIZE
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `33 - I have too much work today Help me prioritize returns grounded recommendation`() = runBlocking {
+        repository.addTask(PremiumTask(id = 601L, title = "Critical Server Bug", category = "Work", duration = "45m", priority = TaskPriority.URGENT))
+        repository.addTask(PremiumTask(id = 602L, title = "Read documentation", category = "Work", duration = "60m", priority = TaskPriority.LOW))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("I have too much work today. Help me prioritize.")
+        delay(300)
+
+        val lastMessage = viewModel.uiState.value.chatMessages.lastOrNull { !it.isFromUser }?.text ?: ""
+        assertTrue("Should contain WHAT section", lastMessage.contains("WHAT:"))
+        assertTrue("Should prioritize urgent task", lastMessage.contains("Critical Server Bug"))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 34. MOVE UNFINISHED TASKS TO TOMORROW
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `34 - Move my unfinished tasks to tomorrow explains automatic carry forward truthfully`() = runBlocking {
+        repository.addTask(PremiumTask(id = 701L, title = "Pending Report", category = "Work", duration = "30m", priority = TaskPriority.HIGH))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Move my unfinished tasks to tomorrow.")
+        delay(300)
+
+        val lastMessage = viewModel.uiState.value.chatMessages.lastOrNull { !it.isFromUser }?.text ?: ""
+        assertTrue("Message should explain carry forward", lastMessage.contains("carry forward", ignoreCase = true))
+        assertTrue("Message should mention unfinished tasks", lastMessage.contains("unfinished", ignoreCase = true) || lastMessage.contains("Pending Report"))
+        assertNull("Should not propose destructive mutation without schema date field", viewModel.uiState.value.proposedAction)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 35. ORDINAL DISAMBIGUATION
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `35 - Disambiguates between multiple matching tasks using ordinal reference the second task`() = runBlocking {
+        val task1 = repository.addTask(PremiumTask(id = 801L, title = "Math assignment", category = "Study", duration = "30m", completed = false))
+        val task2 = repository.addTask(PremiumTask(id = 802L, title = "DBMS assignment", category = "Study", duration = "45m", completed = false))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Step 1: User says "Complete the assignment." -> Ambiguous
+        viewModel.sendMessage("Complete the assignment.")
+        delay(300)
+
+        val stateAfterAmbiguous = viewModel.uiState.value
+        val botMsg = stateAfterAmbiguous.chatMessages.lastOrNull { !it.isFromUser }?.text ?: ""
+        assertTrue("Should ask clarification question listing tasks", botMsg.contains("multiple matching tasks", ignoreCase = true))
+
+        // Step 2: User specifies "the second task"
+        viewModel.sendMessage("the second task")
+        delay(350)
+
+        val action = viewModel.uiState.value.proposedAction
+        assertNotNull("Should propose COMPLETE_TASK for the second task", action)
+        assertEquals(task2.id, action!!.taskId)
+
+        // Step 3: Confirm
+        viewModel.confirmAction()
+        delay(350)
+
+        val completedTask2 = repository.getTaskById(task2.id)
+        assertNotNull(completedTask2)
+        assertTrue("Task 2 should be completed", completedTask2!!.completed)
+
+        val incompleteTask1 = repository.getTaskById(task1.id)
+        assertNotNull(incompleteTask1)
+        assertFalse("Task 1 should remain incomplete", incompleteTask1!!.completed)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 36. REJECTING CANCELLATION AND STALE CONFIRMATION
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `36 - Rejecting cancellation and stale-confirmation execution correctly`() = runBlocking {
+        val task = repository.addTask(PremiumTask(id = 901L, title = "Database Backup", category = "Work", duration = "30m", completed = false))
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        viewModel.sendMessage("Delete Database Backup")
+        delay(300)
+
+        assertNotNull("Should have proposed deletion", viewModel.uiState.value.proposedAction)
+
+        // User cancels
+        viewModel.sendMessage("cancel")
+        delay(300)
+
+        assertNull("Proposed action must be cleared on cancellation", viewModel.uiState.value.proposedAction)
+        val stateAfterCancel = viewModel.uiState.value
+        assertTrue("Chat should confirm cancellation", stateAfterCancel.chatMessages.last { !it.isFromUser }.text.contains("cancelled", ignoreCase = true))
+
+        // If user now says "yes", it must not execute the cancelled action
+        viewModel.sendMessage("yes")
+        delay(300)
+
+        val lastMessage = viewModel.uiState.value.chatMessages.last { !it.isFromUser }.text
+        assertTrue("Should report no pending actions", lastMessage.contains("no pending actions", ignoreCase = true))
+
+        // Task must still be intact in DB
+        val intact = repository.getTaskById(task.id)
+        assertNotNull("Task must NOT be deleted after cancelled confirmation", intact)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 37. GROUNDED FOCUS, WORKLOAD, AND BEHIND-SCHEDULE EVIDENCE
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `37 - Grounded focus, workload, and behind-schedule evidence with real context`() = runBlocking {
+        repository.addTask(PremiumTask(id = 1001L, title = "High Priority Task", category = "Work", duration = "60m", priority = TaskPriority.HIGH))
+        repository.addTask(PremiumTask(id = 1002L, title = "Urgent Task", category = "Work", duration = "30m", priority = TaskPriority.URGENT))
+
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Focus recommendation
+        viewModel.sendMessage("What should I focus on?")
+        delay(300)
+        val focusMsg = viewModel.uiState.value.chatMessages.last { !it.isFromUser }.text
+        assertTrue("Focus should recommend Urgent Task", focusMsg.contains("Urgent Task"))
+
+        // Workload check
+        viewModel.sendMessage("Check my workload")
+        delay(300)
+        val workloadMsg = viewModel.uiState.value.chatMessages.last { !it.isFromUser }.text
+        assertTrue("Workload should mention 2 incomplete tasks", workloadMsg.contains("2 incomplete tasks", ignoreCase = true))
+
+        // Behind diagnosis
+        viewModel.sendMessage("Why am I behind?")
+        delay(300)
+        val behindMsg = viewModel.uiState.value.chatMessages.last { !it.isFromUser }.text
+        assertTrue("Behind diagnosis should contain Evidence section", behindMsg.contains("Evidence:", ignoreCase = true))
+        assertTrue("Behind diagnosis should list incomplete tasks count", behindMsg.contains("2 incomplete tasks", ignoreCase = true))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 38. QUICK ACTIONS AND CHAT PARITY
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    fun `38 - Quick action createDailyPlan and chat command Plan my day behave consistently`() = runBlocking {
+        repository.addTask(PremiumTask(id = 1101L, title = "Core Feature", category = "Work", duration = "45m", priority = TaskPriority.HIGH))
+
+        val viewModel = NexoraAiViewModel(engine = engine, coroutineScope = testScope)
+
+        // Quick action
+        viewModel.createDailyPlan()
+        delay(350)
+        val planFromQuickAction = viewModel.uiState.value.dailyPlan
+        assertNotNull("Daily plan from quick action must not be null", planFromQuickAction)
+        assertEquals(1, planFromQuickAction!!.tasks.size)
+
+        // Chat command
+        viewModel.sendMessage("Plan my day")
+        delay(350)
+        val planFromChat = viewModel.uiState.value.dailyPlan
+        assertNotNull("Daily plan from chat must not be null", planFromChat)
+        assertEquals(1, planFromChat!!.tasks.size)
+        assertEquals("Core Feature", planFromChat.tasks.first().task.title)
+    }
 }
 

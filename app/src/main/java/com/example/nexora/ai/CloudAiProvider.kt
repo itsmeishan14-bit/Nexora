@@ -45,8 +45,21 @@ class CloudAiProvider(
         try {
             parseStructuredResponse(response)
         } catch (e: Exception) {
-            NexoraLogger.e("LLM", "Failed to parse structured response", e)
-            throw e // Let ProviderManager handle fallback
+            val clean = response.trim()
+            if (clean.isNotBlank() && !clean.startsWith("{") && !clean.startsWith("[") && !clean.startsWith("```json")) {
+                AiModelStructuredResponse(
+                    decision = AiDecision(
+                        type = AiDecisionType.GENERAL_CONVERSATION,
+                        title = "Assistant Response",
+                        reason = clean
+                    ),
+                    textResponse = clean,
+                    modelName = config.modelName ?: "cloud-llm"
+                )
+            } else {
+                NexoraLogger.e("LLM", "Failed to parse structured response", e)
+                throw e // Let ProviderManager handle fallback
+            }
         }
     }
 

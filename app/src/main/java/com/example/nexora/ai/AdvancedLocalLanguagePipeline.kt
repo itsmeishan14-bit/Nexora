@@ -71,7 +71,7 @@ class AdvancedLocalLanguagePipeline {
         val structuralResult = classifyIntent(directiveText, message, context, effectiveConvContext, temporalRange)
 
         // 6. Entity & Parameter Extraction
-        val entities = extractEntities(directiveText, structuralResult.intent, message).toMutableMap()
+        val entities = extractEntities(directiveText, structuralResult.intent, message, referenceDate).toMutableMap()
         temporalRange?.let {
             entities["temporalScope"] = it.scope.name
             entities["startDate"] = it.startDate.toString()
@@ -121,7 +121,16 @@ class AdvancedLocalLanguagePipeline {
         val ambiguousTitles = listOf("It", "That", "This", "Task", "My task", "The task", "This task", "That task", "Something")
 
         // Task Action Entity Verification
-        if (originalIntent in listOf(AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK)) {
+        val isUpdatingPendingCreation = effectiveConvContext.pendingAction != null &&
+            effectiveConvContext.pendingAction.type == AiActionType.CREATE_TASK &&
+            originalIntent == AiDecisionType.UPDATE_TASK
+
+        if (isUpdatingPendingCreation) {
+            targetTaskTitle = effectiveConvContext.pendingAction.parameters["title"]?.toString()
+                ?: effectiveConvContext.pendingAction.title.removePrefix("Create Task: ")
+            resolvedEntities["title"] = targetTaskTitle
+            finalConfidence = AiConfidence.HIGH
+        } else if (originalIntent in listOf(AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK)) {
             if (targetTaskId != null) {
                 val found = context.tasks.find { it.id == targetTaskId }
                 targetTaskTitle = found?.title
@@ -165,7 +174,7 @@ class AdvancedLocalLanguagePipeline {
                 finalConfidence = AiConfidence.LOW
                 requiresClarification = true
                 clarificationNeeded = AiClarification(
-                    question = "I found multiple tasks (${context.tasks.joinToString { it.title }}). Which one would you like to $taskActionVerb?",
+                    question = "I found multiple matching tasks (${context.tasks.joinToString { it.title }}). Which one would you like to $taskActionVerb?",
                     intent = originalIntent,
                     missingField = "taskId",
                     candidates = context.tasks.map { it.id },
@@ -262,7 +271,8 @@ class AdvancedLocalLanguagePipeline {
         }
 
         val hasValidTarget = when (originalIntent) {
-            AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK, AiDecisionType.UPDATE_TASK -> targetTaskId != null
+            AiDecisionType.UPDATE_TASK -> isUpdatingPendingCreation || targetTaskId != null
+            AiDecisionType.COMPLETE_TASK, AiDecisionType.DELETE_TASK -> targetTaskId != null
             AiDecisionType.DELETE_GOAL, AiDecisionType.UPDATE_GOAL -> targetGoalId != null
             AiDecisionType.DECOMPOSE_GOAL -> targetGoalId != null || (queryTitle.isNotBlank() && queryTitle !in ambiguousTitles)
             else -> true
@@ -270,7 +280,7 @@ class AdvancedLocalLanguagePipeline {
 
         val isTargetMissing = queryTitle.isBlank() || queryTitle in ambiguousTitles
         if ((originalIntent in listOf(AiDecisionType.UPDATE_TASK, AiDecisionType.UPDATE_GOAL, AiDecisionType.DELETE_TASK, AiDecisionType.DELETE_GOAL, AiDecisionType.COMPLETE_TASK)) &&
-            isTargetMissing && !hasValidTarget && finalIntent != AiDecisionType.AMBIGUOUS && !requiresClarification) {
+            isTargetMissing && !hasValidTarget && finalIntent != AiDecisionType.AMBIGUOUS && !requiresClarification && !isUpdatingPendingCreation) {
             finalIntent = AiDecisionType.CLARIFY
             requiresClarification = true
             clarificationNeeded = AiClarification(
@@ -433,7 +443,7 @@ class AdvancedLocalLanguagePipeline {
         if (lower.contains(Regex("(?i)\\b(bye|goodbye|see you|see ya|goodnight)\\b"))) {
             return StructuralClassification(AiDecisionType.GOODBYE, AiConfidence.HIGH)
         }
-        if (lower.contains(Regex("(?i)\\b(what can you do|who are you|how are you|tell me about yourself|what are your capabilities|features|what do you do)\\b"))) {
+        if (lower.contains(Regex("(?i)\\b(what can you do|who are you|how are you|how're you|tell me about yourself|what are your capabilities|capabilities|what are your strengths|your strengths|strength|strengths|what are your limitations|your limitations|limitation|limitations|weakness|weaknesses|what are you good at|what do you do|features|how can you help|what can i ask|what are you capable of|who made you|who built you)\\b"))) {
             return StructuralClassification(AiDecisionType.GENERAL_CONVERSATION, AiConfidence.HIGH)
         }
         if (lower.contains(Regex("(?i)\\b(cancel|never mind|stop|forget it)\\b"))) {
@@ -532,11 +542,21 @@ class AdvancedLocalLanguagePipeline {
         // ─────────────────────────────────────────────────────────────
         // 8. STRUCTURAL CLASS: PLANNING & RECOMMENDATIONS
         // ─────────────────────────────────────────────────────────────
+        // Move / Reschedule unfinished tasks to tomorrow
+        if ((lower.contains("move") || lower.contains("postpone") || lower.contains("reschedule") || lower.contains("carry") || lower.contains("push")) &&
+            (lower.contains("unfinished") || lower.contains("pending") || lower.contains("remaining")) &&
+            (lower.contains("tomorrow") || lower.contains("tasks"))) {
+            return StructuralClassification(AiDecisionType.RESCHEDULE_TASK, AiConfidence.HIGH, requiresMutation = false)
+        }
+
         if ((lower.contains(Regex("(?i)\\bplan\\b")) && lower.contains(Regex("(?i)\\b(day|today|daily|schedule)\\b")) && !lower.contains("goal") && !lower.contains("plan for") && !lower.contains("create a plan for")) ||
             lower.matches(Regex("(?i)^\\s*(plan\\s+(my\\s+)?(day|today|daily\\s+schedule|schedule)|daily\\s+plan|plan\\s+day|today'?s\\s+plan)\\s*$"))) {
             return StructuralClassification(AiDecisionType.DAILY_PLAN, AiConfidence.HIGH)
         }
         if (lower.contains(Regex("(?i)\\b(next task|what should i do next|what should i work on|what to work on|what's next|what is next|what should i focus on|focus on next|do next|do now|what to do next|which task)\\b")) ||
+            lower.contains("help me prioritize") ||
+            (lower.contains("prioritize") && (lower.contains("work") || lower.contains("task") || lower.contains("today") || lower.contains("help"))) ||
+            (lower.contains("too much work") && lower.contains("prioritize")) ||
             (lower.contains(Regex("(?i)\\bhighest priority|most important|top priority|urgent\\b")) && !lower.contains("create") && !lower.contains("add") && !lower.contains("complete") && !lower.contains("delete"))
         ) {
             return StructuralClassification(AiDecisionType.START_TASK, AiConfidence.HIGH)
@@ -564,7 +584,15 @@ class AdvancedLocalLanguagePipeline {
         // ─────────────────────────────────────────────────────────────
 
         // Task Creation Directive
-        if (lower.contains(Regex("(?i)\\b(create|add|new|remind me to)\\b")) && lower.contains(Regex("(?i)\\b(task|todo|assignment|item|job)\\b"))) {
+        val isCreateTask = !lower.contains(Regex("(?i)\\bmake\\s+(that|this|it|the task)\\b")) && !lower.contains(Regex("(?i)\\b(actually|instead)\\b")) &&
+            (((lower.contains(Regex("(?i)\\b(create|add|new)\\b")) && lower.contains(Regex("(?i)\\b(task|todo|assignment|item|job|reminder)\\b"))) ||
+             lower.contains(Regex("(?i)\\bmake\\s+(a|an)?\\s*(new\\s+)?(task|todo|assignment|item|reminder)\\b")) ||
+             lower.contains(Regex("(?i)\\b(remind me to|remember to)\\b")) ||
+             lower.contains(Regex("(?i)\\b(i have|i've got)\\s+(a|an)?\\s*([a-zA-Z0-9_-]+\\s+)?(assignment|task|todo|homework|project|paper|quiz|exam|lab)\\b")) ||
+             (lower.contains(Regex("(?i)\\b(due|by)\\s+(tomorrow|today|friday|monday|tuesday|wednesday|thursday|saturday|sunday)\\b")) && 
+              (lower.contains("assignment") || lower.contains("task") || lower.contains("homework") || lower.contains("project") || lower.contains("quiz") || lower.contains("paper"))) ||
+             (lower.matches(Regex("(?i)^\\s*(i need to|need to)\\s+[a-zA-Z0-9_-]+.*")) && !lower.contains("?"))))
+        if (isCreateTask) {
             return StructuralClassification(
                 intent = AiDecisionType.CREATE_TASK,
                 confidence = AiConfidence.HIGH,
@@ -613,10 +641,15 @@ class AdvancedLocalLanguagePipeline {
         }
 
         // Update Task Directive
-        if (lower.contains(Regex("(?i)\\b(change|update|edit|priority|rename|modify|set)\\b")) && (lower.contains("task") || lower.contains("it"))) {
+        val isUpdateTask = (lower.contains(Regex("(?i)\\b(change|update|edit|rename|modify|set)\\b")) && (lower.contains("task") || lower.contains("it") || lower.contains("its") || lower.contains("that"))) ||
+            (lower.contains(Regex("(?i)\\b(priority|duration)\\b")) && (lower.contains("task") || lower.contains("it") || lower.contains("its") || lower.contains("that") || lower.contains("make") || lower.contains("set") || lower.contains("change"))) ||
+            lower.contains(Regex("(?i)\\bmake\\s+(it|that|that task|this task)\\s+(high|low|medium|urgent|shorter|longer|\\d+|an|one|half)\\b")) ||
+            lower.contains(Regex("(?i)\\bchange\\s+(it|its|that|that task|the task)\\s+(duration|priority|to)\\b")) ||
+            (lower.contains(Regex("(?i)\\b(actually|instead)\\b")) && (lower.contains("priority") || lower.contains("duration") || lower.contains("minute") || lower.contains("min") || lower.contains("hour") || lower.contains("high") || lower.contains("low") || lower.contains("urgent")))
+        if (isUpdateTask) {
             return StructuralClassification(
                 intent = AiDecisionType.UPDATE_TASK,
-                confidence = AiConfidence.MEDIUM,
+                confidence = AiConfidence.HIGH,
                 requiresMutation = true
             )
         }
@@ -763,23 +796,96 @@ class AdvancedLocalLanguagePipeline {
         return RenameExtraction(target = null, newTitle = null)
     }
 
-    private fun extractEntities(text: String, intent: AiDecisionType, rawText: String = text): Map<String, Any> {
-        val entities = mutableMapOf<String, Any>()
+    data class ParsedDate(
+        val rawMatch: String,
+        val normalizedDate: String
+    )
 
-        // Extract Duration
+    private fun extractRelativeDate(text: String, referenceDate: LocalDate = LocalDate.now()): ParsedDate? {
+        val tomorrowRegex = Regex("(?i)\\b(?:due\\s+(?:on\\s+|by\\s+)?|by\\s+|on\\s+)?tomorrow\\b")
+        val tomorrowMatch = tomorrowRegex.find(text)
+        if (tomorrowMatch != null) {
+            return ParsedDate(tomorrowMatch.value, referenceDate.plusDays(1).toString())
+        }
+        val todayRegex = Regex("(?i)\\b(?:due\\s+(?:on\\s+|by\\s+)?|by\\s+|on\\s+)?today\\b")
+        val todayMatch = todayRegex.find(text)
+        if (todayMatch != null) {
+            return ParsedDate(todayMatch.value, referenceDate.toString())
+        }
+        val daysOfWeek = listOf(
+            "monday" to DayOfWeek.MONDAY,
+            "tuesday" to DayOfWeek.TUESDAY,
+            "wednesday" to DayOfWeek.WEDNESDAY,
+            "thursday" to DayOfWeek.THURSDAY,
+            "friday" to DayOfWeek.FRIDAY,
+            "saturday" to DayOfWeek.SATURDAY,
+            "sunday" to DayOfWeek.SUNDAY
+        )
+        for ((name, dow) in daysOfWeek) {
+            val dowRegex = Regex("(?i)\\b(?:due\\s+(?:on\\s+|by\\s+)?|by\\s+|on\\s+)?$name\\b")
+            val match = dowRegex.find(text)
+            if (match != null) {
+                var daysAhead = (dow.value - referenceDate.dayOfWeek.value)
+                if (daysAhead <= 0) daysAhead += 7
+                val resolvedDate = referenceDate.plusDays(daysAhead.toLong())
+                return ParsedDate(match.value, resolvedDate.toString())
+            }
+        }
+        val isoRegex = Regex("(?i)\\b(?:due\\s+(?:on\\s+|by\\s+)?|by\\s+|on\\s+)?([0-9]{4}-[0-9]{2}-[0-9]{2})\\b")
+        val isoMatch = isoRegex.find(text)
+        if (isoMatch != null) {
+            val dateStr = isoMatch.groups[1]?.value ?: isoMatch.value
+            return ParsedDate(isoMatch.value, dateStr)
+        }
+        return null
+    }
+
+    private fun extractDuration(text: String): String? {
+        val lower = text.lowercase()
+        if (lower.contains("half an hour") || lower.contains("half hour")) return "30 minutes"
+        if (lower.contains("one and a half hour") || lower.contains("1.5 hour")) return "90 minutes"
+        if (lower.contains("one hour") || lower.contains("an hour")) return "1 hour"
+        if (lower.contains("two hours")) return "2 hours"
+        if (lower.contains("three hours")) return "3 hours"
+        if (lower.contains("quarter hour") || lower.contains("quarter of an hour")) return "15 minutes"
+        if (lower.contains("shorter")) return "30 minutes"
+        if (lower.contains("longer")) return "60 minutes"
+
         val durationMatch = Regex("(\\d+)\\s*(minute|min|hour|hr)s?").find(text)
         if (durationMatch != null) {
             val value = durationMatch.groupValues[1]
             val unit = durationMatch.groupValues[2]
-            entities["duration"] = if (unit.startsWith("h")) "$value hours" else "$value minutes"
+            return if (unit.startsWith("h")) (if (value == "1") "1 hour" else "$value hours") else "$value minutes"
+        }
+        return null
+    }
+
+    private fun extractEntities(
+        text: String,
+        intent: AiDecisionType,
+        rawText: String = text,
+        referenceDate: LocalDate = LocalDate.now()
+    ): Map<String, Any> {
+        val entities = mutableMapOf<String, Any>()
+
+        // Extract Relative / Absolute Date
+        val dateExtraction = extractRelativeDate(rawText, referenceDate) ?: extractRelativeDate(text, referenceDate)
+        if (dateExtraction != null) {
+            entities["targetDate"] = dateExtraction.normalizedDate
+        }
+
+        // Extract Duration
+        val durationVal = extractDuration(rawText) ?: extractDuration(text)
+        if (durationVal != null) {
+            entities["duration"] = durationVal
         }
 
         // Extract Priority
         when {
-            text.contains(Regex("(?i)\\b(urgent|critical|immediately)\\b|\\b(?:urgent[- ]priority|priority\\s*(?:to|is|=)?\\s*urgent)\\b")) -> entities["priority"] = "URGENT"
-            text.contains(Regex("(?i)\\b(high[- ]priority|important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*high\\b")) -> entities["priority"] = "HIGH"
-            text.contains(Regex("(?i)\\b(low[- ]priority|not\\s+important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*low\\b")) -> entities["priority"] = "LOW"
-            text.contains(Regex("(?i)\\bmedium[- ]priority\\b|\\bpriority\\s*(?:to|is|=)?\\s*medium\\b")) -> entities["priority"] = "MEDIUM"
+            text.contains(Regex("(?i)\\b(urgent|critical|immediately)\\b|\\b(?:urgent[- ]priority|priority\\s*(?:to|is|=)?\\s*urgent)\\b|\\bmake\\s+(?:it|that|that\\s+task|this\\s+task)\\s+urgent\\b")) -> entities["priority"] = "URGENT"
+            text.contains(Regex("(?i)\\b(high[- ]priority|important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*high\\b|\\bmake\\s+(?:it|that|that\\s+task|this\\s+task)\\s+high\\b")) -> entities["priority"] = "HIGH"
+            text.contains(Regex("(?i)\\b(low[- ]priority|not\\s+important)\\b|\\bpriority\\s*(?:to|is|=)?\\s*low\\b|\\bmake\\s+(?:it|that|that\\s+task|this\\s+task)\\s+low\\b")) -> entities["priority"] = "LOW"
+            text.contains(Regex("(?i)\\bmedium[- ]priority\\b|\\bpriority\\s*(?:to|is|=)?\\s*medium\\b|\\bmake\\s+(?:it|that|that\\s+task|this\\s+task)\\s+medium\\b")) -> entities["priority"] = "MEDIUM"
         }
 
         // Extract Target Entity Title
@@ -796,12 +902,18 @@ class AdvancedLocalLanguagePipeline {
                     explicitMatch.groupValues[1].trim()
                 } else {
                     var t = text
-                    t = t.replace(Regex("(?i)^\\s*(create|add|new|remind me to)\\s+(a|an)?\\s*(high|urgent|low|medium)?\\s*[-]?\\s*(priority)?\\s*(task|todo|assignment|item)?\\s*(called|named|to|for)?\\s*"), "")
-                    t = t.replace(Regex("(?i)\\s+[-]?\\s*(priority|high|urgent|low|medium)\\b"), "")
-                        .replace(Regex("(?i)\\s+for\\s+\\d+\\s*(minute|min|hour|hr)s?\\b.*"), "")
-                        .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), "")
-                        .replace(Regex("\\s+"), " ")
-                        .trim()
+                    t = t.replace(Regex("(?i)^\\s*(create|add|new|make|remind me to|remember to|i need to|need to)\\s+(a|an)?\\s*(high|urgent|low|medium)?\\s*[-]?\\s*(priority)?\\s*(task|todo|assignment|item|reminder)?\\s*(called|named|to|for)?\\s*"), " ")
+                    t = t.replace(Regex("(?i)^\\s*(i have|i've got)\\s+(a|an)?\\s*"), " ")
+                    t = t.replace(Regex("(?i)\\s+[-]?\\s*(priority\\s*(?:to|is|=)?\\s*(?:high|urgent|low|medium)|high[- ]priority|urgent[- ]priority|low[- ]priority|medium[- ]priority|high|urgent|low|medium)\\b"), " ")
+                    t = t.replace(Regex("(?i)\\s+for\\s+\\d+\\s*(minute|min|hour|hr)s?\\b.*"), " ")
+                        .replace(Regex("(?i)\\s+for\\s+(one|an|half\\s+an?|two|three)\\s*(hour|minute|min)s?\\b.*"), " ")
+                        .replace(Regex("\\b\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
+                    dateExtraction?.let {
+                        t = t.replace(it.rawMatch, " ")
+                    }
+                    t = t.replace(Regex("(?i)\\b(?:due\\s+(?:on\\s+|by\\s+)?|by\\s+|on\\s+)?(tomorrow|today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b"), " ")
+                    t = t.replace(Regex("(?i)\\b(task|todo|assignment|reminder)\\b$"), " ")
+                    t = t.trimEnd('.', '!', '?', ';', ',').replace(Regex("\\s+"), " ").trim()
                     t
                 }
             }
@@ -870,9 +982,11 @@ class AdvancedLocalLanguagePipeline {
                     }
                     if (entities.containsKey("duration")) {
                         t = t.replace(Regex("(?i)\\s*(?:duration\\s*(?:to|of)?|for|to)?\\s*\\d+\\s*(minute|min|hour|hr)s?\\b"), " ")
+                            .replace(Regex("(?i)\\s*(?:duration\\s*(?:to|of)?|for|to)?\\s*(one|an|half\\s+an?|two|three)\\s*(hour|minute|min)s?\\b"), " ")
+                            .replace(Regex("(?i)\\b(shorter|longer)\\b"), " ")
                     }
-                    t = t.replace(Regex("(?i)^\\s*(?:set|change|update|edit|rename|modify)\\s+(?:the\\s+)?(?:task|todo)\\s*"), " ")
-                        .replace(Regex("(?i)\\b(task|todo|the|my|a|an|priority|duration|to|is|set|change|update|edit|rename|modify)\\b"), " ")
+                    t = t.replace(Regex("(?i)^\\s*(?:set|change|update|edit|rename|modify|make)\\s+(?:the\\s+)?(?:task|todo|it|its|that|that task|this task)?\\s*"), " ")
+                        .replace(Regex("(?i)\\b(task|todo|the|my|a|an|priority|duration|to|is|set|change|update|edit|rename|modify|make|its|it|that|this)\\b"), " ")
                         .trimEnd('.', '!', '?', ';', ',')
                         .replace(Regex("\\s+"), " ")
                         .trim()
@@ -891,8 +1005,9 @@ class AdvancedLocalLanguagePipeline {
                     .trim()
             }
             AiDecisionType.DECOMPOSE_GOAL -> {
-                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan for|create a plan for|make a plan for|plan|how to)\\b"), " ")
+                text.replace(Regex("(?i)\\b(break down|decompose|steps|the|my|a|an|goal|objective|into tasks|into steps|plan for|create a plan for|make a plan for|plan|how to|of)\\b"), " ")
                     .replace(Regex("(?i)^\\s*to\\s+"), " ")
+                    .trimEnd('.', '!', '?', ';', ',')
                     .replace(Regex("\\s+"), " ")
                     .trim()
             }
@@ -938,17 +1053,21 @@ class AdvancedLocalLanguagePipeline {
         if (convContext.isExpired()) return newEntities
 
         val title = entities["title"]?.toString() ?: ""
-        val isIt = title.isBlank() || title == "It" || title == "That" || title == "This" ||
-            normalizedMessage.matches(Regex("(?i)^\\s*(delete|complete|update|finish)\\s+(it|that|this|that task|this task)\\s*$")) ||
-            normalizedMessage.contains(Regex("\\b(it|that task|the previous task)\\b"))
+        val titleLower = title.lowercase().trim()
+        val isIt = title.isBlank() || titleLower in listOf("it", "its", "that", "this", "that task", "this task", "the task", "the task i just created", "the task i created", "the task created", "the previous task", "the previous one", "previous task", "previous one") ||
+            normalizedMessage.matches(Regex("(?i)^\\s*(delete|complete|update|finish|change|make|set)\\s+(it|its|that|this|that task|this task|the task|the task i just created|the previous task|the previous one)\\b.*")) ||
+            normalizedMessage.contains(Regex("(?i)\\b(it|its|that task|this task|the previous task|the task i just created|the previous one)\\b"))
 
-        val hasTaskRef = title.contains("that task", ignoreCase = true) ||
-            title.contains("the task", ignoreCase = true) ||
-            title.contains("previous task", ignoreCase = true)
+        val hasTaskRef = titleLower.contains("that task") ||
+            titleLower.contains("the task") ||
+            titleLower.contains("previous task") ||
+            titleLower.contains("task i just created") ||
+            titleLower.contains("the previous one") ||
+            titleLower.contains("task i created")
 
-        val hasGoalRef = title.contains("that goal", ignoreCase = true) ||
-            title.contains("the goal", ignoreCase = true) ||
-            title.contains("previous goal", ignoreCase = true)
+        val hasGoalRef = titleLower.contains("that goal") ||
+            titleLower.contains("the goal") ||
+            titleLower.contains("previous goal")
 
         if ((isIt || hasTaskRef) && convContext.lastTaskId != null) {
             newEntities["taskId"] = convContext.lastTaskId
@@ -957,9 +1076,16 @@ class AdvancedLocalLanguagePipeline {
             newEntities["goalId"] = convContext.lastGoalId
         }
 
-        // Handle "the first one"
+        // Handle "the first one", "the second task", etc.
         val query = entities["query"]?.toString() ?: ""
-        if (query.contains(Regex("first one|first task|top one")) && convContext.candidateIds.isNotEmpty()) {
+        val ordinalIndex = parseOrdinalIndex(normalizedMessage)
+        if (ordinalIndex != -1) {
+            if (convContext.candidateIds.isNotEmpty() && ordinalIndex in convContext.candidateIds.indices) {
+                newEntities["taskId"] = convContext.candidateIds[ordinalIndex]
+            } else if (context.tasks.isNotEmpty() && ordinalIndex in context.tasks.indices) {
+                newEntities["taskId"] = context.tasks[ordinalIndex].id
+            }
+        } else if (query.contains(Regex("first one|first task|top one")) && convContext.candidateIds.isNotEmpty()) {
             newEntities["taskId"] = convContext.candidateIds.first()
         }
 
@@ -998,11 +1124,13 @@ class AdvancedLocalLanguagePipeline {
         val clean = text.trim()
         val prefixRegex = Regex("^(forget that|never mind|nevermind|actually|instead)\\b[,;: ]*\\s*", RegexOption.IGNORE_CASE)
         val match = prefixRegex.find(clean)
-        return if (match != null && match.range.last < clean.length - 1) {
+        var res = if (match != null && match.range.last < clean.length - 1) {
             clean.substring(match.range.last + 1).trim()
         } else {
             clean
         }
+        res = res.replace(Regex("(?i)\\b(instead|rather)\\s*[.!?]?\\s*$"), "").trim()
+        return res
     }
 
     private fun parseOrdinalIndex(text: String): Int {
