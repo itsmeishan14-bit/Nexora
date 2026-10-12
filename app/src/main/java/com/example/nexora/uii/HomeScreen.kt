@@ -5,30 +5,38 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.nexora.ai.*
 import com.example.nexora.ui.theme.*
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 @Composable
 fun HomeScreen(
@@ -37,6 +45,10 @@ fun HomeScreen(
     progressHistory: List<DailyProgress>,
     onAddTask: () -> Unit,
     onToggleTask: (PremiumTask) -> Unit,
+    onNavigateToTasks: () -> Unit = {},
+    onNavigateToGoals: () -> Unit = {},
+    onNavigateToGoalDetails: (NexoraGoal) -> Unit = {},
+    onNavigateToAi: () -> Unit = {},
     proactiveSignals: List<AiProactiveSignal> = emptyList(),
     aiRecommendations: List<AiRecommendation> = emptyList(),
     proposedAction: AiAction? = null,
@@ -50,58 +62,72 @@ fun HomeScreen(
     var revealed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { revealed = true }
 
-    val completedCount = remember(tasks.toList()) { tasks.count { it.completed } }
+    val completedCount = remember(tasks) { tasks.count { it.completed } }
     val totalCount = tasks.size
     val progress = remember(completedCount, totalCount) {
         if (totalCount == 0) 0f else completedCount.toFloat() / totalCount
     }
 
+    val incompleteTasks = remember(tasks) { tasks.filter { !it.completed } }
+
     val nextTaskRec = remember(aiRecommendations) {
         aiRecommendations.find { it.type == AiRecommendationType.NEXT_TASK }
     }
 
-    val focusTasks = remember(tasks.toList(), nextTaskRec) {
-        val incomplete = tasks.filter { !it.completed }
-        if (incomplete.isEmpty()) return@remember emptyList()
+    // Identify the single highest-priority next action
+    val nextActionTask = remember(incompleteTasks, nextTaskRec) {
+        val aiPicked = nextTaskRec?.relatedTaskId?.let { id -> incompleteTasks.find { it.id == id } }
+        aiPicked ?: incompleteTasks.maxByOrNull { it.priority.ordinal }
+    }
 
-        val topRecommendedTaskId = nextTaskRec?.relatedTaskId
-        if (topRecommendedTaskId != null) {
-            val recTask = incomplete.find { it.id == topRecommendedTaskId }
-            if (recTask != null) {
-                listOf(recTask) + incomplete.filter { it.id != topRecommendedTaskId }.sortedByDescending { it.priority.ordinal }.take(2)
-            } else {
-                incomplete.sortedByDescending { it.priority.ordinal }.take(3)
-            }
-        } else {
-            incomplete.sortedByDescending { it.priority.ordinal }.take(3)
-        }
+    // Remaining focus tasks after extracting the next action
+    val remainingTasks = remember(incompleteTasks, nextActionTask) {
+        if (nextActionTask == null) emptyList()
+        else incompleteTasks.filter { it.id != nextActionTask.id }.sortedByDescending { it.priority.ordinal }.take(4)
     }
 
     val streakCount = remember(progressHistory) { calculateCurrentStreak(progressHistory) }
+    val activeGoals = remember(goals) { goals.filter { it.progress < 1f }.take(4) }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(32.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // 1. GREETING HEADER
+        // 1. APPLE EDITORIAL HEADER & DATE STAMP
         item {
             HomeEntranceAnim(revealed, 0) {
-                HomeHeader()
+                ExecutiveHeader(
+                    onAddTask = onAddTask,
+                    onOpenAi = onNavigateToAi
+                )
             }
         }
 
-        // 2. AI INTELLIGENCE — Only shown when there's real signal
+        // 2. HERO: DAILY PROGRESS & MOMENTUM CARD
+        item {
+            HomeEntranceAnim(revealed, 1) {
+                DailyMomentumCard(
+                    completed = completedCount,
+                    total = totalCount,
+                    progress = progress,
+                    streak = streakCount,
+                    progressHistory = progressHistory
+                )
+            }
+        }
+
+        // 3. AI ACTION OR SIGNAL (if active)
         val displayResult = lastActionResult ?: lastExecutionRecord?.let {
             AiActionResult(it.isCompleteSuccess, it.summaryMessage)
         }
         if (displayResult != null || proposedAction != null || proactiveSignals.isNotEmpty() || aiRecommendations.isNotEmpty()) {
             item {
-                HomeEntranceAnim(revealed, 1) {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SectionDivider(label = "NEXORA INTELLIGENCE")
+                HomeEntranceAnim(revealed, 2) {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SectionHeader("NEXORA INTELLIGENCE", onActionClick = onNavigateToAi, actionText = "Assistant →")
                         if (displayResult != null) {
                             ActionResultBanner(
                                 result = displayResult,
@@ -128,104 +154,873 @@ fun HomeScreen(
             }
         }
 
-        // 3. TODAY'S FOCUS
+        // 4. SPOTLIGHT: NEXT ACTION HERO CARD
         item {
-            HomeEntranceAnim(revealed, 2) {
-                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            HomeEntranceAnim(revealed, 3) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionHeader("NEXT ACTION", onActionClick = onNavigateToTasks, actionText = if (incompleteTasks.isNotEmpty()) "All (${incompleteTasks.size}) →" else null)
+                    if (nextActionTask != null) {
+                        NextActionHeroCard(
+                            task = nextActionTask,
+                            aiReason = if (nextTaskRec?.relatedTaskId == nextActionTask.id) nextTaskRec.message else null,
+                            onToggle = { onToggleTask(nextActionTask) }
+                        )
+                    } else {
+                        AllCaughtUpCard(onAddTask = onAddTask)
+                    }
+                }
+            }
+        }
+
+        // 5. COMPACT GROUPED FOCUS TASKS (Apple Grouped Inset List)
+        if (remainingTasks.isNotEmpty()) {
+            item {
+                HomeEntranceAnim(revealed, 4) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SectionHeader("REMAINING FOCUS", onActionClick = onNavigateToTasks, actionText = "See all →")
+                        GroupedTasksInsetCard(
+                            tasks = remainingTasks,
+                            onToggle = onToggleTask
+                        )
+                    }
+                }
+            }
+        }
+
+        // 6. ACTIVE OBJECTIVES (GOALS) CAROUSEL
+        if (activeGoals.isNotEmpty()) {
+            item {
+                HomeEntranceAnim(revealed, 5) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SectionHeader("ACTIVE OBJECTIVES", onActionClick = onNavigateToGoals, actionText = "All Goals →")
+                        ActiveGoalsCarousel(
+                            goals = activeGoals,
+                            onSelectGoal = onNavigateToGoalDetails
+                        )
+                    }
+                }
+            }
+        }
+
+        // 7. ACTIVITY RHYTHM CALENDAR HEATMAP
+        item {
+            HomeEntranceAnim(revealed, 6) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SectionHeader("ACTIVITY RHYTHM")
+                    DailyProgressCalendar(progressHistory)
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 1. EXECUTIVE HEADER & DATE BADGE
+// ─────────────────────────────────────────────
+
+@Composable
+private fun ExecutiveHeader(
+    onAddTask: () -> Unit,
+    onOpenAi: () -> Unit
+) {
+    val now = remember { LocalDate.now() }
+    val monthShort = remember { now.format(DateTimeFormatter.ofPattern("MMM")).uppercase() }
+    val dayOfMonth = remember { now.dayOfMonth.toString() }
+    val dayOfWeek = remember { now.format(DateTimeFormatter.ofPattern("EEEE")) }
+    val greeting = remember {
+        when (LocalTime.now().hour) {
+            in 0..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
+            else -> "Good evening"
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Apple-style Calendar Date Stamp Badge
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                shadowElevation = 1.dp
+            ) {
+                Column(
+                    modifier = Modifier.width(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = monthShort,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+                    Text(
+                        text = dayOfMonth,
+                        style = NumericStyle.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Title & Day Greeting
+            Column {
+                Text(
+                    text = greeting,
+                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 24.sp),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "$dayOfWeek · Nexora Operating System",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Action Buttons: AI Hub & Quick Add
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(
+                onClick = onOpenAi,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)
+            ) {
+                Icon(
+                    Icons.Rounded.AutoAwesome,
+                    contentDescription = "Intelligence",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onAddTask,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    Icons.Rounded.Add,
+                    contentDescription = "Add Task",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 2. DAILY MOMENTUM & ACTIVITY RIBBON
+// ─────────────────────────────────────────────
+
+@Composable
+private fun DailyMomentumCard(
+    completed: Int,
+    total: Int,
+    progress: Float,
+    streak: Int,
+    progressHistory: List<DailyProgress>
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = NexoraMotion.SmoothSpec,
+        label = "heroProgress"
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Upper row: Circular gauge + Key momentum stats
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Dual-ring Progress Gauge
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(68.dp)
+                ) {
+                    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    val progressColor = MaterialTheme.colorScheme.primary
+
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawArc(
+                            color = trackColor,
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                        if (animatedProgress > 0f) {
+                            drawArc(
+                                color = progressColor,
+                                startAngle = -90f,
+                                sweepAngle = animatedProgress * 360f,
+                                useCenter = false,
+                                style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = NumericStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(Modifier.width(18.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (total == 0) "No tasks scheduled today" else "$completed of $total tasks completed",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = when {
+                            total == 0 -> "Tap + to plan your first focus item"
+                            completed == total -> "All tasks completed · Excellent focus"
+                            progress >= 0.5f -> "More than halfway done today"
+                            else -> "Stay deliberate and knock out your next action"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Streak Badge
+                if (streak > 0) {
+                    Spacer(Modifier.width(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Rounded.LocalFireDepartment,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text(
+                                    text = streak.toString(),
+                                    style = NumericStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Text(
+                                text = "STREAK",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            Spacer(Modifier.height(14.dp))
+
+            // Lower row: Apple Activity-style Week Ribbon (Mon - Sun)
+            WeekActivityRibbon(progressHistory = progressHistory)
+        }
+    }
+}
+
+@Composable
+private fun WeekActivityRibbon(progressHistory: List<DailyProgress>) {
+    val today = remember { LocalDate.now() }
+    val monday = remember { today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }
+    val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        dayLabels.forEachIndexed { index, label ->
+            val date = monday.plusDays(index.toLong())
+            val progressItem = progressHistory.find { it.date == date }
+            val isCompleted = progressItem != null && progressItem.tasksCompleted > 0
+            val isToday = date == today
+            val isFuture = date.isAfter(today)
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                isCompleted -> MaterialTheme.colorScheme.primary
+                                isToday -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                        .border(
+                            if (isToday) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else BorderStroke(0.dp, Color.Transparent),
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCompleted) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    } else if (!isFuture && progressItem != null && progressItem.tasksPlanned > 0) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.outline)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 3. NEXT ACTION HERO SPOTLIGHT
+// ─────────────────────────────────────────────
+
+@Composable
+private fun NextActionHeroCard(
+    task: PremiumTask,
+    aiReason: String?,
+    onToggle: () -> Unit
+) {
+    val customColors = NexoraTheme.customColors
+    val priorityColor = when (task.priority) {
+        TaskPriority.URGENT -> customColors.priorityUrgent
+        TaskPriority.HIGH -> customColors.priorityHigh
+        TaskPriority.MEDIUM -> customColors.priorityMedium
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        shadowElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header Tag: "PRIMARY FOCUS" + Priority badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "PRIMARY FOCUS",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = priorityColor.copy(alpha = 0.12f),
+                    border = BorderStroke(0.5.dp, priorityColor.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = task.priority.name,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = priorityColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Big Bold Task Title
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Metadata Chips (Category, Duration, Goal link)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (task.category.isNotBlank()) {
+                    Text(
+                        text = task.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (task.duration.isNotBlank()) {
+                    Text(text = "·", color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        text = task.duration,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!task.goalTitle.isNullOrBlank()) {
+                    Text(text = "·", color = MaterialTheme.colorScheme.outline)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Rounded.Flag,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = task.goalTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // AI Insight Explanation (if available)
+            if (!aiReason.isNullOrBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = aiReason,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Large Tactile Completion Button
+            Button(
+                onClick = onToggle,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Mark as Complete",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 4. GROUPED INSET FOCUS TASKS (Apple Inset Table)
+// ─────────────────────────────────────────────
+
+@Composable
+private fun GroupedTasksInsetCard(
+    tasks: List<PremiumTask>,
+    onToggle: (PremiumTask) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 1.dp
+    ) {
+        Column {
+            tasks.forEachIndexed { index, task ->
+                CompactTaskRow(
+                    task = task,
+                    onToggle = { onToggle(task) }
+                )
+                if (index < tasks.size - 1) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 54.dp, end = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTaskRow(
+    task: PremiumTask,
+    onToggle: () -> Unit
+) {
+    val customColors = NexoraTheme.customColors
+    val priorityColor = when (task.priority) {
+        TaskPriority.URGENT -> customColors.priorityUrgent
+        TaskPriority.HIGH -> customColors.priorityHigh
+        TaskPriority.MEDIUM -> customColors.priorityMedium
+        else -> Color.Transparent
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Tactile Spring Check Circle
+        val checkScale by animateFloatAsState(
+            targetValue = if (task.completed) 1.08f else 1f,
+            animationSpec = NexoraMotion.SpringSpec,
+            label = "compactCheck"
+        )
+
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .scale(checkScale)
+                .clip(CircleShape)
+                .background(if (task.completed) MaterialTheme.colorScheme.primary else Color.Transparent)
+                .border(
+                    BorderStroke(
+                        1.5.dp,
+                        if (task.completed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    ),
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (task.completed) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = if (task.completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            val meta = buildList {
+                if (task.category.isNotBlank()) add(task.category)
+                if (task.duration.isNotBlank()) add(task.duration)
+                if (!task.goalTitle.isNullOrBlank()) add(task.goalTitle)
+            }
+            if (meta.isNotEmpty()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = meta.joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (priorityColor != Color.Transparent) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(priorityColor)
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// 5. ACTIVE GOALS CAROUSEL
+// ─────────────────────────────────────────────
+
+@Composable
+private fun ActiveGoalsCarousel(
+    goals: List<NexoraGoal>,
+    onSelectGoal: (NexoraGoal) -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp)
+    ) {
+        items(goals, key = { it.id }) { goal ->
+            val progressPercent = (goal.progress * 100).toInt()
+            Surface(
+                modifier = Modifier
+                    .width(190.dp)
+                    .clickable { onSelectGoal(goal) },
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                shadowElevation = 1.dp
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    if (goal.category.isNotBlank()) {
+                        Text(
+                            text = goal.category.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    Text(
+                        text = goal.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { goal.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(CircleShape),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        strokeCap = StrokeCap.Round
+                    )
+                    Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Today's Focus",
-                            style = MaterialTheme.typography.titleLarge,
+                            text = "$progressPercent%",
+                            style = NumericStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        if (tasks.isNotEmpty()) {
-                            Text(
-                                text = "All tasks →",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { /* Handled in parent */ }
-                            )
-                        }
-                    }
-
-                    if (focusTasks.isEmpty()) {
-                        HomeFocusEmptyState(onAddTask)
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            focusTasks.forEachIndexed { index, task ->
-                                val isAiRecommended = nextTaskRec != null && task.id == nextTaskRec.relatedTaskId
-                                HomeTaskCard(
-                                    task = task,
-                                    isAiRecommended = isAiRecommended,
-                                    reasoningMessage = if (isAiRecommended) nextTaskRec?.message else null,
-                                    isPrimary = index == 0,
-                                    onToggle = { onToggleTask(task) }
-                                )
-                            }
-                        }
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(12.dp)
+                        )
                     }
                 }
-            }
-        }
-
-        // 4. STREAK + DAILY PROGRESS — compact, side by side
-        item {
-            HomeEntranceAnim(revealed, 3) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StreakCard(streakCount, modifier = Modifier.weight(1f))
-                    ProgressCard(completedCount, totalCount, progress, modifier = Modifier.weight(1f))
-                }
-            }
-        }
-
-        // 5. CONSISTENCY CALENDAR
-        item {
-            HomeEntranceAnim(revealed, 4) {
-                DailyProgressCalendar(progressHistory)
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────
-// HOME HEADER
+// ALL CAUGHT UP STATE
 // ─────────────────────────────────────────────
 
 @Composable
-private fun HomeHeader() {
-    val greeting = remember {
-        when (LocalTime.now().hour) {
-            in 0..11 -> "Good morning"
-            in 12..17 -> "Good afternoon"
-            else -> "Good evening"
+private fun AllCaughtUpCard(onAddTask: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Text(
+                text = "All caught up",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "You have completed all pending focus tasks.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick = onAddTask,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("New Task", style = MaterialTheme.typography.labelMedium)
+            }
         }
-    }
-    val date = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM")) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = greeting,
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = date,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 // ─────────────────────────────────────────────
-// SECTION DIVIDER WITH LABEL
+// REUSABLE SECTION HEADER WITH ACTION
 // ─────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    onActionClick: (() -> Unit)? = null,
+    actionText: String? = null
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            color = NexoraTheme.customColors.textTertiary,
+            letterSpacing = 1.2.sp,
+            fontWeight = FontWeight.Bold
+        )
+        if (onActionClick != null && actionText != null) {
+            Text(
+                text = actionText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onActionClick() }
+            )
+        }
+    }
+}
 
 @Composable
 fun SectionDivider(label: String) {
@@ -248,333 +1043,6 @@ fun SectionDivider(label: String) {
         )
     }
 }
-
-// ─────────────────────────────────────────────
-// STREAK CARD (compact)
-// ─────────────────────────────────────────────
-
-@Composable
-private fun StreakCard(count: Int, modifier: Modifier = Modifier) {
-    NexoraCard(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surface
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = count.toString(),
-                style = NumericStyle.copy(
-                    fontSize = 38.sp,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-            )
-            Text(
-                text = "Day Streak",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (count > 0) {
-                Spacer(Modifier.height(4.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(NexoraShapes.small)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = "Consistent",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-// DAILY PROGRESS CARD (compact ring)
-// ─────────────────────────────────────────────
-
-@Composable
-private fun ProgressCard(
-    completed: Int,
-    total: Int,
-    progress: Float,
-    modifier: Modifier = Modifier
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = NexoraMotion.SmoothSpec,
-        label = "ringProgress"
-    )
-
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
-    val progressColor = MaterialTheme.colorScheme.primary
-
-    NexoraCard(modifier = modifier) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp)) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawArc(
-                        color = trackColor,
-                        startAngle = -90f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        style = Stroke(4.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    if (animatedProgress > 0f) {
-                        drawArc(
-                            color = progressColor,
-                            startAngle = -90f,
-                            sweepAngle = animatedProgress * 360f,
-                            useCenter = false,
-                            style = Stroke(4.5.dp.toPx(), cap = StrokeCap.Round)
-                        )
-                    }
-                }
-                Text(
-                    "${(progress * 100).toInt()}%",
-                    style = NumericStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Text(
-                text = "Tasks Done",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "$completed / $total",
-                style = NumericStyle.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-// HOME TASK CARD
-// ─────────────────────────────────────────────
-
-@Composable
-private fun HomeTaskCard(
-    task: PremiumTask,
-    isAiRecommended: Boolean = false,
-    reasoningMessage: String? = null,
-    isPrimary: Boolean = false,
-    onToggle: () -> Unit
-) {
-    val customColors = NexoraTheme.customColors
-    val priorityColor = when (task.priority) {
-        TaskPriority.URGENT -> customColors.priorityUrgent
-        TaskPriority.HIGH -> customColors.priorityHigh
-        TaskPriority.MEDIUM -> customColors.priorityMedium
-        else -> Color.Transparent
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .nexoraClickable { onToggle() }
-    ) {
-        NexoraCard(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = if (priorityColor != Color.Transparent) 4.dp else 0.dp),
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                if (isAiRecommended) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(NexoraShapes.small)
-                                .background(MaterialTheme.colorScheme.primaryContainer)
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(5.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Recommended",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Tactile check indicator
-                    val checkScale by animateFloatAsState(
-                        targetValue = if (task.completed) 1.05f else 1f,
-                        animationSpec = NexoraMotion.SpringSpec,
-                        label = "homeCheckScale"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .scale(checkScale)
-                            .clip(CircleShape)
-                            .background(if (task.completed) MaterialTheme.colorScheme.primary else Color.Transparent),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (task.completed) {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = "Completed",
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(13.dp)
-                            )
-                        } else {
-                            Canvas(Modifier.size(22.dp)) {
-                                drawCircle(
-                                    color = priorityColor.takeIf { it != Color.Transparent } ?: customColors.cardBorder,
-                                    radius = 10.dp.toPx(),
-                                    style = Stroke(1.5.dp.toPx())
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.width(14.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = task.title,
-                            style = if (isPrimary) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = if (task.completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                        )
-
-                        val meta = buildList {
-                            if (task.category.isNotBlank()) add(task.category)
-                            if (task.duration.isNotBlank()) add(task.duration)
-                        }
-                        if (meta.isNotEmpty()) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = meta.joinToString(" · "),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        if (!task.goalTitle.isNullOrBlank()) {
-                            Spacer(Modifier.height(3.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Flag,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(10.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    text = task.goalTitle,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-
-                    // Priority indicator dot
-                    if (!task.completed && priorityColor != Color.Transparent) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(priorityColor)
-                        )
-                    }
-                }
-
-                if (!reasoningMessage.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = reasoningMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-        }
-
-        // Left edge priority accent
-        if (priorityColor != Color.Transparent) {
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .fillMaxHeight()
-                    .clip(CircleShape)
-                    .background(priorityColor)
-            )
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-// EMPTY FOCUS STATE
-// ─────────────────────────────────────────────
-
-@Composable
-private fun HomeFocusEmptyState(onAddTask: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "Clear space",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = "Add a task when something needs your attention.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-        TextButton(
-            onClick = onAddTask,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-        ) {
-            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Add task", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-// ─────────────────────────────────────────────
-// ENTRANCE ANIMATION
-// ─────────────────────────────────────────────
 
 @Composable
 private fun HomeEntranceAnim(visible: Boolean, index: Int, content: @Composable () -> Unit) {

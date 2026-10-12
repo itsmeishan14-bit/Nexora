@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -156,6 +157,13 @@ class MainActivity : ComponentActivity() {
                                             mainViewModel.toggleTask(it)
                                             aiViewModel.analyze()
                                         },
+                                        onNavigateToTasks = { mainViewModel.navigateTo("tasks") },
+                                        onNavigateToGoals = { mainViewModel.navigateTo("goals") },
+                                        onNavigateToGoalDetails = { goal ->
+                                            mainViewModel.setSelectedGoal(goal)
+                                            mainViewModel.navigateTo("goalDetails")
+                                        },
+                                        onNavigateToAi = { mainViewModel.navigateTo("insights") },
                                         proactiveSignals = aiState.proactiveSignals,
                                         aiRecommendations = aiState.recommendations,
                                         proposedAction = aiState.homeProposedAction,
@@ -305,16 +313,25 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RowScope.NexoraNavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = NexoraTheme.customColors.textTertiary
+    val inactiveColor = MaterialTheme.colorScheme.outline
 
     NavigationBarItem(
         selected = selected,
         onClick = onClick,
-        icon = { Icon(icon, null, modifier = Modifier.size(22.dp)) },
+        icon = {
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.size(21.dp)
+            )
+        },
         label = { 
             Text(
                 text = label, 
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                )
             ) 
         },
         colors = NavigationBarItemDefaults.colors(
