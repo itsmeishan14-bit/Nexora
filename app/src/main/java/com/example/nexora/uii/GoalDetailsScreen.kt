@@ -45,25 +45,38 @@ fun GoalDetailsScreen(
         topBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                 tonalElevation = 0.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = Green10)
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                     Row {
                         IconButton(onClick = onEdit) {
-                            Icon(Icons.Rounded.Edit, contentDescription = "Edit", tint = Green40)
+                            Icon(
+                                Icons.Rounded.Edit,
+                                contentDescription = "Edit",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                         IconButton(onClick = onDelete) {
-                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Delete", tint = NexoraError)
+                            Icon(
+                                Icons.Rounded.DeleteOutline,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }
@@ -72,10 +85,10 @@ fun GoalDetailsScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddTask,
-                containerColor = Green10,
-                contentColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = NexoraShapes.medium,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add task")
             }
@@ -85,26 +98,28 @@ fun GoalDetailsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(32.dp)
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
             // GOAL HEADER
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     // Category label
                     if (goal.category.isNotBlank()) {
                         Text(
                             text = goal.category.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Green60,
-                            letterSpacing = 1.5.sp
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.2.sp
                         )
                     }
 
                     Text(
                         text = goal.title,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = Green10
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
                     )
 
                     // Progress bar + percent
@@ -116,15 +131,18 @@ fun GoalDetailsScreen(
                             progress = { goal.progress },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(4.dp)
+                                .height(6.dp)
                                 .clip(CircleShape),
-                            color = Green60,
-                            trackColor = NexoraBorder,
+                            color = if (goal.progress >= 1f) NexoraTheme.customColors.priorityLow else MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.outlineVariant,
                             strokeCap = StrokeCap.Round
                         )
                         Text(
                             text = "$progress%",
-                            style = NumericStyle.copy(fontSize = 16.sp, color = Green60)
+                            style = NumericStyle.copy(
+                                fontSize = 16.sp,
+                                color = if (goal.progress >= 1f) NexoraTheme.customColors.priorityLow else MaterialTheme.colorScheme.primary
+                            )
                         )
                     }
                 }
@@ -132,11 +150,7 @@ fun GoalDetailsScreen(
 
             // PROGRESS CONTROL
             item {
-                Surface(
-                    shape = NexoraShapes.medium,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder)
-                ) {
+                NexoraCard {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -146,11 +160,12 @@ fun GoalDetailsScreen(
                             Text(
                                 text = "Update progress",
                                 style = MaterialTheme.typography.titleSmall,
-                                color = Green10
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = "$progress%",
-                                style = NumericStyle.copy(fontSize = 14.sp, color = Green60)
+                                style = NumericStyle.copy(fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                             )
                         }
 
@@ -159,9 +174,9 @@ fun GoalDetailsScreen(
                             onValueChange = { onUpdateProgress(it) },
                             valueRange = 0f..1f,
                             colors = SliderDefaults.colors(
-                                thumbColor = Green60,
-                                activeTrackColor = Green60,
-                                inactiveTrackColor = NexoraBorder
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
                             )
                         )
 
@@ -174,14 +189,14 @@ fun GoalDetailsScreen(
                                 Surface(
                                     onClick = { onUpdateProgress(pct) },
                                     shape = CircleShape,
-                                    color = if (isSelected) Green60 else Green95,
-                                    contentColor = if (isSelected) Color.White else Green40
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                 ) {
                                     Text(
                                         text = "${(pct * 100).toInt()}%",
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
                             }
@@ -192,39 +207,42 @@ fun GoalDetailsScreen(
 
             // AI INSIGHT SECTION
             item {
-                AiSurface {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(Clay60)
-                        )
-                        Spacer(Modifier.width(8.dp))
+                NexoraCard {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "INTELLIGENCE INSIGHT",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 1.2.sp
+                            )
+                        }
                         Text(
-                            text = "Intelligence Insight",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Clay40,
-                            letterSpacing = 0.8.sp
+                            text = health?.evidence ?: "You're making steady progress toward this objective.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 24.sp
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "Break down next milestone →",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable { onDecomposeGoal() }
                         )
                     }
-                    Text(
-                        text = health?.evidence ?: "You're making steady progress toward this objective.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Green10,
-                        lineHeight = 24.sp
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "Break down next milestone →",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Clay60,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clickable { onDecomposeGoal() }
-                    )
                 }
             }
 
@@ -237,7 +255,7 @@ fun GoalDetailsScreen(
                         Text(
                             text = "No tasks linked to this goal yet.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NexoraMutedTextLight
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -250,7 +268,7 @@ fun GoalDetailsScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(48.dp))
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }
@@ -268,7 +286,7 @@ private fun GoalDetailTaskRow(task: PremiumTask, onToggle: () -> Unit) {
             .nexoraClickable { onToggle() },
         shape = NexoraShapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder)
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -278,14 +296,14 @@ private fun GoalDetailTaskRow(task: PremiumTask, onToggle: () -> Unit) {
                 modifier = Modifier
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(if (task.completed) Green60 else Green95),
+                    .background(if (task.completed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
                 if (task.completed) {
                     Icon(
                         Icons.Rounded.Check,
                         null,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(12.dp)
                     )
                 }
@@ -296,7 +314,7 @@ private fun GoalDetailTaskRow(task: PremiumTask, onToggle: () -> Unit) {
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (task.completed) Green40 else Green10,
+                color = if (task.completed) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
 
@@ -305,7 +323,7 @@ private fun GoalDetailTaskRow(task: PremiumTask, onToggle: () -> Unit) {
                     modifier = Modifier
                         .size(6.dp)
                         .clip(CircleShape)
-                        .background(NexoraError)
+                        .background(NexoraTheme.customColors.priorityUrgent)
                 )
             }
         }

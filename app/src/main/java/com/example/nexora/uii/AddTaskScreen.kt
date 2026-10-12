@@ -40,23 +40,27 @@ fun AddTaskScreen(
         topBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                 tonalElevation = 0.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Cancel", tint = Green40)
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Cancel",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Text(
                         text = "New Task",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Green10
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     TextButton(
                         onClick = {
@@ -73,9 +77,9 @@ fun AddTaskScreen(
                         enabled = taskName.isNotBlank()
                     ) {
                         Text(
-                            "Done",
+                            text = "Done",
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (taskName.isNotBlank()) Green60 else NexoraBorder,
+                            color = if (taskName.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -88,8 +92,8 @@ fun AddTaskScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(32.dp)
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
             // TITLE INPUT — large, immersive
             TextField(
@@ -97,24 +101,24 @@ fun AddTaskScreen(
                 onValueChange = { taskName = it },
                 placeholder = {
                     Text(
-                        "What needs to be done?",
+                        text = "What needs to be done?",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = NexoraBorder
+                        color = MaterialTheme.colorScheme.outline
                     )
                 },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(color = Green10),
+                textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Green60,
-                    unfocusedIndicatorColor = NexoraBorder
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant
                 ),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
             // OPTIONS
-            Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
 
                 // CATEGORY
                 PremiumFormField(label = "Category") {
@@ -122,11 +126,13 @@ fun AddTaskScreen(
                         value = category,
                         onValueChange = { category = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Work, Academic, Personal…", style = MaterialTheme.typography.bodyMedium) },
+                        placeholder = { Text("Work, Personal, Study…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline) },
                         shape = NexoraShapes.medium,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Green60,
-                            unfocusedBorderColor = NexoraBorder
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -138,12 +144,14 @@ fun AddTaskScreen(
                             OutlinedTextField(
                                 value = duration,
                                 onValueChange = { duration = it },
-                                placeholder = { Text("30 min", style = MaterialTheme.typography.bodyMedium) },
+                                placeholder = { Text("30 min", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline) },
                                 shape = NexoraShapes.medium,
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Green60,
-                                    unfocusedBorderColor = NexoraBorder
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                                 )
                             )
                         }
@@ -155,7 +163,7 @@ fun AddTaskScreen(
                                     onClick = { priorityMenuExpanded = true },
                                     shape = NexoraShapes.medium,
                                     color = MaterialTheme.colorScheme.surface,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, NexoraBorder),
+                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
@@ -164,11 +172,11 @@ fun AddTaskScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            chosenPriority.name.lowercase().replaceFirstChar { it.uppercase() },
+                                            text = chosenPriority.name.lowercase().replaceFirstChar { it.uppercase() },
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = Green10
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        Icon(Icons.Rounded.ArrowDropDown, null, tint = Green40)
+                                        Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                                 DropdownMenu(
@@ -180,7 +188,8 @@ fun AddTaskScreen(
                                             text = {
                                                 Text(
                                                     p.name.lowercase().replaceFirstChar { it.uppercase() },
-                                                    style = MaterialTheme.typography.bodyMedium
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface
                                                 )
                                             },
                                             onClick = { chosenPriority = p; priorityMenuExpanded = false }
@@ -199,7 +208,7 @@ fun AddTaskScreen(
                             onClick = { if (goals.isNotEmpty()) goalMenuExpanded = true },
                             shape = NexoraShapes.medium,
                             color = MaterialTheme.colorScheme.surface,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, NexoraBorder),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -210,9 +219,9 @@ fun AddTaskScreen(
                                 Text(
                                     text = chosenGoal?.title ?: "None selected",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = if (chosenGoal == null) NexoraMutedTextLight else Green10
+                                    color = if (chosenGoal == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                                 )
-                                Icon(Icons.Rounded.ArrowDropDown, null, tint = Green40)
+                                Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         DropdownMenu(
@@ -221,7 +230,7 @@ fun AddTaskScreen(
                         ) {
                             goals.forEach { g ->
                                 DropdownMenuItem(
-                                    text = { Text(g.title, style = MaterialTheme.typography.bodyMedium) },
+                                    text = { Text(g.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) },
                                     onClick = { chosenGoal = g; goalMenuExpanded = false }
                                 )
                             }
@@ -230,7 +239,7 @@ fun AddTaskScreen(
                                     Text(
                                         "Clear selection",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = NexoraError
+                                        color = MaterialTheme.colorScheme.error
                                     )
                                 },
                                 onClick = { chosenGoal = null; goalMenuExpanded = false }
@@ -243,38 +252,39 @@ fun AddTaskScreen(
             // INTELLIGENCE HINT
             Surface(
                 shape = NexoraShapes.medium,
-                color = Green95,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, Green80)
+                color = MaterialTheme.colorScheme.primaryContainer,
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
             ) {
                 Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Rounded.AutoAwesome,
-                        null,
-                        tint = Green60,
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(10.dp))
-                     Text(
-                        text = if (chosenGoal != null) "Contributing to this goal." else "Adding to your personal workload.",
+                    Text(
+                        text = if (chosenGoal != null) "Contributing to: ${chosenGoal?.title}" else "Adding to your personal workload.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Green20,
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(36.dp))
         }
     }
 }
 
 @Composable
 private fun PremiumFormField(label: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = NexoraMutedTextLight
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            fontWeight = FontWeight.SemiBold
         )
         content()
     }

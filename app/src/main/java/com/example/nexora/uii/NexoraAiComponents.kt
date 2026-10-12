@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,15 +66,21 @@ fun NexoraCard(
     containerColor: Color = MaterialTheme.colorScheme.surface,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val borderColor = if (tier == NexoraCardTier.Elevated) {
+        NexoraTheme.customColors.aiBorder.copy(alpha = 0.6f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+
     Surface(
         modifier = modifier,
         shape = NexoraShapes.large,
         color = containerColor,
         border = BorderStroke(
-            width = if (tier == NexoraCardTier.Elevated) 1.dp else 0.5.dp,
-            color = if (tier == NexoraCardTier.Elevated) Clay60.copy(alpha = 0.3f) else NexoraBorder
+            width = 0.5.dp,
+            color = borderColor
         ),
-        shadowElevation = if (tier == NexoraCardTier.Elevated) 4.dp else 0.dp,
+        shadowElevation = if (tier == NexoraCardTier.Elevated) 2.dp else 0.dp,
         tonalElevation = 0.dp
     ) {
         Column(content = content)
@@ -83,8 +90,8 @@ fun NexoraCard(
 @Composable
 fun IconBox(
     icon: ImageVector,
-    containerColor: Color = Green95,
-    contentColor: Color = Green40,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.primary,
     size: Int = 32
 ) {
     Box(
@@ -98,7 +105,7 @@ fun IconBox(
             imageVector = icon,
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size((size * 0.6).dp)
+            modifier = Modifier.size((size * 0.58).dp)
         )
     }
 }
@@ -118,13 +125,13 @@ fun NexoraSectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            color = Green10
+            color = MaterialTheme.colorScheme.onSurface
         )
         if (actionLabel != null && onAction != null) {
             Text(
                 text = actionLabel,
                 style = MaterialTheme.typography.labelMedium,
-                color = Green60,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable { onAction() }
             )
         }
@@ -139,8 +146,8 @@ fun AiSurface(
     Surface(
         modifier = modifier,
         shape = NexoraShapes.large,
-        color = Clay90,
-        border = BorderStroke(0.5.dp, Clay60.copy(alpha = 0.4f)),
+        color = NexoraTheme.customColors.aiSurface,
+        border = BorderStroke(0.5.dp, NexoraTheme.customColors.aiBorder),
         content = { Column(modifier = Modifier.padding(20.dp)) { content() } }
     )
 }
@@ -157,36 +164,39 @@ fun ProposedActionCard(
     onDismiss: () -> Unit
 ) {
     val isMultiAction = plan.size > 1
+    val customColors = NexoraTheme.customColors
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = NexoraShapes.extraLarge,
-        color = Green10,
-        border = BorderStroke(1.dp, Clay60.copy(alpha = 0.5f))
+        color = customColors.surfaceElevated,
+        border = BorderStroke(0.5.dp, customColors.aiBorder)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(Clay60)
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(customColors.aiAccent)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (isMultiAction) "NEXORA MULTI-ACTION PLAN (${plan.size} ACTIONS)" else "NEXORA INTELLIGENCE",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Clay60,
-                    letterSpacing = 1.sp
+                    color = customColors.aiAccent,
+                    letterSpacing = 1.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
             
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
             if (isMultiAction) {
                 Text(
                     text = "Proposed Execution Plan",
                     style = MaterialTheme.typography.titleLarge,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 plan.forEachIndexed { index, planItem ->
@@ -195,13 +205,13 @@ fun ProposedActionCard(
                             text = "${index + 1}. ${planItem.title}",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         if (planItem.description.isNotBlank() && planItem.description != planItem.title) {
                             Text(
                                 text = planItem.description,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.65f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 18.sp
                             )
                         }
@@ -211,7 +221,7 @@ fun ProposedActionCard(
                 Text(
                     text = action.title,
                     style = MaterialTheme.typography.titleLarge,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -219,12 +229,12 @@ fun ProposedActionCard(
                 Text(
                     text = action.description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 22.sp
                 )
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             
             val confirmLabel = if (isMultiAction) {
                 "Confirm Plan (${plan.size} Actions)"
@@ -245,9 +255,12 @@ fun ProposedActionCard(
                 Button(
                     onClick = onConfirm,
                     modifier = Modifier.weight(1.3f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Clay60, contentColor = Green10),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
                     shape = NexoraShapes.medium,
-                    contentPadding = PaddingValues(vertical = 13.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text(confirmLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
@@ -257,11 +270,11 @@ fun ProposedActionCard(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.08f),
-                        contentColor = Color.White.copy(alpha = 0.7f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     shape = NexoraShapes.medium,
-                    contentPadding = PaddingValues(vertical = 13.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                 ) {
                     Text("Cancel", style = MaterialTheme.typography.labelLarge)
@@ -276,9 +289,10 @@ fun ProactiveSignalCard(
     signal: AiProactiveSignal,
     onAction: (AiAction) -> Unit
 ) {
+    val customColors = NexoraTheme.customColors
     NexoraCard(tier = NexoraCardTier.Resting) {
         Row(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(18.dp),
             verticalAlignment = Alignment.Top
         ) {
             IconBox(
@@ -287,30 +301,31 @@ fun ProactiveSignalCard(
                     ProactiveSignalType.NEGLECTED_GOAL -> Icons.Rounded.Flag
                     else -> Icons.Rounded.Insights
                 },
-                containerColor = Clay90,
-                contentColor = Clay40
+                containerColor = customColors.aiSurface,
+                contentColor = customColors.aiAccent
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = signal.title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Green10
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = signal.message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Green40,
-                    lineHeight = 18.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
                 )
                 signal.suggestedAction?.let { action ->
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = action.title,
                         style = MaterialTheme.typography.labelLarge,
-                        color = Clay40,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { onAction(action) },
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -320,31 +335,33 @@ fun ProactiveSignalCard(
 
 @Composable
 fun WorkflowCard(workflow: AgentWorkflow) {
-    NexoraCard(containerColor = Green10) {
-        Column(modifier = Modifier.padding(24.dp)) {
+    NexoraCard(containerColor = MaterialTheme.colorScheme.surface) {
+        Column(modifier = Modifier.padding(22.dp)) {
             Text(
                 text = "EXECUTING WORKFLOW",
                 style = MaterialTheme.typography.labelSmall,
-                color = Green60,
-                letterSpacing = 1.5.sp
+                color = MaterialTheme.colorScheme.primary,
+                letterSpacing = 1.2.sp,
+                fontWeight = FontWeight.SemiBold
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = workflow.objective,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             workflow.steps.forEach { step ->
                 Row(
-                    modifier = Modifier.padding(vertical = 6.dp),
+                    modifier = Modifier.padding(vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val statusColor = when (step.status) {
-                        StepStatus.COMPLETED -> Green60
-                        StepStatus.FAILED -> NexoraError
-                        else -> Green40
+                        StepStatus.COMPLETED -> NexoraTheme.customColors.success
+                        StepStatus.FAILED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.outline
                     }
                     val statusIcon = when (step.status) {
                         StepStatus.COMPLETED -> Icons.Rounded.CheckCircle
@@ -353,11 +370,11 @@ fun WorkflowCard(workflow: AgentWorkflow) {
                     }
                     
                     Icon(statusIcon, null, tint = statusColor, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = step.description,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (step.status == StepStatus.PENDING) Green40 else Color.White
+                        color = if (step.status == StepStatus.PENDING) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -380,52 +397,57 @@ fun AiRecommendationCard(
     }
 
     NexoraCard(modifier = modifier) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBox(icon, Green95, Green60, size = 28)
-                Spacer(modifier = Modifier.width(12.dp))
+                IconBox(
+                    icon = icon,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    size = 28
+                )
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = recommendation.title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Green10
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = recommendation.message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Green40,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 20.sp
             )
 
             if (recommendation.evidence.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 ReasoningList(factors = recommendation.evidence)
             }
 
             if (!recommendation.actionLabel.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Surface(
                     onClick = { onAction(recommendation) },
                     shape = NexoraShapes.small,
-                    color = Green95
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = recommendation.actionLabel,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Green60,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Rounded.ChevronRight,
                             contentDescription = null,
-                            tint = Green60,
-                            modifier = Modifier.size(16.dp)
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -440,14 +462,14 @@ fun PredictiveBadge(
     modifier: Modifier = Modifier
 ) {
     val containerColor = when (prediction.riskLevel) {
-        AiPriority.CRITICAL -> NexoraError.copy(alpha = 0.15f)
-        AiPriority.HIGH -> Clay60.copy(alpha = 0.15f)
-        else -> Green95
+        AiPriority.CRITICAL -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+        AiPriority.HIGH -> NexoraTheme.customColors.warning.copy(alpha = 0.12f)
+        else -> MaterialTheme.colorScheme.primaryContainer
     }
     val contentColor = when (prediction.riskLevel) {
-        AiPriority.CRITICAL -> NexoraError
-        AiPriority.HIGH -> Clay40
-        else -> Green60
+        AiPriority.CRITICAL -> MaterialTheme.colorScheme.error
+        AiPriority.HIGH -> NexoraTheme.customColors.warning
+        else -> MaterialTheme.colorScheme.primary
     }
 
     Surface(
@@ -482,20 +504,25 @@ fun PredictiveCard(
     modifier: Modifier = Modifier
 ) {
     NexoraCard(modifier = modifier) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconBox(Icons.Rounded.Insights, Green95, Green60, size = 28)
-                Spacer(modifier = Modifier.width(12.dp))
+                IconBox(
+                    icon = Icons.Rounded.Insights,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    size = 28
+                )
+                Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
                         text = prediction.targetTitle ?: "Predictive Intelligence",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Green10
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "Confidence: ${prediction.confidence.name}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Green40
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -503,7 +530,7 @@ fun PredictiveCard(
             Text(
                 text = prediction.prediction,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Green10,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium
             )
             if (prediction.evidence.isNotBlank()) {
@@ -511,7 +538,7 @@ fun PredictiveCard(
                 Text(
                     text = prediction.evidence,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp
                 )
             }
@@ -531,13 +558,13 @@ fun ReasoningList(factors: List<ReasoningFactor>) {
         Text(
             text = "WHY THIS CHOICE?",
             style = MaterialTheme.typography.labelSmall,
-            color = Gray90,
+            color = MaterialTheme.colorScheme.outline,
             letterSpacing = 1.sp,
-            modifier = Modifier.padding(bottom = 12.dp)
+            modifier = Modifier.padding(bottom = 10.dp)
         )
         factors.forEach { factor ->
             Row(
-                modifier = Modifier.padding(vertical = 4.dp),
+                modifier = Modifier.padding(vertical = 3.dp),
                 verticalAlignment = Alignment.Top
             ) {
                 val icon = when (factor.impact) {
@@ -547,10 +574,10 @@ fun ReasoningList(factors: List<ReasoningFactor>) {
                     ReasoningImpact.NEUTRAL -> Icons.Rounded.Info
                 }
                 val color = when (factor.impact) {
-                    ReasoningImpact.POSITIVE -> Green60
-                    ReasoningImpact.CRITICAL -> NexoraError
-                    ReasoningImpact.NEGATIVE -> Clay40
-                    ReasoningImpact.NEUTRAL -> Gray90
+                    ReasoningImpact.POSITIVE -> NexoraTheme.customColors.success
+                    ReasoningImpact.CRITICAL -> MaterialTheme.colorScheme.error
+                    ReasoningImpact.NEGATIVE -> NexoraTheme.customColors.warning
+                    ReasoningImpact.NEUTRAL -> MaterialTheme.colorScheme.outline
                 }
                 
                 Icon(
@@ -559,11 +586,11 @@ fun ReasoningList(factors: List<ReasoningFactor>) {
                     tint = color,
                     modifier = Modifier.size(14.dp).padding(top = 2.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = factor.evidence,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp
                 )
             }
@@ -587,24 +614,24 @@ fun ActionResultBanner(
     val isRejected = executionRecord?.isRejected == true
 
     val backgroundColor = when {
-        isSuccess -> Green95
-        isPartial -> Clay90.copy(alpha = 0.35f)
-        isCancelled -> Color.LightGray.copy(alpha = 0.2f)
-        else -> NexoraError.copy(alpha = 0.08f)
+        isSuccess -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        isPartial -> NexoraTheme.customColors.warning.copy(alpha = 0.12f)
+        isCancelled -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
     }
 
     val borderColor = when {
-        isSuccess -> Green80
-        isPartial -> Clay40.copy(alpha = 0.5f)
-        isCancelled -> Color.Gray.copy(alpha = 0.3f)
-        else -> NexoraError.copy(alpha = 0.3f)
+        isSuccess -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+        isPartial -> NexoraTheme.customColors.warning.copy(alpha = 0.3f)
+        isCancelled -> MaterialTheme.colorScheme.outlineVariant
+        else -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
     }
 
     val primaryTint = when {
-        isSuccess -> Green60
-        isPartial -> Clay40
-        isCancelled -> Color.DarkGray
-        else -> NexoraError
+        isSuccess -> MaterialTheme.colorScheme.primary
+        isPartial -> NexoraTheme.customColors.warning
+        isCancelled -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.error
     }
 
     val headerIcon = when {
@@ -642,23 +669,27 @@ fun ActionResultBanner(
                     tint = primaryTint,
                     modifier = Modifier.size(16.dp)
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = headerTitle,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = Green10,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
-                Icon(Icons.Rounded.Close, null, tint = Green40, modifier = Modifier.size(14.dp))
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
             }
 
-            // Compact transparent breakdown for multi-action plan or detailed records
             if (executionRecord != null && executionRecord.actionExecutions.isNotEmpty()) {
                 val lines = executionRecord.actionExecutions.sortedBy { it.executionOrder }
                 if (lines.size > 1 || !isSuccess) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     Column(
-                        modifier = Modifier.padding(start = 28.dp),
+                        modifier = Modifier.padding(start = 26.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         lines.forEach { child ->
@@ -666,9 +697,9 @@ fun ActionResultBanner(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 val (childIcon, childTint) = when (child.status) {
-                                    ActionExecutionStatus.SUCCESS -> Pair(Icons.Rounded.Check, Green60)
-                                    ActionExecutionStatus.SKIPPED -> Pair(Icons.Rounded.Redo, Clay40)
-                                    ActionExecutionStatus.FAILED -> Pair(Icons.Rounded.Close, NexoraError)
+                                    ActionExecutionStatus.SUCCESS -> Pair(Icons.Rounded.Check, NexoraTheme.customColors.success)
+                                    ActionExecutionStatus.SKIPPED -> Pair(Icons.AutoMirrored.Rounded.Redo, NexoraTheme.customColors.warning)
+                                    ActionExecutionStatus.FAILED -> Pair(Icons.Rounded.Close, MaterialTheme.colorScheme.error)
                                 }
                                 Icon(
                                     imageVector = childIcon,
@@ -676,7 +707,7 @@ fun ActionResultBanner(
                                     tint = childTint,
                                     modifier = Modifier.size(12.dp)
                                 )
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(6.dp))
                                 val reasonSuffix = when {
                                     child.status == ActionExecutionStatus.SKIPPED -> " — ${child.error ?: "prerequisite failed"}"
                                     child.status == ActionExecutionStatus.FAILED -> " — ${child.error ?: child.failureReason ?: child.message}"
@@ -685,7 +716,7 @@ fun ActionResultBanner(
                                 Text(
                                     text = "${child.actionTitle}$reasonSuffix",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Green20,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2
                                 )
                             }

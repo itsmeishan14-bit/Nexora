@@ -24,6 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddGoalScreen(
     onBack: () -> Unit,
@@ -45,23 +46,29 @@ fun AddGoalScreen(
         topBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                 tonalElevation = 0.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel", tint = Green40)
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Cancel",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Text(
                         text = if (isEditing) "Edit Goal" else "New Goal",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Green10
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
                     )
                     TextButton(
                         onClick = {
@@ -79,7 +86,7 @@ fun AddGoalScreen(
                         Text(
                             if (isEditing) "Save" else "Create",
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (goalName.isNotBlank()) Green60 else NexoraBorder,
+                            color = if (goalName.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -92,8 +99,8 @@ fun AddGoalScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(32.dp)
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp)
         ) {
             // TITLE INPUT — immersive, large
             TextField(
@@ -103,15 +110,15 @@ fun AddGoalScreen(
                     Text(
                         "What's your objective?",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = NexoraBorder
+                        color = MaterialTheme.colorScheme.outline
                     )
                 },
-                textStyle = MaterialTheme.typography.headlineSmall.copy(color = Green10),
+                textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onSurface),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Green60,
-                    unfocusedIndicatorColor = NexoraBorder
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant
                 ),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
@@ -129,8 +136,8 @@ fun AddGoalScreen(
                         placeholder = { Text("Career, Growth, Health…", style = MaterialTheme.typography.bodyMedium) },
                         shape = NexoraShapes.medium,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Green60,
-                            unfocusedBorderColor = NexoraBorder
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                         )
                     )
                 }
@@ -141,7 +148,7 @@ fun AddGoalScreen(
                         onClick = { showDatePicker = true },
                         shape = NexoraShapes.medium,
                         color = MaterialTheme.colorScheme.surface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, NexoraBorder),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -152,9 +159,9 @@ fun AddGoalScreen(
                             Text(
                                 text = targetDate.ifBlank { "Set a deadline" },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = if (targetDate.isBlank()) NexoraMutedTextLight else Green10
+                                color = if (targetDate.isBlank()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
                             )
-                            Icon(Icons.Default.CalendarMonth, null, tint = Green60, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -167,9 +174,9 @@ fun AddGoalScreen(
                             onValueChange = { progress = it },
                             valueRange = 0f..1f,
                             colors = SliderDefaults.colors(
-                                thumbColor = Green60,
-                                activeTrackColor = Green60,
-                                inactiveTrackColor = NexoraBorder
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
                             )
                         )
                         Row(
@@ -181,14 +188,14 @@ fun AddGoalScreen(
                                 Surface(
                                     onClick = { progress = pct },
                                     shape = CircleShape,
-                                    color = if (isSelected) Green60 else Green95,
-                                    contentColor = if (isSelected) Color.White else Green40
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                 ) {
                                     Text(
                                         text = "${(pct * 100).toInt()}%",
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
                             }
@@ -200,27 +207,27 @@ fun AddGoalScreen(
             // INTELLIGENCE HINT
             Surface(
                 shape = NexoraShapes.medium,
-                color = Green95,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, Green80)
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
             ) {
                 Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Rounded.AutoAwesome,
                         null,
-                        tint = Green60,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
                         text = "A clear goal helps Nexora prioritize relevant tasks for you.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Green20,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         lineHeight = 18.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 
@@ -239,7 +246,7 @@ fun AddGoalScreen(
                         showDatePicker = false
                     }
                 ) {
-                    Text("Select", color = Green60, fontWeight = FontWeight.Bold)
+                    Text("Select", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
         ) {
@@ -254,8 +261,10 @@ private fun GoalFormField(label: String, content: @Composable () -> Unit) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = NexoraMutedTextLight
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium
         )
         content()
     }
 }
+

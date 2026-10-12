@@ -1,6 +1,6 @@
 package com.example.nexora.uii
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,7 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -41,23 +41,26 @@ fun InsightScreen(
         topBar = {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, NexoraBorder),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                 tonalElevation = 0.dp
             ) {
                 Column(
                     modifier = Modifier
-                        .padding(horizontal = 24.dp, vertical = 16.dp)
+                        .statusBarsPadding()
+                        .padding(horizontal = 24.dp, vertical = 14.dp)
                         .fillMaxWidth()
                 ) {
                     Text(
                         text = "Observations",
                         style = MaterialTheme.typography.headlineLarge,
-                        color = Green10
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
                     )
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = "Patterns Nexora has learned about you.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Green40
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -67,8 +70,8 @@ fun InsightScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             // PRODUCTIVITY PATTERNS
             if (uiState.memory.items.isNotEmpty()) {
@@ -101,17 +104,24 @@ fun InsightScreen(
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
+                            IconBox(
+                                icon = Icons.Rounded.Insights,
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.primary,
+                                size = 32
+                            )
                             Text(
                                 text = "Everything looks steady.",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = Green40
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = "Patterns will appear as you use Nexora.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = NexoraMutedTextLight,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
@@ -129,15 +139,25 @@ private fun InsightPatternCard(memory: AiMemoryItem) {
             modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.Top
         ) {
-            IconBox(Icons.Rounded.AutoAwesome, Green95, Green60, size = 24)
+            IconBox(
+                icon = Icons.Rounded.AutoAwesome,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.primary,
+                size = 28
+            )
             Spacer(Modifier.width(14.dp))
-            Column {
-                Text(text = memory.title, style = MaterialTheme.typography.titleSmall, color = Green10)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = memory.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = memory.content,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 22.sp
                 )
             }
@@ -147,20 +167,34 @@ private fun InsightPatternCard(memory: AiMemoryItem) {
 
 @Composable
 private fun InsightObservationCard(rec: AiRecommendation) {
-    AiSurface {
-        Row(verticalAlignment = Alignment.Top) {
-            IconBox(Icons.Rounded.Visibility, Clay90, Clay40, size = 24)
+    NexoraCard {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            IconBox(
+                icon = Icons.Rounded.Visibility,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.primary,
+                size = 28
+            )
             Spacer(Modifier.width(14.dp))
-            Column {
-                Text(text = rec.title, style = MaterialTheme.typography.titleSmall, color = Green10)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = rec.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = rec.message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 22.sp
                 )
             }
         }
     }
 }
+

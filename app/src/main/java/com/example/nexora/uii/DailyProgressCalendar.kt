@@ -28,26 +28,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-// Nexora Brand Colors
-private val NexoraInk = Color(0xFF17231C)
-private val NexoraGreen = Color(0xFF78A982)
-private val NexoraSoftGreen = Color(0xFFE4EFE5)
-private val NexoraMuted = Color(0xFF747B75)
-private val NexoraBorderColor = Color(0xFFE1E5E1)
-private val NexoraCardBg = Color(0xFFF7F8F4)
-
-// Contribution Intensity Ramp
-private val IntensityNoneBg = Color(0xFFEBEDEB)
-private val IntensityNoneBorder = Color(0xFFE1E5E1)
-
-private val IntensityLowBg = Color(0xFFCDE8D4)
-private val IntensityLowBorder = Color(0xFFB8DCBF)
-
-private val IntensityMediumBg = Color(0xFF78A982)
-private val IntensityMediumBorder = Color(0xFF6A9773)
-
-private val IntensityHighBg = Color(0xFF42594E)
-private val IntensityHighBorder = Color(0xFF35493F)
+// ============================================================
+// ADAPTIVE ACTIVITY INTENSITY RAMP
+// ============================================================
 
 enum class DailyActivityLevel {
     NONE, LOW, MEDIUM, HIGH
@@ -182,7 +165,7 @@ fun DailyProgressCalendar(
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold
                     ),
-                    color = NexoraInk
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
@@ -193,13 +176,12 @@ fun DailyProgressCalendar(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                // Subtle Weekday Labels on the left
+                // Weekday Labels on the left
                 Column(
                     modifier = Modifier.width(26.dp),
                     verticalArrangement = Arrangement.spacedBy(squareSpacing)
                 ) {
                     Spacer(Modifier.height(headerHeight))
-                    // 7 rows matching Monday..Sunday
                     WeekdayLabel("Mon", squareSize)
                     Spacer(Modifier.height(squareSize)) // Tue
                     WeekdayLabel("Wed", squareSize)
@@ -238,7 +220,7 @@ fun DailyProgressCalendar(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium
                                         ),
-                                        color = NexoraMuted,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         softWrap = false,
                                         modifier = Modifier.wrapContentSize(
@@ -268,7 +250,10 @@ fun DailyProgressCalendar(
 
             Spacer(Modifier.height(16.dp))
 
-            // Legend: Less  [empty] [light] [medium] [dark]  More
+            // Legend: Less [none] [low] [med] [high] More
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val legendColors = getHeatmapColors(isDark)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -277,21 +262,21 @@ fun DailyProgressCalendar(
                 Text(
                     text = "Less",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = NexoraMuted
+                    color = MaterialTheme.colorScheme.outline
                 )
                 Spacer(Modifier.width(6.dp))
-                LegendSquare(bgColor = IntensityNoneBg, borderColor = IntensityNoneBorder)
+                LegendSquare(bgColor = legendColors.noneBg, borderColor = legendColors.noneBorder)
                 Spacer(Modifier.width(3.dp))
-                LegendSquare(bgColor = IntensityLowBg, borderColor = IntensityLowBorder)
+                LegendSquare(bgColor = legendColors.lowBg, borderColor = legendColors.lowBorder)
                 Spacer(Modifier.width(3.dp))
-                LegendSquare(bgColor = IntensityMediumBg, borderColor = IntensityMediumBorder)
+                LegendSquare(bgColor = legendColors.medBg, borderColor = legendColors.medBorder)
                 Spacer(Modifier.width(3.dp))
-                LegendSquare(bgColor = IntensityHighBg, borderColor = IntensityHighBorder)
+                LegendSquare(bgColor = legendColors.highBg, borderColor = legendColors.highBorder)
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = "More",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = NexoraMuted
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
         }
@@ -316,7 +301,7 @@ fun DailyProgressCalendar(
                 TextButton(onClick = { selectedDate = null }) {
                     Text(
                         text = "Close",
-                        color = NexoraGreen,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -331,7 +316,7 @@ fun DailyProgressCalendar(
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
                             ),
-                            color = NexoraGreen
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                     }
@@ -340,7 +325,7 @@ fun DailyProgressCalendar(
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
-                        color = NexoraInk
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             },
@@ -355,7 +340,7 @@ fun DailyProgressCalendar(
                         Text(
                             text = "No activity recorded",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = NexoraMuted
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
@@ -381,9 +366,46 @@ fun DailyProgressCalendar(
                     }
                 }
             },
-            containerColor = Color.White,
-            shape = RoundedCornerShape(20.dp),
-            tonalElevation = 6.dp
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = NexoraShapes.large,
+            tonalElevation = 2.dp
+        )
+    }
+}
+
+private data class HeatmapPalette(
+    val noneBg: Color,
+    val noneBorder: Color,
+    val lowBg: Color,
+    val lowBorder: Color,
+    val medBg: Color,
+    val medBorder: Color,
+    val highBg: Color,
+    val highBorder: Color
+)
+
+private fun getHeatmapColors(isDark: Boolean): HeatmapPalette {
+    return if (isDark) {
+        HeatmapPalette(
+            noneBg = Color(0xFF1E2420),
+            noneBorder = Color(0xFF27302A),
+            lowBg = Color(0xFF1B402E),
+            lowBorder = Color(0xFF23543D),
+            medBg = Color(0xFF2E7554),
+            medBorder = Color(0xFF388E67),
+            highBg = Color(0xFF4ADE80),
+            highBorder = Color(0xFF6EE7A0)
+        )
+    } else {
+        HeatmapPalette(
+            noneBg = Color(0xFFF0F3EF),
+            noneBorder = Color(0xFFE4E9E2),
+            lowBg = Color(0xFFCDE8D5),
+            lowBorder = Color(0xFFB8DCBF),
+            medBg = Color(0xFF427B63),
+            medBorder = Color(0xFF366B55),
+            highBg = Color(0xFF1B4D3E),
+            highBorder = Color(0xFF133E2B)
         )
     }
 }
@@ -402,7 +424,7 @@ private fun WeekdayLabel(text: String, height: Dp) {
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Medium
             ),
-            color = NexoraMuted
+            color = MaterialTheme.colorScheme.outline
         )
     }
 }
@@ -416,7 +438,6 @@ private fun ContributionSquare(
     onSquareClick: (LocalDate) -> Unit
 ) {
     if (date == null) {
-        // Filler or future date outside range
         Box(modifier = Modifier.size(squareSize))
         return
     }
@@ -429,17 +450,19 @@ private fun ContributionSquare(
         return
     }
 
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val palette = remember(isDark) { getHeatmapColors(isDark) }
     val activityLevel = remember(progress) { calculateActivityLevel(progress) }
 
     val (bgColor, borderColor) = when (activityLevel) {
-        DailyActivityLevel.NONE -> IntensityNoneBg to IntensityNoneBorder
-        DailyActivityLevel.LOW -> IntensityLowBg to IntensityLowBorder
-        DailyActivityLevel.MEDIUM -> IntensityMediumBg to IntensityMediumBorder
-        DailyActivityLevel.HIGH -> IntensityHighBg to IntensityHighBorder
+        DailyActivityLevel.NONE -> palette.noneBg to palette.noneBorder
+        DailyActivityLevel.LOW -> palette.lowBg to palette.lowBorder
+        DailyActivityLevel.MEDIUM -> palette.medBg to palette.medBorder
+        DailyActivityLevel.HIGH -> palette.highBg to palette.highBorder
     }
 
     val finalBorderWidth = if (isToday) 1.5.dp else 0.5.dp
-    val finalBorderColor = if (isToday) NexoraInk else borderColor
+    val finalBorderColor = if (isToday) MaterialTheme.colorScheme.primary else borderColor
 
     Box(
         modifier = Modifier
@@ -473,7 +496,7 @@ private fun ContributionDetailRow(label: String, value: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFFF0F2F0))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -481,14 +504,14 @@ private fun ContributionDetailRow(label: String, value: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = NexoraMuted
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall.copy(
                 fontWeight = FontWeight.SemiBold
             ),
-            color = NexoraInk
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }

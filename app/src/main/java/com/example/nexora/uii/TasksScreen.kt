@@ -59,10 +59,10 @@ fun TasksScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddTask,
-                containerColor = Green10,
-                contentColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = NexoraShapes.medium,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp)
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 2.dp)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add task")
             }
@@ -86,17 +86,17 @@ fun TasksScreen(
                     Text(
                         text = "Tasks",
                         style = MaterialTheme.typography.headlineLarge,
-                        color = Green10
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = when {
-                            activeCount == 0 -> "Nothing pending."
+                            activeCount == 0 -> "Nothing pending"
                             activeCount == 1 -> "1 task remaining"
                             else -> "$activeCount tasks remaining"
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Green40
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -195,7 +195,7 @@ private fun PremiumFilterTab(
     modifier: Modifier = Modifier
 ) {
     val textColor by animateColorAsState(
-        targetValue = if (isSelected) Green10 else Green40,
+        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "filterTabColor"
     )
 
@@ -219,13 +219,13 @@ private fun PremiumFilterTab(
             if (count > 0) {
                 Surface(
                     shape = CircleShape,
-                    color = if (isSelected) Green10 else NexoraBorder
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Text(
                         text = count.toString(),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) Color.White else Green40
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -235,8 +235,8 @@ private fun PremiumFilterTab(
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.5f)
-                .height(1.5.dp)
-                .background(if (isSelected) Green60 else Color.Transparent)
+                .height(2.dp)
+                .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
         )
     }
 }
@@ -253,18 +253,13 @@ private fun PremiumTaskRow(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val completionProgress by animateFloatAsState(
-        targetValue = if (task.completed) 1f else 0f,
-        animationSpec = NexoraMotion.SmoothSpec,
-        label = "completionAnim"
-    )
-
     val contentAlpha = if (task.completed) 0.55f else 1f
 
+    val customColors = NexoraTheme.customColors
     val priorityColor = when (task.priority) {
-        TaskPriority.URGENT -> NexoraError
-        TaskPriority.HIGH -> Clay60
-        TaskPriority.MEDIUM -> Green60
+        TaskPriority.URGENT -> customColors.priorityUrgent
+        TaskPriority.HIGH -> customColors.priorityHigh
+        TaskPriority.MEDIUM -> customColors.priorityMedium
         else -> Color.Transparent
     }
 
@@ -277,7 +272,7 @@ private fun PremiumTaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
-            .padding(vertical = 6.dp)
+            .padding(vertical = 5.dp)
     ) {
         Box(
             modifier = Modifier
@@ -294,10 +289,10 @@ private fun PremiumTaskRow(
                 color = MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(
                     0.5.dp,
-                    if (isAiRecommended) Green80.copy(alpha = 0.4f) else NexoraBorder
+                    if (isAiRecommended) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant
                 )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     if (isAiRecommended) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -306,13 +301,14 @@ private fun PremiumTaskRow(
                             Box(
                                 modifier = Modifier
                                     .clip(NexoraShapes.small)
-                                    .background(Green95)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
                                     .padding(horizontal = 8.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     text = "Focus now",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Green40
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -324,7 +320,7 @@ private fun PremiumTaskRow(
                     ) {
                         // Animated check box
                         val iconScale by animateFloatAsState(
-                            targetValue = if (task.completed) 1.1f else 1f,
+                            targetValue = if (task.completed) 1.05f else 1f,
                             animationSpec = NexoraMotion.SpringSpec,
                             label = "checkScale"
                         )
@@ -333,31 +329,23 @@ private fun PremiumTaskRow(
                                 .size(22.dp)
                                 .scale(iconScale)
                                 .clip(CircleShape)
-                                .background(if (task.completed) Green60 else Color.Transparent),
+                                .background(if (task.completed) MaterialTheme.colorScheme.primary else Color.Transparent),
                             contentAlignment = Alignment.Center
                         ) {
                             if (task.completed) {
                                 Icon(
                                     Icons.Rounded.Check,
                                     null,
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(13.dp)
                                 )
                             } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Transparent),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Canvas(Modifier.size(22.dp)) {
-                                        drawCircle(
-                                            color = Green80,
-                                            radius = 10.dp.toPx(),
-                                            style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())
-                                        )
-                                    }
+                                Canvas(Modifier.size(22.dp)) {
+                                    drawCircle(
+                                        color = priorityColor.takeIf { it != Color.Transparent } ?: customColors.cardBorder,
+                                        radius = 10.dp.toPx(),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())
+                                    )
                                 }
                             }
                         }
@@ -365,14 +353,12 @@ private fun PremiumTaskRow(
                         Spacer(Modifier.width(14.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Box {
-                                Text(
-                                    text = task.title,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = if (task.completed) Green40 else Green10,
-                                    textDecoration = if (task.completed) TextDecoration.LineThrough else TextDecoration.None
-                                )
-                            }
+                            Text(
+                                text = task.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (task.completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                textDecoration = if (task.completed) TextDecoration.LineThrough else TextDecoration.None
+                            )
 
                             val meta = buildList {
                                 if (task.category.isNotBlank()) add(task.category)
@@ -383,7 +369,7 @@ private fun PremiumTaskRow(
                                 Text(
                                     text = meta.joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Green40
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
@@ -394,13 +380,14 @@ private fun PremiumTaskRow(
                                         Icons.Rounded.Flag,
                                         null,
                                         modifier = Modifier.size(10.dp),
-                                        tint = Green60
+                                        tint = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.width(4.dp))
                                     Text(
                                         text = task.goalTitle,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Green60
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
@@ -413,7 +400,7 @@ private fun PremiumTaskRow(
                             Icon(
                                 Icons.Rounded.DeleteOutline,
                                 null,
-                                tint = NexoraBorder,
+                                tint = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -421,12 +408,12 @@ private fun PremiumTaskRow(
 
                     if (!reasoningMessage.isNullOrBlank()) {
                         Spacer(Modifier.height(10.dp))
-                        HorizontalDivider(color = NexoraBorder, thickness = 0.5.dp)
-                        Spacer(Modifier.height(10.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             text = reasoningMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Green40,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
                         )
                     }
@@ -456,32 +443,45 @@ private fun PremiumEmptyTasksState(filter: TaskFilter, onAddTask: () -> Unit = {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 80.dp),
+            .padding(horizontal = 24.dp, vertical = 70.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (filter == TaskFilter.Active) {
             Text(
-                text = "Clear space.",
+                text = "Clear space",
                 style = MaterialTheme.typography.titleMedium,
-                color = Green40
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "Add a task when something needs your attention.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = NexoraMutedTextLight,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
+            Spacer(Modifier.height(4.dp))
+            Button(
+                onClick = onAddTask,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                shape = NexoraShapes.medium
+            ) {
+                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("New Task", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            }
         } else {
             Text(
-                text = "Nothing completed yet.",
+                text = "Nothing completed yet",
                 style = MaterialTheme.typography.titleMedium,
-                color = Green40
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Check off tasks to see them here.",
+                text = "Check off tasks to see them archived here.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = NexoraMutedTextLight,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }

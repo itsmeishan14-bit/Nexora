@@ -288,7 +288,7 @@ private fun IntelligenceHeader(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.5.dp, NexoraBorder),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
         tonalElevation = 0.dp
     ) {
         Row(
@@ -304,7 +304,7 @@ private fun IntelligenceHeader(
                         fontSize = 32.sp,
                         letterSpacing = (-1).sp
                     ),
-                    color = Green10
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -314,7 +314,7 @@ private fun IntelligenceHeader(
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> Color(0xFFF59E0B)
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR ||
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> Color(0xFFEF4444)
-                        else -> Color(0xFF94A3B8)
+                        else -> MaterialTheme.colorScheme.outline
                     }
 
                     val statusText = when {
@@ -340,7 +340,7 @@ private fun IntelligenceHeader(
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Green40
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -348,7 +348,7 @@ private fun IntelligenceHeader(
                 Icon(
                     Icons.Rounded.Analytics,
                     contentDescription = "Benchmark",
-                    tint = Green40,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -385,12 +385,12 @@ private fun IntelligenceContextLine(contextText: String) {
             modifier = Modifier
                 .size(5.dp)
                 .clip(CircleShape)
-                .background(Green60)
+                .background(MaterialTheme.colorScheme.primary)
         )
         Text(
             text = contextText,
             style = MaterialTheme.typography.bodyMedium,
-            color = Green40,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 20.sp
         )
     }
@@ -430,15 +430,15 @@ private fun IntelligenceActionChip(
         modifier = modifier,
         shape = NexoraShapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.5.dp, NexoraBorder)
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = Green60)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Green10)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -457,7 +457,7 @@ private fun PremiumDailyPlanHeader(plan: NexoraDailyPlan) {
             Text(
                 text = plan.summary,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Green40,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 20.sp
             )
         }
@@ -465,7 +465,7 @@ private fun PremiumDailyPlanHeader(plan: NexoraDailyPlan) {
             Text(
                 text = "${plan.tasks.size} task${if (plan.tasks.size == 1) "" else "s"} · ${plan.date}",
                 style = MaterialTheme.typography.labelSmall,
-                color = NexoraBorder,
+                color = MaterialTheme.colorScheme.outline,
                 letterSpacing = 0.3.sp
             )
         }
@@ -497,21 +497,23 @@ private fun PremiumRecommendationCard(
             Text(
                 text = "INSIGHT",
                 style = MaterialTheme.typography.labelSmall,
-                color = Green60,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
                 letterSpacing = 1.2.sp
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = recommendation.title,
                 style = MaterialTheme.typography.titleSmall,
-                color = Green10
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold
             )
             if (recommendation.message.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = recommendation.message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp
                 )
             }
@@ -519,12 +521,13 @@ private fun PremiumRecommendationCard(
             // WHY — reasoning factors
             if (recommendation.evidence.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = NexoraBorder, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "WHY",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.outline,
+                    fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.2.sp
                 )
                 Spacer(Modifier.height(8.dp))
@@ -537,19 +540,20 @@ private fun PremiumRecommendationCard(
             // NEXT ACTION
             if (!recommendation.actionLabel.isNullOrBlank()) {
                 Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = NexoraBorder, thickness = 0.5.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "NEXT ACTION",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.outline,
+                    fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.2.sp
                 )
                 Spacer(Modifier.height(8.dp))
                 Surface(
                     onClick = { onAction(recommendation) },
                     shape = NexoraShapes.small,
-                    color = Green95,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -560,14 +564,14 @@ private fun PremiumRecommendationCard(
                         Text(
                             text = recommendation.actionLabel,
                             style = MaterialTheme.typography.labelLarge,
-                            color = Green40,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)
                         )
                         Icon(
                             Icons.Rounded.ChevronRight,
                             null,
-                            tint = Green60,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -586,10 +590,10 @@ private fun IntelligenceEvidenceFactor(factor: ReasoningFactor) {
         ReasoningImpact.NEUTRAL -> Icons.Rounded.Info
     }
     val color = when (factor.impact) {
-        ReasoningImpact.POSITIVE -> Green60
-        ReasoningImpact.CRITICAL -> NexoraError
-        ReasoningImpact.NEGATIVE -> Clay40
-        ReasoningImpact.NEUTRAL -> Gray90
+        ReasoningImpact.POSITIVE -> NexoraTheme.customColors.priorityLow
+        ReasoningImpact.CRITICAL -> MaterialTheme.colorScheme.error
+        ReasoningImpact.NEGATIVE -> NexoraTheme.customColors.priorityHigh
+        ReasoningImpact.NEUTRAL -> MaterialTheme.colorScheme.outline
     }
     Row(
         verticalAlignment = Alignment.Top,
@@ -604,7 +608,7 @@ private fun IntelligenceEvidenceFactor(factor: ReasoningFactor) {
         Text(
             text = factor.evidence,
             style = MaterialTheme.typography.bodySmall,
-            color = Green40,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 16.sp
         )
     }
@@ -623,8 +627,8 @@ private fun IntelligenceSystemFeedback(message: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = NexoraShapes.medium,
-        color = NexoraError.copy(alpha = 0.05f),
-        border = BorderStroke(0.5.dp, NexoraError.copy(alpha = 0.2f))
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(
@@ -634,13 +638,13 @@ private fun IntelligenceSystemFeedback(message: String) {
                 Icon(
                     Icons.Rounded.Info,
                     null,
-                    tint = NexoraError.copy(alpha = 0.7f),
+                    tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelMedium,
-                    color = NexoraError.copy(alpha = 0.8f),
+                    color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -649,14 +653,13 @@ private fun IntelligenceSystemFeedback(message: String) {
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurface,
                     lineHeight = 17.sp
                 )
             }
         }
     }
 }
-
 // ─────────────────────────────────────────────
 // PREMIUM CHAT MESSAGE BUBBLE
 // (no tails — information system style)
@@ -674,10 +677,10 @@ fun PremiumChatMessageBubble(message: NexoraChatMessage) {
 
     Column(modifier = Modifier.fillMaxWidth()) {
         if (isUser) {
-            // User — right-aligned, dark charcoal, no tail
+            // User — right-aligned, primary brand container, no tail
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Surface(
-                    color = Green10,
+                    color = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.widthIn(max = 280.dp)
                 ) {
@@ -685,7 +688,7 @@ fun PremiumChatMessageBubble(message: NexoraChatMessage) {
                         text = message.text,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         lineHeight = 22.sp
                     )
                 }
@@ -698,8 +701,8 @@ fun PremiumChatMessageBubble(message: NexoraChatMessage) {
             Surface(
                 modifier = Modifier.widthIn(max = 320.dp),
                 shape = RoundedCornerShape(16.dp),
-                color = NexoraError.copy(alpha = 0.05f),
-                border = BorderStroke(0.5.dp, NexoraError.copy(alpha = 0.2f))
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
                     Row(
@@ -708,13 +711,13 @@ fun PremiumChatMessageBubble(message: NexoraChatMessage) {
                     ) {
                         Icon(
                             Icons.Rounded.Info, null,
-                            tint = NexoraError.copy(alpha = 0.7f),
+                            tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(12.dp)
                         )
                         Text(
                             text = title,
                             style = MaterialTheme.typography.labelSmall,
-                            color = NexoraError.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = 0.5.sp
                         )
@@ -724,25 +727,25 @@ fun PremiumChatMessageBubble(message: NexoraChatMessage) {
                         Text(
                             text = detail,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Green40,
+                            color = MaterialTheme.colorScheme.onSurface,
                             lineHeight = 17.sp
                         )
                     }
                 }
             }
         } else {
-            // AI — warm off-white clay surface, clean rectangular, no tail
+            // AI — bespoke AI surface with hairline border, clean rectangular, no tail
             Surface(
                 modifier = Modifier.widthIn(max = 320.dp),
                 shape = RoundedCornerShape(18.dp),
-                color = Clay90,
-                border = BorderStroke(0.5.dp, Clay60.copy(alpha = 0.28f))
+                color = NexoraTheme.customColors.aiSurface,
+                border = BorderStroke(0.5.dp, NexoraTheme.customColors.aiBorder)
             ) {
                 Text(
                     text = message.text,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Green10,
+                    color = MaterialTheme.colorScheme.onSurface,
                     lineHeight = 22.sp
                 )
             }
@@ -789,8 +792,8 @@ private fun IntelligenceThinkingIndicator() {
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = Clay90,
-            border = BorderStroke(0.5.dp, Clay60.copy(alpha = 0.25f))
+            color = NexoraTheme.customColors.aiSurface,
+            border = BorderStroke(0.5.dp, NexoraTheme.customColors.aiBorder)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
@@ -802,7 +805,7 @@ private fun IntelligenceThinkingIndicator() {
                         modifier = Modifier
                             .size(5.dp)
                             .clip(CircleShape)
-                            .background(Clay40.copy(alpha = a))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = a))
                     )
                 }
             }
@@ -810,7 +813,7 @@ private fun IntelligenceThinkingIndicator() {
         Text(
             text = "Nexora is thinking\u2026",
             style = MaterialTheme.typography.bodySmall,
-            color = Green40.copy(alpha = labelAlpha)
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = labelAlpha)
         )
     }
 }
@@ -830,25 +833,26 @@ private fun IntelligenceEmptyState(onSuggestionClick: (String) -> Unit) {
         Text(
             text = "Nexora Intelligence",
             style = MaterialTheme.typography.titleLarge,
-            color = Green10
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(6.dp))
         Text(
             text = "Your work, understood.",
             style = MaterialTheme.typography.bodyMedium,
-            color = Green40
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = "All processing stays on your device.",
             style = MaterialTheme.typography.bodySmall,
-            color = NexoraBorder
+            color = MaterialTheme.colorScheme.outline
         )
         Spacer(Modifier.height(28.dp))
         Text(
             text = "TRY ASKING",
             style = MaterialTheme.typography.labelSmall,
-            color = NexoraBorder,
+            color = MaterialTheme.colorScheme.outline,
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 1.2.sp
         )
         Spacer(Modifier.height(12.dp))
@@ -872,7 +876,7 @@ private fun IntelligenceSuggestionRow(text: String, onClick: () -> Unit) {
             .nexoraClickable { onClick() },
         shape = NexoraShapes.medium,
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.5.dp, NexoraBorder)
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -881,8 +885,8 @@ private fun IntelligenceSuggestionRow(text: String, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(text = text, style = MaterialTheme.typography.bodyMedium, color = Green10)
-            Icon(Icons.Rounded.ChevronRight, null, tint = NexoraBorder, modifier = Modifier.size(16.dp))
+            Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -900,7 +904,7 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.5.dp, NexoraBorder),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
         tonalElevation = 0.dp
     ) {
         Column(
@@ -932,13 +936,13 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.background,
-                        border = BorderStroke(0.5.dp, NexoraBorder)
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Text(
                             text = suggestion,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Green40,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
@@ -953,12 +957,12 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Input field — off-white surface, 20dp radius, generous padding
+                // Input field — theme background surface, 20dp radius, generous padding
                 Surface(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.background,
-                    border = BorderStroke(0.5.dp, NexoraBorder)
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     TextField(
                         value = text,
@@ -968,7 +972,7 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
                             Text(
                                 "Ask Nexora anything\u2026",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Green40
+                                color = MaterialTheme.colorScheme.outline
                             )
                         },
                         colors = TextFieldDefaults.colors(
@@ -986,16 +990,16 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
                             }
                         }),
                         enabled = enabled,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Green10)
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface)
                     )
                 }
 
-                // Send button — Nexora green, compact circle
+                // Send button — Nexora primary green, compact circle
                 Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(if (text.isNotBlank() && enabled) Green60 else Green95)
+                        .background(if (text.isNotBlank() && enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                         .clickable(enabled = text.isNotBlank() && enabled) {
                             onSend(text); text = ""
                             keyboardController?.hide(); focusManager.clearFocus()
@@ -1005,7 +1009,7 @@ fun IntelligenceComposer(onSend: (String) -> Unit, enabled: Boolean) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send",
-                        tint = if (text.isNotBlank() && enabled) Color.White else Green40,
+                        tint = if (text.isNotBlank() && enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1029,10 +1033,10 @@ private fun PlannedTaskPill(
 ) {
     val task = plannedTask.task
     val priorityColor = when (task.priority) {
-        TaskPriority.URGENT -> NexoraError
-        TaskPriority.HIGH -> Clay60
-        TaskPriority.MEDIUM -> Green60
-        else -> Green90
+        TaskPriority.URGENT -> NexoraTheme.customColors.priorityUrgent
+        TaskPriority.HIGH -> NexoraTheme.customColors.priorityHigh
+        TaskPriority.MEDIUM -> NexoraTheme.customColors.priorityMedium
+        else -> NexoraTheme.customColors.priorityLow
     }
 
     Surface(
@@ -1055,7 +1059,7 @@ private fun PlannedTaskPill(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Green10,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f)
             )
@@ -1088,8 +1092,8 @@ private fun MemoryItemCard(item: AiMemoryItem, onDelete: () -> Unit) {
                     AiMemoryCategory.TASK_SIZE_PATTERN -> Icons.Rounded.Splitscreen
                     else -> Icons.Rounded.AutoAwesome
                 },
-                containerColor = Green95,
-                contentColor = Green60,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.primary,
                 size = 28
             )
             Spacer(modifier = Modifier.width(14.dp))
@@ -1102,21 +1106,23 @@ private fun MemoryItemCard(item: AiMemoryItem, onDelete: () -> Unit) {
                     Text(
                         text = item.title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = Green10,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onDelete, modifier = Modifier.size(20.dp)) {
-                        Icon(Icons.Rounded.Close, null, tint = NexoraBorder, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Rounded.Close, null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(14.dp))
                     }
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = item.content,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Green40,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
                 )
             }
         }
     }
 }
+

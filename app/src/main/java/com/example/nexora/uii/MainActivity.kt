@@ -24,6 +24,7 @@ import com.example.nexora.ai.*
 import com.example.nexora.ai.evaluation.AiEvaluationViewModel
 import com.example.nexora.data.NexoraDatabase
 import com.example.nexora.data.NexoraRepository
+import androidx.compose.ui.text.font.FontWeight
 import com.example.nexora.ui.theme.*
 
 class MainActivity : ComponentActivity() {
@@ -94,35 +95,51 @@ class MainActivity : ComponentActivity() {
 
                 Row(Modifier.fillMaxSize()) {
                     if (isWide) {
-                        NavigationRail(
-                            containerColor = Color.White,
-                            contentColor = Green60,
-                            header = {
-                                IconBox(icon = Icons.Rounded.Splitscreen, Green95, Green60, 48)
-                            }
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
-                            Spacer(Modifier.weight(1f))
-                            NexoraRailItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
-                            NexoraRailItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
-                            NexoraRailItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
-                            NexoraRailItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
-                            Spacer(Modifier.weight(1f))
+                            NavigationRail(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.primary,
+                                header = {
+                                    IconBox(
+                                        icon = Icons.Rounded.Splitscreen,
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.primary,
+                                        size = 44
+                                    )
+                                }
+                            ) {
+                                Spacer(Modifier.weight(1f))
+                                NexoraRailItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
+                                NexoraRailItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
+                                NexoraRailItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
+                                NexoraRailItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
 
                     Scaffold(
-                        containerColor = NexoraBackgroundLight,
+                        containerColor = MaterialTheme.colorScheme.background,
                         bottomBar = {
                             if (!isWide && mainState.selectedScreen in listOf("home", "tasks", "goals", "insights")) {
-                                NavigationBar(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    tonalElevation = 0.dp,
-                                    windowInsets = WindowInsets(0)
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    tonalElevation = 0.dp
                                 ) {
-                                    NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
-                                    NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
-                                    NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
-                                    NexoraNavItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
+                                    NavigationBar(
+                                        containerColor = MaterialTheme.colorScheme.surface,
+                                        tonalElevation = 0.dp,
+                                        windowInsets = NavigationBarDefaults.windowInsets
+                                    ) {
+                                        NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
+                                        NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
+                                        NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
+                                        NexoraNavItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
+                                    }
                                 }
                             }
                         }
@@ -287,34 +304,50 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun RowScope.NexoraNavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = NexoraTheme.customColors.textTertiary
+
     NavigationBarItem(
         selected = selected,
         onClick = onClick,
-        icon = { Icon(icon, null, modifier = Modifier.size(24.dp)) },
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+        icon = { Icon(icon, null, modifier = Modifier.size(22.dp)) },
+        label = { 
+            Text(
+                text = label, 
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+            ) 
+        },
         colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = Green60,
-            selectedTextColor = Green60,
-            unselectedIconColor = Green40,
-            unselectedTextColor = Green40,
-            indicatorColor = Green95
+            selectedIconColor = activeColor,
+            selectedTextColor = activeColor,
+            unselectedIconColor = inactiveColor,
+            unselectedTextColor = inactiveColor,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer
         )
     )
 }
 
 @Composable
 private fun NexoraRailItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = NexoraTheme.customColors.textTertiary
+
     NavigationRailItem(
         selected = selected,
         onClick = onClick,
-        icon = { Icon(icon, null, modifier = Modifier.size(24.dp)) },
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+        icon = { Icon(icon, null, modifier = Modifier.size(22.dp)) },
+        label = { 
+            Text(
+                text = label, 
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+            ) 
+        },
         colors = NavigationRailItemDefaults.colors(
-            selectedIconColor = Green60,
-            selectedTextColor = Green60,
-            unselectedIconColor = Green40,
-            unselectedTextColor = Green40,
-            indicatorColor = Green95
+            selectedIconColor = activeColor,
+            selectedTextColor = activeColor,
+            unselectedIconColor = inactiveColor,
+            unselectedTextColor = inactiveColor,
+            indicatorColor = MaterialTheme.colorScheme.primaryContainer
         )
     )
 }

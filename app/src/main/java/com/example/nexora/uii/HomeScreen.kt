@@ -17,6 +17,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -130,23 +131,23 @@ fun HomeScreen(
         // 3. TODAY'S FOCUS
         item {
             HomeEntranceAnim(revealed, 2) {
-                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Today's focus",
+                            text = "Today's Focus",
                             style = MaterialTheme.typography.titleLarge,
-                            color = Green10
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         if (tasks.isNotEmpty()) {
                             Text(
                                 text = "All tasks →",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = Green60,
-                                modifier = Modifier.clickable { /* Navigation handled in parent */ }
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable { /* Handled in parent */ }
                             )
                         }
                     }
@@ -171,7 +172,7 @@ fun HomeScreen(
             }
         }
 
-        // 4. STREAK + DAILY PROGRESS  — compact, side by side
+        // 4. STREAK + DAILY PROGRESS — compact, side by side
         item {
             HomeEntranceAnim(revealed, 3) {
                 Row(
@@ -201,9 +202,9 @@ fun HomeScreen(
 private fun HomeHeader() {
     val greeting = remember {
         when (LocalTime.now().hour) {
-            in 0..11 -> "Good morning."
-            in 12..17 -> "Good afternoon."
-            else -> "Good evening."
+            in 0..11 -> "Good morning"
+            in 12..17 -> "Good afternoon"
+            else -> "Good evening"
         }
     }
     val date = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM")) }
@@ -212,12 +213,12 @@ private fun HomeHeader() {
         Text(
             text = greeting,
             style = MaterialTheme.typography.headlineLarge,
-            color = Green10
+            color = MaterialTheme.colorScheme.onBackground
         )
         Text(
             text = date,
             style = MaterialTheme.typography.bodyMedium,
-            color = Green40
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -236,12 +237,13 @@ fun SectionDivider(label: String) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = NexoraMutedTextLight,
-            letterSpacing = 1.2.sp
+            color = NexoraTheme.customColors.textTertiary,
+            letterSpacing = 1.2.sp,
+            fontWeight = FontWeight.SemiBold
         )
         HorizontalDivider(
             modifier = Modifier.weight(1f),
-            color = NexoraBorder,
+            color = MaterialTheme.colorScheme.outlineVariant,
             thickness = 0.5.dp
         )
     }
@@ -255,7 +257,7 @@ fun SectionDivider(label: String) {
 private fun StreakCard(count: Int, modifier: Modifier = Modifier) {
     NexoraCard(
         modifier = modifier,
-        containerColor = Green10
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -263,20 +265,32 @@ private fun StreakCard(count: Int, modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = count.toString(),
-                style = NumericStyle.copy(fontSize = 40.sp, color = Green60)
+                style = NumericStyle.copy(
+                    fontSize = 38.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
             )
             Text(
-                text = "day streak",
+                text = "Day Streak",
                 style = MaterialTheme.typography.bodySmall,
-                color = Green70
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (count > 0) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Consistent.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Green50
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(NexoraShapes.small)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "Consistent",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -299,45 +313,48 @@ private fun ProgressCard(
         label = "ringProgress"
     )
 
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val progressColor = MaterialTheme.colorScheme.primary
+
     NexoraCard(modifier = modifier) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp)) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp)) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawArc(
-                        color = Green95,
+                        color = trackColor,
                         startAngle = -90f,
                         sweepAngle = 360f,
                         useCenter = false,
-                        style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                        style = Stroke(4.5.dp.toPx(), cap = StrokeCap.Round)
                     )
                     if (animatedProgress > 0f) {
                         drawArc(
-                            color = Green60,
+                            color = progressColor,
                             startAngle = -90f,
                             sweepAngle = animatedProgress * 360f,
                             useCenter = false,
-                            style = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+                            style = Stroke(4.5.dp.toPx(), cap = StrokeCap.Round)
                         )
                     }
                 }
                 Text(
                     "${(progress * 100).toInt()}%",
-                    style = NumericStyle.copy(fontSize = 13.sp),
-                    color = Green10
+                    style = NumericStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
             Text(
-                text = "Tasks done",
+                text = "Tasks Done",
                 style = MaterialTheme.typography.bodySmall,
-                color = Green40
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = "$completed / $total",
-                style = NumericStyle.copy(fontSize = 16.sp),
-                color = Green10
+                style = NumericStyle.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -355,10 +372,12 @@ private fun HomeTaskCard(
     isPrimary: Boolean = false,
     onToggle: () -> Unit
 ) {
+    val customColors = NexoraTheme.customColors
     val priorityColor = when (task.priority) {
-        TaskPriority.URGENT -> NexoraError
-        TaskPriority.HIGH -> Clay60
-        else -> Green60
+        TaskPriority.URGENT -> customColors.priorityUrgent
+        TaskPriority.HIGH -> customColors.priorityHigh
+        TaskPriority.MEDIUM -> customColors.priorityMedium
+        else -> Color.Transparent
     }
 
     Box(
@@ -370,33 +389,34 @@ private fun HomeTaskCard(
         NexoraCard(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 6.dp),
-            containerColor = if (isPrimary && !task.completed) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface
+                .padding(start = if (priorityColor != Color.Transparent) 4.dp else 0.dp),
+            containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 if (isAiRecommended) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 10.dp)
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .clip(NexoraShapes.small)
-                                .background(Green95)
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
                                         .size(5.dp)
                                         .clip(CircleShape)
-                                        .background(Green60)
+                                        .background(MaterialTheme.colorScheme.primary)
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     text = "Recommended",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Green40
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
                                 )
                             }
                         }
@@ -404,21 +424,36 @@ private fun HomeTaskCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Completion indicator
+                    // Tactile check indicator
+                    val checkScale by animateFloatAsState(
+                        targetValue = if (task.completed) 1.05f else 1f,
+                        animationSpec = NexoraMotion.SpringSpec,
+                        label = "homeCheckScale"
+                    )
+
                     Box(
                         modifier = Modifier
                             .size(22.dp)
+                            .scale(checkScale)
                             .clip(CircleShape)
-                            .background(if (task.completed) Green60 else Green95),
+                            .background(if (task.completed) MaterialTheme.colorScheme.primary else Color.Transparent),
                         contentAlignment = Alignment.Center
                     ) {
                         if (task.completed) {
                             Icon(
-                                Icons.Rounded.Check,
-                                contentDescription = null,
-                                tint = Color.White,
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = "Completed",
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(13.dp)
                             )
+                        } else {
+                            Canvas(Modifier.size(22.dp)) {
+                                drawCircle(
+                                    color = priorityColor.takeIf { it != Color.Transparent } ?: customColors.cardBorder,
+                                    radius = 10.dp.toPx(),
+                                    style = Stroke(1.5.dp.toPx())
+                                )
+                            }
                         }
                     }
 
@@ -428,7 +463,7 @@ private fun HomeTaskCard(
                         Text(
                             text = task.title,
                             style = if (isPrimary) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = if (task.completed) Green40 else Green10
+                            color = if (task.completed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                         )
 
                         val meta = buildList {
@@ -440,7 +475,7 @@ private fun HomeTaskCard(
                             Text(
                                 text = meta.joinToString(" · "),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Green40
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
@@ -451,23 +486,24 @@ private fun HomeTaskCard(
                                     imageVector = Icons.Rounded.Flag,
                                     contentDescription = null,
                                     modifier = Modifier.size(10.dp),
-                                    tint = Green60
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     text = task.goalTitle,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Green60
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
                     }
 
                     // Priority indicator dot
-                    if (!task.completed && (task.priority == TaskPriority.URGENT || task.priority == TaskPriority.HIGH)) {
+                    if (!task.completed && priorityColor != Color.Transparent) {
                         Box(
                             modifier = Modifier
-                                .size(7.dp)
+                                .size(6.dp)
                                 .clip(CircleShape)
                                 .background(priorityColor)
                         )
@@ -476,26 +512,28 @@ private fun HomeTaskCard(
 
                 if (!reasoningMessage.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = NexoraBorder, thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = reasoningMessage,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Green40,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 18.sp
                     )
                 }
             }
         }
 
-        // Left edge priority bar — thinner, more refined
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .clip(CircleShape)
-                .background(priorityColor)
-        )
+        // Left edge priority accent
+        if (priorityColor != Color.Transparent) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(priorityColor)
+            )
+        }
     }
 }
 
@@ -508,28 +546,28 @@ private fun HomeFocusEmptyState(onAddTask: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Clear space.",
+            text = "Clear space",
             style = MaterialTheme.typography.titleMedium,
-            color = Green40
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "Add a task when something needs your attention.",
             style = MaterialTheme.typography.bodyMedium,
-            color = NexoraMutedTextLight,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
         TextButton(
             onClick = onAddTask,
-            colors = ButtonDefaults.textButtonColors(contentColor = Green60)
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Add task", style = MaterialTheme.typography.labelLarge)
+            Text("Add task", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         }
     }
 }
