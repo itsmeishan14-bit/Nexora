@@ -3,6 +3,8 @@ package com.example.nexora.uii
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         setContent {
@@ -127,19 +130,31 @@ class MainActivity : ComponentActivity() {
                         bottomBar = {
                             if (!isWide && mainState.selectedScreen in listOf("home", "tasks", "goals", "insights")) {
                                 Surface(
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = MaterialTheme.colorScheme.surface,
-                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
                                     tonalElevation = 0.dp
                                 ) {
-                                    NavigationBar(
-                                        containerColor = MaterialTheme.colorScheme.surface,
-                                        tonalElevation = 0.dp,
-                                        windowInsets = NavigationBarDefaults.windowInsets
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.surface)
                                     ) {
-                                        NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
-                                        NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
-                                        NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
-                                        NexoraNavItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
+                                        HorizontalDivider(
+                                            thickness = 0.5.dp,
+                                            color = MaterialTheme.colorScheme.outlineVariant
+                                        )
+                                        NavigationBar(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            containerColor = MaterialTheme.colorScheme.surface,
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
+                                            tonalElevation = 0.dp,
+                                            windowInsets = NavigationBarDefaults.windowInsets
+                                        ) {
+                                            NexoraNavItem("Home", Icons.Rounded.Home, mainState.selectedScreen == "home") { mainViewModel.navigateTo("home") }
+                                            NexoraNavItem("Tasks", Icons.Rounded.CheckCircle, mainState.selectedScreen == "tasks") { mainViewModel.navigateTo("tasks") }
+                                            NexoraNavItem("Goals", Icons.Rounded.Flag, mainState.selectedScreen == "goals") { mainViewModel.navigateTo("goals") }
+                                            NexoraNavItem("AI", Icons.Rounded.Insights, mainState.selectedScreen == "insights") { mainViewModel.navigateTo("insights") }
+                                        }
                                     }
                                 }
                             }
@@ -313,7 +328,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RowScope.NexoraNavItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = MaterialTheme.colorScheme.outline
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     NavigationBarItem(
         selected = selected,
@@ -322,7 +337,7 @@ private fun RowScope.NexoraNavItem(label: String, icon: ImageVector, selected: B
             Icon(
                 icon,
                 contentDescription = label,
-                modifier = Modifier.size(21.dp)
+                modifier = Modifier.size(22.dp)
             )
         },
         label = { 
@@ -347,7 +362,7 @@ private fun RowScope.NexoraNavItem(label: String, icon: ImageVector, selected: B
 @Composable
 private fun NexoraRailItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
     val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = NexoraTheme.customColors.textTertiary
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     NavigationRailItem(
         selected = selected,
@@ -356,7 +371,10 @@ private fun NexoraRailItem(label: String, icon: ImageVector, selected: Boolean, 
         label = { 
             Text(
                 text = label, 
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                )
             ) 
         },
         colors = NavigationRailItemDefaults.colors(
