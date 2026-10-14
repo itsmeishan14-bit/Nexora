@@ -240,15 +240,13 @@ private fun ExecutiveHeader(
     }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
+            modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Apple-style Calendar Date Stamp Badge
             Surface(
@@ -258,7 +256,7 @@ private fun ExecutiveHeader(
                 shadowElevation = 1.dp
             ) {
                 Column(
-                    modifier = Modifier.width(48.dp),
+                    modifier = Modifier.width(46.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
@@ -286,20 +284,25 @@ private fun ExecutiveHeader(
             }
 
             // Title & Day Greeting
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = greeting,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 24.sp),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "$dayOfWeek · Nexora Operating System",
+                    text = "$dayOfWeek · Nexora OS",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
+
+        Spacer(Modifier.width(8.dp))
 
         // Action Buttons: AI Hub & Quick Add
         Row(
