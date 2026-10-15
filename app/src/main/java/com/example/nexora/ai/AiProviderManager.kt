@@ -26,7 +26,25 @@ class AiProviderManager(
     }
 
     suspend fun isCloudActive(): Boolean {
-        return useCloudIfAvailable && cloudProvider != null && cloudProvider.isAvailable()
+        if (!useCloudIfAvailable || cloudProvider == null || !cloudProvider.isAvailable()) return false
+        val diag = (cloudProvider as? CloudAiProvider)?.lastDiagnostic
+        if (diag != null) {
+            when (diag.code) {
+                CloudAiDiagnosticCode.DNS_ERROR,
+                CloudAiDiagnosticCode.TIMEOUT_ERROR,
+                CloudAiDiagnosticCode.BAD_REQUEST,
+                CloudAiDiagnosticCode.AUTH_ERROR,
+                CloudAiDiagnosticCode.MODEL_UNAVAILABLE,
+                CloudAiDiagnosticCode.QUOTA_EXCEEDED,
+                CloudAiDiagnosticCode.NETWORK_ERROR,
+                CloudAiDiagnosticCode.MISSING_KEY -> return false
+                CloudAiDiagnosticCode.CONFIGURED,
+                CloudAiDiagnosticCode.SUCCESS,
+                CloudAiDiagnosticCode.SERVER_BUSY,
+                CloudAiDiagnosticCode.PARSING_ERROR -> {}
+            }
+        }
+        return true
     }
 
     fun getCloudProvider(): AiModelProvider? = cloudProvider
@@ -34,6 +52,11 @@ class AiProviderManager(
     fun getLocalProvider(): LocalAiProvider = localProvider
 
     fun getLastDiagnostic(): CloudAiDiagnostic? = (cloudProvider as? CloudAiProvider)?.lastDiagnostic
+
+    suspend fun probeCloudConnectivity(): CloudAiDiagnostic? {
+        val cloud = cloudProvider as? CloudAiProvider ?: return null
+        return cloud.probeConnectivity()
+    }
 
     /**
      * Generates a conversational response with automatic local fallback.
@@ -56,6 +79,12 @@ class AiProviderManager(
                     NexoraLogger.w("AI", "Gemini model unavailable. Falling back to local AI: ${e.message}")
                 is GeminiServerException ->
                     NexoraLogger.w("AI", "Gemini server busy. Falling back to local AI: ${e.message}")
+                is GeminiDnsException ->
+                    NexoraLogger.w("AI", "Gemini host DNS resolution failed. Falling back to local AI: ${e.message}")
+                is GeminiTimeoutException ->
+                    NexoraLogger.w("AI", "Gemini connection timed out. Falling back to local AI: ${e.message}")
+                is GeminiBadRequestException ->
+                    NexoraLogger.w("AI", "Gemini request rejected (HTTP 400). Falling back to local AI: ${e.message}")
                 is GeminiNetworkException ->
                     NexoraLogger.w("AI", "Gemini network unreachable. Falling back to local AI: ${e.message}")
                 is GeminiParsingException ->
@@ -96,6 +125,12 @@ class AiProviderManager(
                     NexoraLogger.w("AI", "Gemini model unavailable for structured request. Falling back to local AI: ${e.message}")
                 is GeminiServerException ->
                     NexoraLogger.w("AI", "Gemini server busy for structured request. Falling back to local AI: ${e.message}")
+                is GeminiDnsException ->
+                    NexoraLogger.w("AI", "Gemini host DNS resolution failed for structured request. Falling back to local AI: ${e.message}")
+                is GeminiTimeoutException ->
+                    NexoraLogger.w("AI", "Gemini connection timed out for structured request. Falling back to local AI: ${e.message}")
+                is GeminiBadRequestException ->
+                    NexoraLogger.w("AI", "Gemini request rejected (HTTP 400) for structured request. Falling back to local AI: ${e.message}")
                 is GeminiNetworkException ->
                     NexoraLogger.w("AI", "Gemini network unreachable for structured request. Falling back to local AI: ${e.message}")
                 is GeminiParsingException ->

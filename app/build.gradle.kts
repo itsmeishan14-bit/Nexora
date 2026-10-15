@@ -22,6 +22,10 @@ val geminiApiKey = (localProperties.getProperty("GEMINI_API_KEY")
     ?: System.getenv("GEMINI_API_KEY")
     ?: "").replace("\"", "\\\"")
 
+val geminiModel = (localProperties.getProperty("GEMINI_MODEL")
+    ?: System.getenv("GEMINI_MODEL")
+    ?: "gemini-3.8-flash").replace("\"", "\\\"")
+
 android {
     namespace = "com.example.nexora"
 
@@ -39,6 +43,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
+        buildConfigField("String", "GEMINI_MODEL", "\"$geminiModel\"")
     }
 
     signingConfigs {

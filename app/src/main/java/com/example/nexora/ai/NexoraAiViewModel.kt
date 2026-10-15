@@ -79,6 +79,7 @@ class NexoraAiViewModel(
     fun refreshCloudStatus() {
         scope.launch {
             try {
+                engine.probeCloudConnectivity()
                 val active = engine.isCloudActive()
                 val diagnostic = engine.getCloudDiagnostic()
                 _uiState.update { it.copy(isCloudActive = active, cloudDiagnostic = diagnostic) }

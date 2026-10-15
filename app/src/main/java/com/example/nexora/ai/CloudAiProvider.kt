@@ -34,6 +34,21 @@ class GeminiModelUnavailableException(message: String) : Exception(message)
 class GeminiServerException(message: String) : Exception(message)
 
 /**
+ * Thrown when Gemini API rejects the request payload or arguments (HTTP 400).
+ */
+class GeminiBadRequestException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Thrown when the Gemini hostname (generativelanguage.googleapis.com) cannot be resolved via DNS.
+ */
+class GeminiDnsException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
+ * Thrown when connecting to or reading from Gemini API times out.
+ */
+class GeminiTimeoutException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/**
  * Thrown when network connectivity to the Gemini API fails.
  */
 class GeminiNetworkException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -58,6 +73,9 @@ enum class CloudAiDiagnosticCode {
     MODEL_UNAVAILABLE,
     QUOTA_EXCEEDED,
     SERVER_BUSY,
+    BAD_REQUEST,
+    DNS_ERROR,
+    TIMEOUT_ERROR,
     NETWORK_ERROR,
     PARSING_ERROR,
     SUCCESS
@@ -72,6 +90,7 @@ data class CloudAiDiagnostic(
     val model: String,
     val summary: String,
     val httpCode: Int? = null,
+    val actionableHint: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -109,7 +128,8 @@ class CloudAiProvider(
             code = CloudAiDiagnosticCode.MISSING_KEY,
             hasKey = false,
             model = config.modelName ?: CloudAiConfig.DEFAULT_MODEL,
-            summary = "Gemini API key is not configured in local.properties or environment."
+            summary = "Gemini API key is not configured in local.properties or environment.",
+            actionableHint = "Configure GEMINI_API_KEY in local.properties or environment variable."
         )
     }
         private set
@@ -257,6 +277,21 @@ class CloudAiProvider(
 
                 val responseCode = connection.responseCode
 
+                if (responseCode == 400) {
+                    val errBody = readStreamQuietly(connection.errorStream)
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.BAD_REQUEST,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Gemini API rejected request (HTTP 400 Bad Request)",
+                        httpCode = 400,
+                        actionableHint = "Request payload format or parameters rejected by Gemini API."
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiBadRequestException(diag.summary)
+                }
+
                 if (responseCode == 429) {
                     quotaCooldownUntil = System.currentTimeMillis() + QUOTA_COOLDOWN_MS
                     val errBody = readStreamQuietly(connection.errorStream)
@@ -265,7 +300,8 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Gemini free-tier quota exhausted (HTTP 429)",
-                        httpCode = 429
+                        httpCode = 429,
+                        actionableHint = "Free-tier quota limit reached. Cooldown active for 60s; local fallback engaged."
                     )
                     lastDiagnostic = diag
                     NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
@@ -279,7 +315,8 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Gemini authorization failed ($responseCode). Check API key.",
-                        httpCode = responseCode
+                        httpCode = responseCode,
+                        actionableHint = "API key invalid or unauthorized. Verify GEMINI_API_KEY in local.properties."
                     )
                     lastDiagnostic = diag
                     NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
@@ -293,7 +330,8 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Gemini model '$effectiveModel' not found (HTTP 404)",
-                        httpCode = 404
+                        httpCode = 404,
+                        actionableHint = "Configured model not available on endpoint. Verify model compatibility."
                     )
                     lastDiagnostic = diag
                     NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
@@ -312,7 +350,8 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Gemini service temporarily experiencing high demand (HTTP 503)",
-                        httpCode = 503
+                        httpCode = 503,
+                        actionableHint = "Google Gemini servers under high load. Local fallback engaged."
                     )
                     lastDiagnostic = diag
                     NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
@@ -326,10 +365,12 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Gemini API call failed with code $responseCode",
-                        httpCode = responseCode
+                        httpCode = responseCode,
+                        actionableHint = "HTTP $responseCode returned by Gemini API."
                     )
                     lastDiagnostic = diag
-                    throw Exception("Gemini API call failed with code $responseCode: $errBody")
+                    NexoraLogger.w("GEMINI", "${diag.summary}: $errBody")
+                    throw GeminiServerException("Gemini API call failed with code $responseCode: $errBody")
                 }
 
                 val responseBody = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
@@ -341,7 +382,8 @@ class CloudAiProvider(
                         hasKey = true,
                         model = effectiveModel,
                         summary = "Failed to parse Gemini response: ${e.message}",
-                        httpCode = HttpURLConnection.HTTP_OK
+                        httpCode = HttpURLConnection.HTTP_OK,
+                        actionableHint = "Response parsing failed."
                     )
                     lastDiagnostic = diag
                     throw GeminiParsingException(diag.summary, e)
@@ -358,15 +400,49 @@ class CloudAiProvider(
             } catch (e: Exception) {
                 if (e is GeminiQuotaExceededException || e is GeminiAuthException ||
                     e is GeminiModelUnavailableException || e is GeminiServerException ||
-                    e is GeminiParsingException || e is GeminiConfigException) {
+                    e is GeminiParsingException || e is GeminiConfigException ||
+                    e is GeminiBadRequestException || e is GeminiDnsException ||
+                    e is GeminiTimeoutException) {
                     throw e
                 }
+
+                val isDns = e is java.net.UnknownHostException || e.cause is java.net.UnknownHostException
+                if (isDns) {
+                    val host = try { URL(endpointUrl).host } catch (_: Exception) { "generativelanguage.googleapis.com" }
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.DNS_ERROR,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "DNS resolution failed: Unable to resolve host \"$host\"",
+                        actionableHint = "Phone cannot resolve $host. In OnePlus Settings -> Connection & sharing -> Private DNS, select Off or specify dns.google. Check active VPN/ad-blockers."
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: ${e.message}")
+                    throw GeminiDnsException(diag.summary, e)
+                }
+
+                val isTimeout = e is java.net.SocketTimeoutException || e is java.net.ConnectException ||
+                        e.cause is java.net.SocketTimeoutException || e.cause is java.net.ConnectException
+                if (isTimeout) {
+                    val diag = CloudAiDiagnostic(
+                        code = CloudAiDiagnosticCode.TIMEOUT_ERROR,
+                        hasKey = true,
+                        model = effectiveModel,
+                        summary = "Connection timed out connecting to Gemini (${e.javaClass.simpleName})",
+                        actionableHint = "Request timed out. Check network connection speed or firewall."
+                    )
+                    lastDiagnostic = diag
+                    NexoraLogger.w("GEMINI", "${diag.summary}: ${e.message}")
+                    throw GeminiTimeoutException(diag.summary, e)
+                }
+
                 if (e is java.io.IOException) {
                     val diag = CloudAiDiagnostic(
                         code = CloudAiDiagnosticCode.NETWORK_ERROR,
                         hasKey = true,
                         model = effectiveModel,
-                        summary = "Network error connecting to Gemini: ${e.javaClass.simpleName}: ${e.message}"
+                        summary = "Network error connecting to Gemini: ${e.javaClass.simpleName}: ${e.message}",
+                        actionableHint = "Network connection failed. Verify internet reachability."
                     )
                     lastDiagnostic = diag
                     NexoraLogger.w("GEMINI", diag.summary)
@@ -552,6 +628,106 @@ class CloudAiProvider(
         return true
     }
 
+    /**
+     * Probes connectivity and DNS resolution for the Gemini API host.
+     * Updates [lastDiagnostic] with actionable feedback without executing a billable prompt.
+     */
+    suspend fun probeConnectivity(): CloudAiDiagnostic = withContext(Dispatchers.IO) {
+        val apiKey = config.apiKey?.takeIf { it.isNotBlank() }
+        val effectiveModel = config.modelName ?: CloudAiConfig.DEFAULT_MODEL
+        val endpointUrl = config.endpoint ?: "${CloudAiConfig.GEMINI_BASE_URL}/$effectiveModel:generateContent"
+
+        if (apiKey == null) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.MISSING_KEY,
+                hasKey = false,
+                model = effectiveModel,
+                summary = "Gemini API key is not configured in local.properties or environment.",
+                actionableHint = "Configure GEMINI_API_KEY in local.properties or environment variable."
+            )
+            lastDiagnostic = diag
+            return@withContext diag
+        }
+
+        if (context != null && !NetworkUtils.isNetworkAvailable(context)) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.NETWORK_ERROR,
+                hasKey = true,
+                model = effectiveModel,
+                summary = "Device has no active internet connection.",
+                actionableHint = "Verify Wi-Fi or mobile data connectivity."
+            )
+            lastDiagnostic = diag
+            return@withContext diag
+        }
+
+        if (System.currentTimeMillis() < quotaCooldownUntil) {
+            val remainingSec = (quotaCooldownUntil - System.currentTimeMillis()) / 1000
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.QUOTA_EXCEEDED,
+                hasKey = true,
+                model = effectiveModel,
+                summary = "Gemini quota cooling down for ${remainingSec}s after HTTP 429",
+                httpCode = 429,
+                actionableHint = "Free-tier quota limit reached. Cooldown active for 60s; local fallback engaged."
+            )
+            lastDiagnostic = diag
+            return@withContext diag
+        }
+
+        // If mock connectionFactory is provided (unit tests), skip real DNS lookup
+        if (connectionFactory != null) {
+            return@withContext lastDiagnostic
+        }
+
+        val host = try {
+            URL(endpointUrl).host
+        } catch (_: Exception) {
+            "generativelanguage.googleapis.com"
+        }
+
+        try {
+            java.net.InetAddress.getAllByName(host)
+        } catch (e: java.net.UnknownHostException) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.DNS_ERROR,
+                hasKey = true,
+                model = effectiveModel,
+                summary = "DNS resolution failed: Unable to resolve host \"$host\"",
+                actionableHint = "Phone cannot resolve $host. In OnePlus Settings -> Connection & sharing -> Private DNS, select Off or specify dns.google. Check active VPN/ad-blockers."
+            )
+            lastDiagnostic = diag
+            NexoraLogger.w("GEMINI", diag.summary)
+            return@withContext diag
+        } catch (e: Exception) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.NETWORK_ERROR,
+                hasKey = true,
+                model = effectiveModel,
+                summary = "Host resolution check failed: ${e.message}",
+                actionableHint = "Verify internet access and firewall/VPN settings."
+            )
+            lastDiagnostic = diag
+            NexoraLogger.w("GEMINI", diag.summary)
+            return@withContext diag
+        }
+
+        if (lastDiagnostic.code == CloudAiDiagnosticCode.DNS_ERROR ||
+            lastDiagnostic.code == CloudAiDiagnosticCode.NETWORK_ERROR ||
+            lastDiagnostic.code == CloudAiDiagnosticCode.TIMEOUT_ERROR) {
+            val diag = CloudAiDiagnostic(
+                code = CloudAiDiagnosticCode.CONFIGURED,
+                hasKey = true,
+                model = effectiveModel,
+                summary = "Gemini host ($host) resolved successfully. Ready."
+            )
+            lastDiagnostic = diag
+            return@withContext diag
+        }
+
+        return@withContext lastDiagnostic
+    }
+
     fun resetCooldownForTesting() {
         quotaCooldownUntil = 0L
     }
@@ -619,14 +795,42 @@ data class CloudAiConfig(
                 } catch (_: Exception) {}
             }
 
-            val isConfigured = !key.isNullOrBlank()
-            val model = DEFAULT_MODEL
-            val endpoint = if (isConfigured) "$GEMINI_BASE_URL/$model:generateContent" else null
+            var model: String? = null
+            try {
+                val clazz = Class.forName("com.example.nexora.BuildConfig")
+                val field = clazz.getField("GEMINI_MODEL")
+                val value = field.get(null) as? String
+                if (!value.isNullOrBlank()) {
+                    model = value.trim()
+                }
+            } catch (_: Exception) {}
+
+            if (model.isNullOrBlank()) {
+                val envModel = System.getenv("GEMINI_MODEL")
+                if (!envModel.isNullOrBlank()) {
+                    model = envModel.trim()
+                }
+            }
+
+            if (model.isNullOrBlank() && context != null) {
+                try {
+                    val prefs = context.getSharedPreferences("nexora_ai_prefs", Context.MODE_PRIVATE)
+                    val prefModel = prefs.getString("gemini_model", null)
+                    if (!prefModel.isNullOrBlank()) {
+                        model = prefModel.trim()
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val effectiveModel = model ?: DEFAULT_MODEL
+            val sanitizedKey = key?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")?.takeIf { it.isNotBlank() }
+            val isConfigured = !sanitizedKey.isNullOrBlank()
+            val endpoint = if (isConfigured) "$GEMINI_BASE_URL/$effectiveModel:generateContent" else null
 
             return CloudAiConfig(
                 endpoint = endpoint,
-                apiKey = key,
-                modelName = model,
+                apiKey = sanitizedKey,
+                modelName = effectiveModel,
                 isConfigured = isConfigured
             )
         }

@@ -355,7 +355,7 @@ class GeminiCloudAiIntegrationTest {
         val response = manager.generateResponse("Plan my day", AiContext())
         assertEquals("nexora-local-v1", response.modelName)
         assertNotNull(response.text)
-        assertEquals(CloudAiDiagnosticCode.NETWORK_ERROR, cloudProvider.lastDiagnostic.code)
+        assertEquals(CloudAiDiagnosticCode.TIMEOUT_ERROR, cloudProvider.lastDiagnostic.code)
     }
 
     @Test
@@ -448,5 +448,113 @@ class GeminiCloudAiIntegrationTest {
         val managerWithoutCloud = AiProviderManager(localProvider = localProvider, cloudProvider = unconfiguredCloud)
         assertFalse(managerWithoutCloud.isCloudActive())
         assertEquals("Nexora Local AI", managerWithoutCloud.getActiveProvider().providerName)
+    }
+
+    @Test
+    fun `test dns resolution failure produces dns error diagnostic with actionable hint and falls back to local AI`() = runBlocking {
+        val dnsException = java.net.UnknownHostException("Unable to resolve host \"generativelanguage.googleapis.com\": No address associated with hostname")
+        val (connection, _) = createMockConnection(
+            responseCode = 0,
+            throwOnConnect = dnsException
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateStructuredResponse("Check priorities", AiContext())
+
+        // 1. Verifies local AI fallback fulfilled the request
+        assertTrue("Local AI should fulfill request when DNS fails", response.modelName.contains("local"))
+        assertNotNull(response.textResponse)
+
+        // 2. Verifies specific DNS_ERROR diagnostic classification
+        assertEquals(CloudAiDiagnosticCode.DNS_ERROR, cloudProvider.lastDiagnostic.code)
+        assertTrue(cloudProvider.lastDiagnostic.summary.contains("generativelanguage.googleapis.com"))
+        assertNotNull(cloudProvider.lastDiagnostic.actionableHint)
+        assertTrue(cloudProvider.lastDiagnostic.actionableHint!!.contains("Private DNS"))
+
+        // 3. Verifies that isCloudActive correctly reports false on DNS failure
+        assertFalse("Manager must report cloud inactive when DNS resolution fails", manager.isCloudActive())
+    }
+
+    @Test
+    fun `test http 400 bad request produces bad request diagnostic and falls back to local AI`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 400,
+            errorBody = """{"error": {"code": 400, "message": "Invalid JSON payload received."}}"""
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateResponse("Hello Nexora", AiContext())
+
+        assertEquals("nexora-local-v1", response.modelName)
+        assertEquals(CloudAiDiagnosticCode.BAD_REQUEST, cloudProvider.lastDiagnostic.code)
+        assertEquals(400, cloudProvider.lastDiagnostic.httpCode)
+        assertFalse("Manager must report cloud inactive on HTTP 400 bad request", manager.isCloudActive())
+    }
+
+    @Test
+    fun `test general io network error produces network error diagnostic`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 0,
+            throwOnConnect = IOException("Broken pipe")
+        )
+
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            modelName = "gemini-3.8-flash",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        val response = manager.generateResponse("Plan my day", AiContext())
+        assertEquals("nexora-local-v1", response.modelName)
+        assertEquals(CloudAiDiagnosticCode.NETWORK_ERROR, cloudProvider.lastDiagnostic.code)
+        assertFalse(manager.isCloudActive())
+    }
+
+    @Test
+    fun `test probe connectivity with mock connection skips network and preserves state`() = runBlocking {
+        val (connection, _) = createMockConnection(responseCode = HttpURLConnection.HTTP_OK)
+        val config = CloudAiConfig(
+            apiKey = "test-free-api-key",
+            isConfigured = true
+        )
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+
+        val diag = cloudProvider.probeConnectivity()
+        assertEquals(CloudAiDiagnosticCode.CONFIGURED, diag.code)
+        assertTrue(diag.hasKey)
+    }
+
+    @Test
+    fun `test isCloudActive returns false on all error diagnostic states`() = runBlocking {
+        val (connection, _) = createMockConnection(
+            responseCode = 401,
+            errorBody = """{"error": {"code": 401, "message": "API key not valid."}}"""
+        )
+        val config = CloudAiConfig(apiKey = "invalid-key", isConfigured = true)
+        val cloudProvider = CloudAiProvider(config = config, connectionFactory = { connection })
+        val manager = AiProviderManager(localProvider = localProvider, cloudProvider = cloudProvider)
+
+        assertTrue("Initially configured before execution", manager.isCloudActive())
+
+        manager.generateResponse("Test", AiContext())
+
+        assertFalse("Should be inactive after auth error", manager.isCloudActive())
+        assertEquals(CloudAiDiagnosticCode.AUTH_ERROR, cloudProvider.lastDiagnostic.code)
     }
 }

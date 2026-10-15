@@ -64,7 +64,8 @@ fun AiScreen(
             IntelligenceHeader(
                 isCloudActive = uiState.isCloudActive,
                 cloudDiagnostic = uiState.cloudDiagnostic,
-                onOpenEvaluation = onOpenEvaluation
+                onOpenEvaluation = onOpenEvaluation,
+                onRefreshCloud = { viewModel.refreshCloudStatus() }
             )
         }
     ) { padding ->
@@ -284,7 +285,8 @@ fun AiScreen(
 private fun IntelligenceHeader(
     isCloudActive: Boolean = false,
     cloudDiagnostic: com.example.nexora.ai.CloudAiDiagnostic? = null,
-    onOpenEvaluation: () -> Unit
+    onOpenEvaluation: () -> Unit,
+    onRefreshCloud: (() -> Unit)? = null
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -307,23 +309,35 @@ private fun IntelligenceHeader(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = if (onRefreshCloud != null) {
+                        Modifier.clickable { onRefreshCloud() }
+                    } else Modifier,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     val statusColor = when {
                         isCloudActive -> Color(0xFF10B981)
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.QUOTA_EXCEEDED -> Color(0xFFF59E0B)
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> Color(0xFFF59E0B)
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.QUOTA_EXCEEDED ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.TIMEOUT_ERROR -> Color(0xFFF59E0B)
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR ||
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> Color(0xFFEF4444)
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.BAD_REQUEST ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.DNS_ERROR ||
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.NETWORK_ERROR -> Color(0xFFEF4444)
                         else -> MaterialTheme.colorScheme.outline
                     }
 
                     val statusText = when {
                         isCloudActive -> "Gemini Cloud AI · Online (${cloudDiagnostic?.model ?: "gemini-3.8-flash"})"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.DNS_ERROR -> "On-device AI · DNS lookup failed"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.TIMEOUT_ERROR -> "On-device AI · Connection timeout"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.BAD_REQUEST -> "On-device AI · Bad request (HTTP 400)"
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MISSING_KEY -> "On-device AI · No API key"
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR -> "On-device AI · Invalid API key"
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> "On-device AI · Model unavailable"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.AUTH_ERROR -> "On-device AI · Invalid API key (HTTP ${cloudDiagnostic?.httpCode ?: 401})"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.MODEL_UNAVAILABLE -> "On-device AI · Model unavailable (HTTP 404)"
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.QUOTA_EXCEEDED -> "On-device AI · Quota reached (HTTP 429)"
-                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> "On-device AI · High demand (HTTP 503)"
+                        cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.SERVER_BUSY -> "On-device AI · High demand (HTTP ${cloudDiagnostic?.httpCode ?: 503})"
                         cloudDiagnostic?.code == com.example.nexora.ai.CloudAiDiagnosticCode.NETWORK_ERROR -> "On-device AI · Network error"
                         else -> "On-device AI · Offline mode"
                     }
@@ -342,6 +356,20 @@ private fun IntelligenceHeader(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                if (!isCloudActive && cloudDiagnostic != null &&
+                    cloudDiagnostic.code != com.example.nexora.ai.CloudAiDiagnosticCode.CONFIGURED &&
+                    cloudDiagnostic.code != com.example.nexora.ai.CloudAiDiagnosticCode.SUCCESS) {
+                    val hint = cloudDiagnostic.actionableHint ?: cloudDiagnostic.summary
+                    if (hint.isNotBlank()) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = hint,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
             IconButton(onClick = onOpenEvaluation) {

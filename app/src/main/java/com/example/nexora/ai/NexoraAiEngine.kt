@@ -50,6 +50,8 @@ class NexoraAiEngine(
 
     fun getCloudDiagnostic(): CloudAiDiagnostic? = providerManager.getLastDiagnostic()
 
+    suspend fun probeCloudConnectivity(): CloudAiDiagnostic? = providerManager.probeCloudConnectivity()
+
     /**
      * Unified entry point for all AI requests.
      */
