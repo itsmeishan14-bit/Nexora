@@ -28,11 +28,12 @@ fun calculateCurrentStreak(
     today: LocalDate = LocalDate.now()
 ): Int {
     val progressByDate = progressHistory.associateBy { it.date }
-    var date = today
-    var streak = 0
+    val todayProgress = progressByDate[today]
+    val todayActive = todayProgress != null && todayProgress.tasksCompleted > 0
 
-    // Only count if today has at least one task or is a perfect day
-    // Actually,GitHub style usually counts days with any activity.
+    var streak = 0
+    var date = if (todayActive) today else today.minusDays(1)
+
     while (true) {
         val progress = progressByDate[date]
         if (progress == null || progress.tasksCompleted == 0) break

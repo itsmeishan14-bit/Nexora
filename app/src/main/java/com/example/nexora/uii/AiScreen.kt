@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
@@ -288,6 +289,26 @@ private fun IntelligenceHeader(
     onOpenEvaluation: () -> Unit,
     onRefreshCloud: (() -> Unit)? = null
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "cloudPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 0.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -295,8 +316,9 @@ private fun IntelligenceHeader(
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 18.dp)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -343,13 +365,29 @@ private fun IntelligenceHeader(
                     }
 
                     Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .background(
-                                color = statusColor,
-                                shape = CircleShape
+                        modifier = Modifier.size(14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isCloudActive) {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .scale(pulseScale)
+                                    .background(
+                                        color = statusColor.copy(alpha = pulseAlpha),
+                                        shape = CircleShape
+                                    )
                             )
-                    )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .background(
+                                    color = statusColor,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = statusText,

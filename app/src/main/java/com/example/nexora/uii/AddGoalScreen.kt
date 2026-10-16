@@ -248,6 +248,11 @@ fun AddGoalScreen(
                 ) {
                     Text("Select", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         ) {
             DatePicker(state = datePickerState)

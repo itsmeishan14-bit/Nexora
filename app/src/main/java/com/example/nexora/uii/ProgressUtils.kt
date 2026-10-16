@@ -10,7 +10,7 @@ fun calculateGoalProgress(
     }
 
     if (goalTasks.isEmpty()) {
-        return 0f
+        return goal.progress
     }
 
     val completedTasks = goalTasks.count { task ->

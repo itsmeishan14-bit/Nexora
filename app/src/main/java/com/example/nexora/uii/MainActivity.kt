@@ -97,6 +97,12 @@ class MainActivity : ComponentActivity() {
                 val windowSize = calculateWindowSizeClass(this)
                 val isWide = windowSize.widthSizeClass != WindowWidthSizeClass.Compact
 
+                if (mainState.selectedScreen in listOf("tasks", "goals", "insights")) {
+                    androidx.activity.compose.BackHandler {
+                        mainViewModel.navigateTo("home")
+                    }
+                }
+
                 Row(Modifier.fillMaxSize()) {
                     if (isWide) {
                         Surface(
@@ -217,25 +223,32 @@ class MainActivity : ComponentActivity() {
                                         onEditGoal = { mainViewModel.setEditingGoal(it); mainViewModel.navigateTo("addGoal") },
                                         onOpenGoal = { mainViewModel.setSelectedGoal(it); mainViewModel.navigateTo("goalDetails") }
                                     )
-                                    "goalDetails" -> mainState.selectedGoal?.let { goal ->
-                                        GoalDetailsScreen(
-                                            goal = goal,
-                                            relatedTasks = mainState.tasks.filter { it.goalTitle == goal.title },
-                                            personalContext = aiState.personalContext,
-                                            onBack = { mainViewModel.setSelectedGoal(null); mainViewModel.navigateTo("goals") },
-                                            onEdit = { mainViewModel.setEditingGoal(goal); mainViewModel.navigateTo("addGoal") },
-                                            onDelete = { mainViewModel.deleteGoal(goal); mainViewModel.navigateTo("goals") },
-                                            onToggleTask = { 
-                                                mainViewModel.toggleTask(it)
-                                                aiViewModel.analyze()
-                                            },
-                                            onAddTask = { mainViewModel.setTaskGoal(goal); mainViewModel.navigateTo("addTask") },
-                                            onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") },
-                                            onUpdateProgress = { newProgress -> 
-                                                mainViewModel.updateGoalProgress(goal, newProgress)
-                                                aiViewModel.analyze()
+                                    "goalDetails" -> {
+                                        val goal = mainState.selectedGoal
+                                        if (goal != null) {
+                                            GoalDetailsScreen(
+                                                goal = goal,
+                                                relatedTasks = mainState.tasks.filter { it.goalTitle == goal.title },
+                                                personalContext = aiState.personalContext,
+                                                onBack = { mainViewModel.setSelectedGoal(null); mainViewModel.navigateTo("goals") },
+                                                onEdit = { mainViewModel.setEditingGoal(goal); mainViewModel.navigateTo("addGoal") },
+                                                onDelete = { mainViewModel.deleteGoal(goal); mainViewModel.navigateTo("goals") },
+                                                onToggleTask = { 
+                                                    mainViewModel.toggleTask(it)
+                                                    aiViewModel.analyze()
+                                                },
+                                                onAddTask = { mainViewModel.setTaskGoal(goal); mainViewModel.navigateTo("addTask") },
+                                                onDecomposeGoal = { mainViewModel.navigateTo("aiGoalDecomposer") },
+                                                onUpdateProgress = { newProgress -> 
+                                                    mainViewModel.updateGoalProgress(goal, newProgress)
+                                                    aiViewModel.analyze()
+                                                }
+                                            )
+                                        } else {
+                                            LaunchedEffect(Unit) {
+                                                mainViewModel.navigateTo("goals")
                                             }
-                                        )
+                                        }
                                     }
                                     "insights" -> AiScreen(
                                         viewModel = aiViewModel,

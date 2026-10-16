@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -37,47 +38,46 @@ class NexoraMainViewModel(
         viewModelScope.launch {
             launch {
                 repository.observeTasks().collect { savedTasks ->
-                    _uiState.value = _uiState.value.copy(tasks = savedTasks)
+                    _uiState.update { it.copy(tasks = savedTasks) }
                 }
             }
             launch {
                 repository.observeGoals().collect { savedGoals ->
-                    _uiState.value = _uiState.value.copy(goals = savedGoals)
+                    _uiState.update { it.copy(goals = savedGoals) }
                 }
             }
             launch {
                 repository.observeDailyProgress().collect { savedProgress ->
-                    _uiState.value = _uiState.value.copy(
-                        progressHistory = savedProgress.map { item ->
-                            DailyProgress(
-                                date = LocalDate.parse(item.date),
-                                tasksPlanned = item.tasksPlanned,
-                                tasksCompleted = item.tasksCompleted,
-                                focusMinutes = item.focusMinutes,
-                                goalsWorkedOn = item.goalsWorkedOn,
-                                carriedTasks = item.carriedTasks
-                            )
-                        }.sortedByDescending { it.date }
-                    )
+                    val history = savedProgress.map { item ->
+                        DailyProgress(
+                            date = LocalDate.parse(item.date),
+                            tasksPlanned = item.tasksPlanned,
+                            tasksCompleted = item.tasksCompleted,
+                            focusMinutes = item.focusMinutes,
+                            goalsWorkedOn = item.goalsWorkedOn,
+                            carriedTasks = item.carriedTasks
+                        )
+                    }.sortedByDescending { it.date }
+                    _uiState.update { it.copy(progressHistory = history) }
                 }
             }
         }
     }
 
     fun navigateTo(screen: String) {
-        _uiState.value = _uiState.value.copy(selectedScreen = screen)
+        _uiState.update { it.copy(selectedScreen = screen) }
     }
 
     fun setSelectedGoal(goal: NexoraGoal?) {
-        _uiState.value = _uiState.value.copy(selectedGoal = goal)
+        _uiState.update { it.copy(selectedGoal = goal) }
     }
 
     fun setEditingGoal(goal: NexoraGoal?) {
-        _uiState.value = _uiState.value.copy(editingGoal = goal)
+        _uiState.update { it.copy(editingGoal = goal) }
     }
 
     fun setTaskGoal(goal: NexoraGoal?) {
-        _uiState.value = _uiState.value.copy(taskGoal = goal)
+        _uiState.update { it.copy(taskGoal = goal) }
     }
 
     fun toggleTask(task: PremiumTask) {
@@ -247,20 +247,24 @@ class NexoraMainViewModel(
         val savedGoals = repository.observeGoals().first()
         val savedProgress = repository.observeDailyProgress().first()
 
-        _uiState.value = _uiState.value.copy(
-            tasks = savedTasks,
-            goals = savedGoals,
-            progressHistory = savedProgress.map { item ->
-                DailyProgress(
-                    date = LocalDate.parse(item.date),
-                    tasksPlanned = item.tasksPlanned,
-                    tasksCompleted = item.tasksCompleted,
-                    focusMinutes = item.focusMinutes,
-                    goalsWorkedOn = item.goalsWorkedOn,
-                    carriedTasks = item.carriedTasks
-                )
-            }.sortedByDescending { it.date }
-        )
+        val history = savedProgress.map { item ->
+            DailyProgress(
+                date = LocalDate.parse(item.date),
+                tasksPlanned = item.tasksPlanned,
+                tasksCompleted = item.tasksCompleted,
+                focusMinutes = item.focusMinutes,
+                goalsWorkedOn = item.goalsWorkedOn,
+                carriedTasks = item.carriedTasks
+            )
+        }.sortedByDescending { it.date }
+
+        _uiState.update {
+            it.copy(
+                tasks = savedTasks,
+                goals = savedGoals,
+                progressHistory = history
+            )
+        }
     }
 
     private suspend fun updateTodayProgress() {
@@ -274,14 +278,16 @@ class NexoraMainViewModel(
         val totalCount = currentTasks.size
         val goalsWorkedOn = currentTasks.mapNotNull { it.goalTitle }.distinct().size
 
+        val existingProgress = repository.observeDailyProgress().first().find { it.date == today.toString() }
+
         repository.saveDailyProgress(
             DailyProgressEntity(
                 date = today.toString(),
                 tasksPlanned = totalCount,
                 tasksCompleted = completedCount,
-                focusMinutes = 0,
+                focusMinutes = existingProgress?.focusMinutes ?: 0,
                 goalsWorkedOn = goalsWorkedOn,
-                carriedTasks = 0
+                carriedTasks = existingProgress?.carriedTasks ?: 0
             )
         )
     }

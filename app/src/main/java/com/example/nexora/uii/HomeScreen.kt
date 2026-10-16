@@ -490,7 +490,8 @@ private fun WeekActivityRibbon(progressHistory: List<DailyProgress>) {
         dayLabels.forEachIndexed { index, label ->
             val date = monday.plusDays(index.toLong())
             val progressItem = progressHistory.find { it.date == date }
-            val isCompleted = progressItem != null && progressItem.tasksCompleted > 0
+            val isFullyCompleted = progressItem != null && progressItem.tasksPlanned > 0 && progressItem.tasksCompleted >= progressItem.tasksPlanned
+            val isPartiallyCompleted = progressItem != null && progressItem.tasksCompleted > 0 && !isFullyCompleted
             val isToday = date == today
             val isFuture = date.isAfter(today)
 
@@ -511,8 +512,9 @@ private fun WeekActivityRibbon(progressHistory: List<DailyProgress>) {
                         .clip(CircleShape)
                         .background(
                             when {
-                                isCompleted -> MaterialTheme.colorScheme.primary
-                                isToday -> MaterialTheme.colorScheme.primaryContainer
+                                isFullyCompleted -> MaterialTheme.colorScheme.primary
+                                isPartiallyCompleted -> MaterialTheme.colorScheme.primaryContainer
+                                isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                 else -> MaterialTheme.colorScheme.surfaceVariant
                             }
                         )
@@ -522,12 +524,19 @@ private fun WeekActivityRibbon(progressHistory: List<DailyProgress>) {
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isCompleted) {
+                    if (isFullyCompleted) {
                         Icon(
                             Icons.Rounded.Check,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(14.dp)
+                        )
+                    } else if (isPartiallyCompleted) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
                         )
                     } else if (!isFuture && progressItem != null && progressItem.tasksPlanned > 0) {
                         Box(
